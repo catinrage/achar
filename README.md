@@ -1,10 +1,10 @@
-# Liquid
+# Achar
 
 A modern TypeScript-based post-processor for converting SolidCAM trace output into G-code for CNC machines.
 
 ## Overview
 
-Liquid is a replacement for SolidCAM's GPP (General Post Processor) language, using TypeScript instead. It allows you to define post-processing logic in a more modern, type-safe language with better tooling, while maintaining the event-driven approach familiar to CAM post-processor developers.
+Achar is a replacement for SolidCAM's GPP (General Post Processor) language, using TypeScript instead. It allows you to define post-processing logic in a more modern, type-safe language with better tooling, while maintaining the event-driven approach familiar to CAM post-processor developers.
 
 ## Project Goal
 
@@ -19,7 +19,7 @@ The primary goal of this project is to provide a more flexible and maintainable 
 
 ## How It Works
 
-Liquid takes the detailed trace output from SolidCAM (trace mode 5) and transforms it into G-code through the following process:
+Achar takes the detailed trace output from SolidCAM (trace mode 5) and transforms it into G-code through the following process:
 
 1. **Parse**: The `Parser` reads SolidCAM's trace output which contains events like `StartOfFile`, `ToolChange`, `Line`, etc.
 2. **Process**: The `Program` processes these events through registered event listeners
@@ -68,7 +68,7 @@ Represents the state of the CNC machine:
 
 ### Event-Driven Approach
 
-Like SolidCAM's GPP, Liquid uses an event-driven programming model where you register handlers for specific CAM events:
+Like SolidCAM's GPP, Achar uses an event-driven programming model where you register handlers for specific CAM events:
 
 ```typescript
 program.on('ToolChange', (params, $) => {
@@ -96,8 +96,8 @@ The `Machine` class uses a `Wrapper` pattern to track state changes and avoid ge
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Liquid.git
-cd Liquid
+git clone https://github.com/yourusername/Achar.git
+cd Achar
 
 # Install dependencies
 npm install
