@@ -1,0 +1,28 @@
+{
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": true,
+  "quoteProps": "preserve",
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": "*.js",
+      "options": {
+        "semi": true,
+        "singleQuote": true,
+        "quoteProps": "preserve",
+        "trailingComma": "all"
+      }
+    }
+  ],
+  "eslintIntegration": true,
+  "rules": {
+    "noInferrableTypes": "off",
+    "noParameterAssign": "off",
+    "useEnumInitializers": "off",
+    "noUselessElse": "off",
+    "noForEach": "off",
+    "noBannedTypes": "off"
+  }
+}
