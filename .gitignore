@@ -177,3 +177,4 @@ dist
 # Project specific
 generated/
 data/
+playground.ts
