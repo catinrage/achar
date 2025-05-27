@@ -2,6 +2,20 @@ import type { CommandsType } from '$src/types';
 import { Machine } from './machine';
 
 /**
+ * Interface for command options
+ */
+export interface CommandOptions {
+  /**
+   * Force printing values even if redundant
+   */
+  forcePrint?: boolean;
+  /**
+   * Don't flush to a new line after command
+   */
+  noFlush?: boolean;
+}
+
+/**
  * @class Builder
  * @description A class to construct a G-code program by accumulating G-code commands,
  * formatting them with line numbers (N-words), and managing the machine state
@@ -76,11 +90,14 @@ export class Builder {
    * @description Generates G-code for a rapid positioning move (typically G00).
    * It sets the machine's motion mode to rapid and then sets the target position.
    * @param {CommandsType['Rapid']} params - An object containing the target coordinates (e.g., { x, y, z }).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
    */
-  public Rapid(params: CommandsType['Rapid']): void {
-    this.put(this._machine.setMotionMode(0));
-    this.put(this._machine.setPosition(params));
-    this.flush();
+  public Rapid(params: CommandsType['Rapid'], options?: CommandOptions): void {
+    this.put(this._machine.setMotionMode(0, options?.forcePrint));
+    this.put(this._machine.setPosition(params, options?.forcePrint));
+    if (!options?.noFlush) {
+      this.flush();
+    }
   }
 
   /**
@@ -89,32 +106,42 @@ export class Builder {
    * It sets the machine's motion mode to linear and then sets the target position.
    * A feed rate should typically be active for G01 moves.
    * @param {CommandsType['Line']} params - An object containing the target coordinates (e.g., { x, y, z }).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
    */
-  public Line(params: CommandsType['Line']): void {
-    this.put(this._machine.setMotionMode(1));
-    this.put(this._machine.setPosition(params));
-    this.flush();
+  public Line(params: CommandsType['Line'], options?: CommandOptions): void {
+    this.put(this._machine.setMotionMode(1, options?.forcePrint));
+    this.put(this._machine.setPosition(params, options?.forcePrint));
+    if (!options?.noFlush) {
+      this.flush();
+    }
   }
 
   /**
    * @method SetSpindleSpeed
    * @description Generates G-code to set the spindle speed (S-word).
    * @param {CommandsType['SetSpindleSpeed']} speed - The desired spindle speed.
+   * @param {CommandOptions} [options] - Optional settings for command generation.
    */
-  public SetSpindleSpeed(speed: CommandsType['SetSpindleSpeed']): void {
-    this.put(this._machine.setSpindleSpeed(speed));
-    this.flush();
+  public SetSpindleSpeed(speed: CommandsType['SetSpindleSpeed'], options?: CommandOptions): void {
+    this.put(this._machine.setSpindleSpeed(speed, options?.forcePrint));
+    if (!options?.noFlush) {
+      this.flush();
+    }
   }
 
   /**
    * @method SetSpindleDirection
    * @description Generates G-code to set the spindle rotation direction (e.g., M03 for clockwise, M04 for counter-clockwise).
    * @param {CommandsType['SetSpindleDirection']} direction - The desired spindle direction, typically from an enum.
+   * @param {CommandOptions} [options] - Optional settings for command generation.
    */
   public SetSpindleDirection(
     direction: CommandsType['SetSpindleDirection'],
+    options?: CommandOptions,
   ): void {
-    this.put(this._machine.setSpindleDirection(direction));
-    this.flush();
+    this.put(this._machine.setSpindleDirection(direction, options?.forcePrint));
+    if (!options?.noFlush) {
+      this.flush();
+    }
   }
 }

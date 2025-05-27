@@ -187,6 +187,7 @@ export class Program {
    * @returns {string} The generated G-code program.
    */
   public generate(): string {
+    this.builder.flush();
     return this.builder.gcode;
   }
 }

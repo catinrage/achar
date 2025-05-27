@@ -28,14 +28,15 @@ class Wrapper<T extends string | number> {
    * @description Renders the G-code string for this parameter if the newValue is different from the current value.
    * If newValue is undefined, it returns an empty string.
    * @param {T} [newValue] - The new value for the parameter.
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string segment (e.g., "X100.0") or an empty string if the value hasn't changed or is undefined.
    */
-  render(newValue?: T): string {
+  render(newValue?: T, forcePrint?: boolean): string {
     if (newValue === undefined) {
       return '';
     }
 
-    if (this._value === newValue) {
+    if (!forcePrint && this._value === newValue) {
       return '';
     }
     this._value = newValue;
@@ -129,6 +130,7 @@ export class Machine {
    * @description Updates the machine's target position and returns the G-code string for the movement.
    * Only axes with new values will be included in the output.
    * @param value - An object containing new optional x, y, z, a, b, c coordinates.
+   * @param forcePrint - If true, prints the values even if they haven't changed.
    * @returns {string} The G-code string for the position change (e.g., "X10 Y20 Z5").
    */
   public setPosition(value: {
@@ -138,14 +140,14 @@ export class Machine {
     a?: number;
     b?: number;
     c?: number;
-  }) {
+  }, forcePrint?: boolean) {
     let output = '';
-    output += this.position.x.render(value.x) + ' ';
-    output += this.position.y.render(value.y) + ' ';
-    output += this.position.z.render(value.z) + ' ';
-    output += this.position.a.render(value.a) + ' ';
-    output += this.position.b.render(value.b) + ' ';
-    output += this.position.c.render(value.c) + ' ';
+    output += this.position.x.render(value.x, forcePrint) + ' ';
+    output += this.position.y.render(value.y, forcePrint) + ' ';
+    output += this.position.z.render(value.z, forcePrint) + ' ';
+    output += this.position.a.render(value.a, forcePrint) + ' ';
+    output += this.position.b.render(value.b, forcePrint) + ' ';
+    output += this.position.c.render(value.c, forcePrint) + ' ';
     output = output.replace(/\s+/g, ' ');
     return output.trim();
   }
@@ -162,11 +164,12 @@ export class Machine {
    * @method setMotionMode
    * @description Sets the machine's motion mode (e.g., G00, G01) and returns the G-code string.
    * @param {0 | 1} value - 0 for G0 (Rapid), 1 for G1 (Linear Feed).
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string for the motion mode change (e.g., "G0", "G1").
    */
-  public setMotionMode(value: 0 | 1) {
+  public setMotionMode(value: 0 | 1, forcePrint?: boolean) {
     let output = '';
-    output += this.motionMode.render(value);
+    output += this.motionMode.render(value, forcePrint);
     return output.trim();
   }
   /**
@@ -182,11 +185,12 @@ export class Machine {
    * @method setHomeNumber
    * @description Sets the machine's home position/reference point number and returns the G-code string.
    * @param {number} value - The home number (e.g., 28 for G28).
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string for the homing command (e.g., "G28").
    */
-  public setHomeNumber(value: number) {
+  public setHomeNumber(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._homeNumber.render(value);
+    output += this._homeNumber.render(value, forcePrint);
     return output.trim();
   }
   /**
@@ -202,11 +206,12 @@ export class Machine {
    * @method setFeedRate
    * @description Sets the machine's feed rate and returns the F-word G-code string.
    * @param {number} value - The new feed rate.
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string for the feed rate change (e.g., "F500").
    */
-  public setFeedRate(value: number) {
+  public setFeedRate(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._feedRate.render(value);
+    output += this._feedRate.render(value, forcePrint);
     return output.trim();
   }
   /**
@@ -222,11 +227,12 @@ export class Machine {
    * @method setSpindleSpeed
    * @description Sets the machine's spindle speed and returns the S-word G-code string.
    * @param {number} value - The new spindle speed.
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string for the spindle speed change (e.g., "S1200").
    */
-  public setSpindleSpeed(value: number) {
+  public setSpindleSpeed(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._spindleSpeed.render(value);
+    output += this._spindleSpeed.render(value, forcePrint);
     return output.trim();
   }
   /**
@@ -242,11 +248,12 @@ export class Machine {
    * @method setSpindleDirection
    * @description Sets the machine's spindle direction and returns the M-word G-code string.
    * @param {DirectionEnum} value - The spindle direction (CW or CCW).
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string for the spindle direction (e.g., "M3", "M4").
    */
-  public setSpindleDirection(value: DirectionEnum) {
+  public setSpindleDirection(value: DirectionEnum, forcePrint?: boolean) {
     let output = '';
-    output += this._spindleDirection.render(value === DirectionEnum.CW ? 3 : 4);
+    output += this._spindleDirection.render(value === DirectionEnum.CW ? 3 : 4, forcePrint);
     return output.trim();
   }
   /**
