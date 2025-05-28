@@ -1,59 +1,5 @@
 import { DirectionEnum } from '$src/common/enums';
-
-/**
- * @class Wrapper
- * @template T - The type of the value being wrapped, typically string or number.
- * @description A utility class to wrap a machine parameter (like X-coordinate or spindle speed).
- * It only generates an output string (e.g., G-code segment) if the new value
- * is different from the current value, preventing redundant G-code.
- * It also handles prefixing the value (e.g., 'X' for X-coordinate).
- */
-class Wrapper<T extends string | number> {
-  private _value: T | null = null;
-  private _prefix: string;
-  private _transform?: (value: T) => string;
-
-  /**
-   * @constructor
-   * @param {string} prefix - The G-code prefix for this parameter (e.g., 'X', 'G', 'M', 'S').
-   * @param {(value: T) => string} [transform] - An optional function to transform the value before rendering.
-   */
-  constructor(prefix: string, transform?: (value: T) => string) {
-    this._prefix = prefix;
-    this._transform = transform;
-  }
-
-  /**
-   * @method render
-   * @description Renders the G-code string for this parameter if the newValue is different from the current value.
-   * If newValue is undefined, it returns an empty string.
-   * @param {T} [newValue] - The new value for the parameter.
-   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
-   * @returns {string} The G-code string segment (e.g., "X100.0") or an empty string if the value hasn't changed or is undefined.
-   */
-  render(newValue?: T, forcePrint?: boolean): string {
-    if (newValue === undefined) {
-      return '';
-    }
-
-    if (!forcePrint && this._value === newValue) {
-      return '';
-    }
-    this._value = newValue;
-    return `${this._prefix}${
-      this._transform ? this._transform(newValue) : newValue
-    }`;
-  }
-
-  /**
-   * @property {T | null} value
-   * @description Gets the current value of the wrapped parameter.
-   * @readonly
-   */
-  public get value(): T | null {
-    return this._value;
-  }
-}
+import { Emitter } from './emitter';
 
 /**
  * @class Machine
@@ -71,19 +17,19 @@ export class Machine {
    * Each axis is a Wrapper to manage its G-code output.
    */
   private _position: {
-    x: Wrapper<number>;
-    y: Wrapper<number>;
-    z: Wrapper<number>;
-    a: Wrapper<number>;
-    b: Wrapper<number>;
-    c: Wrapper<number>;
+    x: Emitter<number>;
+    y: Emitter<number>;
+    z: Emitter<number>;
+    a: Emitter<number>;
+    b: Emitter<number>;
+    c: Emitter<number>;
   } = {
-    x: new Wrapper('X'),
-    y: new Wrapper('Y'),
-    z: new Wrapper('Z'),
-    a: new Wrapper('A'),
-    b: new Wrapper('B'),
-    c: new Wrapper('C'),
+    x: new Emitter('X'),
+    y: new Emitter('Y'),
+    z: new Emitter('Z'),
+    a: new Emitter('A'),
+    b: new Emitter('B'),
+    c: new Emitter('C'),
   };
 
   /**
@@ -93,7 +39,7 @@ export class Machine {
    * Represented as a Wrapper for G-code generation.
    * 0 for G0 (Rapid), 1 for G1 (Linear Feed).
    */
-  private _motionMode: Wrapper<0 | 1> = new Wrapper('G');
+  private _motionMode: Emitter<0 | 1> = new Emitter('G');
 
   /**
    * @private
@@ -102,7 +48,7 @@ export class Machine {
    * This is usually a G-code like G28, G30 followed by axis letters or P for reference point number.
    * For simplicity here, it's just a number that will be prefixed with 'G'.
    */
-  private _homeNumber: Wrapper<number> = new Wrapper('G');
+  private _homeNumber: Emitter<number> = new Emitter('G');
 
   /**
    * @private
@@ -110,7 +56,7 @@ export class Machine {
    * @description Stores the current feed rate (F-word).
    * Represented as a Wrapper for G-code generation.
    */
-  private _feedRate: Wrapper<number> = new Wrapper('F');
+  private _feedRate: Emitter<number> = new Emitter('F');
 
   /**
    * @private
@@ -118,7 +64,7 @@ export class Machine {
    * @description Stores the current spindle speed (S-word).
    * Represented as a Wrapper for G-code generation.
    */
-  private _spindleSpeed: Wrapper<number> = new Wrapper('S');
+  private _spindleSpeed: Emitter<number> = new Emitter('S');
 
   /**
    * @private
@@ -127,7 +73,7 @@ export class Machine {
    * Represented as a Wrapper for G-code generation.
    * 3 for M03 (Spindle ON Clockwise), 4 for M04 (Spindle ON Counter-Clockwise).
    */
-  private _spindleDirection: Wrapper<3 | 4> = new Wrapper('M');
+  private _spindleDirection: Emitter<3 | 4> = new Emitter('M');
 
   /**
    * @private
@@ -135,7 +81,7 @@ export class Machine {
    * @description Stores the current tool (T-word).
    * Represented as a Wrapper for G-code generation.
    */
-  private _tool: Wrapper<string> = new Wrapper('T', (value) => `="${value}"`);
+  private _tool: Emitter<string> = new Emitter('T', (value) => `="${value}"`);
 
   /**
    * @method setPosition
