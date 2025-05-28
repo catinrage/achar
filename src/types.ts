@@ -1,5 +1,13 @@
 import type { DirectionEnum, PlanEnum, StateEnum } from './common/enums';
 
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object
+    ? T[P] extends Function
+      ? T[P]
+      : DeepPartial<T[P]>
+    : T[P];
+};
+
 export type EventsType = {
   StartOfFile: {
     build_revision: number;
@@ -808,4 +816,5 @@ export type CommandsType = {
   SetSpindleDirection: DirectionEnum;
   SetFeedRate: number;
   SetHomeNumber: number;
+  SelectTool: string;
 };
