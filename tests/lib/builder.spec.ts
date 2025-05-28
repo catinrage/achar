@@ -87,7 +87,7 @@ describe('Builder', () => {
     });
 
     it('should not flush when noFlush option is true', () => {
-      builder.Rapid({ x: 10 }, { noFlush: true });
+      builder.Rapid({ x: 10 }, { skipNewLine: true });
       expect(builder['_lines']).toEqual([]);
       expect(builder['_currentLine']).toEqual(['G0', 'X10']);
     });
@@ -110,7 +110,7 @@ describe('Builder', () => {
     });
 
     it('should not flush when noFlush option is true', () => {
-      builder.Line({ x: 10 }, { noFlush: true });
+      builder.Line({ x: 10 }, { skipNewLine: true });
       expect(builder['_lines']).toEqual([]);
       expect(builder['_currentLine']).toEqual(['G1', 'X10']);
     });
@@ -133,7 +133,7 @@ describe('Builder', () => {
     });
 
     it('should not flush when noFlush option is true', () => {
-      builder.SetSpindleSpeed(1200, { noFlush: true });
+      builder.SetSpindleSpeed(1200, { skipNewLine: true });
       expect(builder['_lines']).toEqual([]);
       expect(builder['_currentLine']).toEqual(['S1200']);
     });
@@ -159,7 +159,7 @@ describe('Builder', () => {
     });
 
     it('should not flush when noFlush option is true', () => {
-      builder.SetSpindleDirection(DirectionEnum.CW, { noFlush: true });
+      builder.SetSpindleDirection(DirectionEnum.CW, { skipNewLine: true });
       expect(builder['_lines']).toEqual([]);
       expect(builder['_currentLine']).toEqual(['M3']);
     });

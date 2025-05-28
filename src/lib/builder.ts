@@ -12,7 +12,7 @@ export interface CommandOptions {
   /**
    * Don't flush to a new line after command
    */
-  noFlush?: boolean;
+  skipNewLine?: boolean;
 }
 
 /**
@@ -95,7 +95,7 @@ export class Builder {
   public Rapid(params: CommandsType['Rapid'], options?: CommandOptions): void {
     this.put(this._machine.setMotionMode(0, options?.forcePrint));
     this.put(this._machine.setPosition(params, options?.forcePrint));
-    if (!options?.noFlush) {
+    if (!options?.skipNewLine) {
       this.flush();
     }
   }
@@ -111,7 +111,7 @@ export class Builder {
   public Line(params: CommandsType['Line'], options?: CommandOptions): void {
     this.put(this._machine.setMotionMode(1, options?.forcePrint));
     this.put(this._machine.setPosition(params, options?.forcePrint));
-    if (!options?.noFlush) {
+    if (!options?.skipNewLine) {
       this.flush();
     }
   }
@@ -124,7 +124,7 @@ export class Builder {
    */
   public SetSpindleSpeed(speed: CommandsType['SetSpindleSpeed'], options?: CommandOptions): void {
     this.put(this._machine.setSpindleSpeed(speed, options?.forcePrint));
-    if (!options?.noFlush) {
+    if (!options?.skipNewLine) {
       this.flush();
     }
   }
@@ -140,7 +140,7 @@ export class Builder {
     options?: CommandOptions,
   ): void {
     this.put(this._machine.setSpindleDirection(direction, options?.forcePrint));
-    if (!options?.noFlush) {
+    if (!options?.skipNewLine) {
       this.flush();
     }
   }
