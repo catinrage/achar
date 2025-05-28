@@ -40,5 +40,8 @@
     "znext",
     "zstart",
     "ztool"
-  ]
+  ],
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }
