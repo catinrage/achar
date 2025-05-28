@@ -26,9 +26,42 @@ export type ProgramOptions = {
 };
 
 export type EventListenerMetadata = {
+  /**
+   * The index of the current event in the program
+   */
   index: number;
+  /**
+   * The next event in the program
+   */
   next: Event<keyof EventsType> | null;
+  /**
+   * The previous event in the program
+   */
   previous: Event<keyof EventsType> | null;
+  /**
+   * Find the last event in the program, into the past
+   */
+  findLastEvent: <T extends keyof EventsType>(eventName: T) => Event<T> | null;
+  /**
+   * Find the nearest event in the program, into the future
+   */
+  findNearestEvent: <T extends keyof EventsType>(
+    eventName: T,
+  ) => Event<T> | null;
+  /**
+   * Find the nth next event in the program
+   */
+  findNthNextEvent: <T extends keyof EventsType>(
+    eventName: T,
+    n: number,
+  ) => Event<T> | null;
+  /**
+   * Find the nth previous event in the program
+   */
+  findNthPreviousEvent: <T extends keyof EventsType>(
+    eventName: T,
+    n: number,
+  ) => Event<T> | null;
 };
 
 /**
@@ -230,10 +263,56 @@ export class Program {
    */
   public process(): void {
     this._events.forEach((event, index) => {
-      const metadata = {
+      const metadata: EventListenerMetadata = {
         index: index,
         next: this._events[index + 1] ?? null,
         previous: this._events[index - 1] ?? null,
+        findLastEvent: <T extends keyof EventsType>(eventName: T) => {
+          // go backward until the event is found
+          for (let i = index - 1; i >= 0; i--) {
+            if (this._events[i].name === eventName) {
+              return this._events[i] as Event<T>;
+            }
+          }
+          return null;
+        },
+        findNearestEvent: <T extends keyof EventsType>(eventName: T) => {
+          // go forward until the event is found
+          for (let i = index + 1; i < this._events.length; i++) {
+            if (this._events[i].name === eventName) {
+              return this._events[i] as Event<T>;
+            }
+          }
+          return null;
+        },
+        findNthNextEvent: <T extends keyof EventsType>(
+          eventName: T,
+          n: number,
+        ) => {
+          for (let i = index + 1; i < this._events.length; i++) {
+            if (this._events[i].name === eventName) {
+              n--;
+              if (n === 0) {
+                return this._events[i] as Event<T>;
+              }
+            }
+          }
+          return null;
+        },
+        findNthPreviousEvent: <T extends keyof EventsType>(
+          eventName: T,
+          n: number,
+        ) => {
+          for (let i = index - 1; i >= 0; i--) {
+            if (this._events[i].name === eventName) {
+              n--;
+              if (n === 0) {
+                return this._events[i] as Event<T>;
+              }
+            }
+          }
+          return null;
+        },
       };
       this.trigger(event.name, event.data, metadata);
     });
