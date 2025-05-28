@@ -94,6 +94,7 @@ export class Machine {
    * 0 for G0 (Rapid), 1 for G1 (Linear Feed).
    */
   private _motionMode: Wrapper<0 | 1> = new Wrapper('G');
+
   /**
    * @private
    * @property _homeNumber
@@ -102,6 +103,7 @@ export class Machine {
    * For simplicity here, it's just a number that will be prefixed with 'G'.
    */
   private _homeNumber: Wrapper<number> = new Wrapper('G');
+
   /**
    * @private
    * @property _feedRate
@@ -109,6 +111,7 @@ export class Machine {
    * Represented as a Wrapper for G-code generation.
    */
   private _feedRate: Wrapper<number> = new Wrapper('F');
+
   /**
    * @private
    * @property _spindleSpeed
@@ -116,6 +119,7 @@ export class Machine {
    * Represented as a Wrapper for G-code generation.
    */
   private _spindleSpeed: Wrapper<number> = new Wrapper('S');
+
   /**
    * @private
    * @property _spindleDirection
@@ -126,6 +130,14 @@ export class Machine {
   private _spindleDirection: Wrapper<3 | 4> = new Wrapper('M');
 
   /**
+   * @private
+   * @property _tool
+   * @description Stores the current tool (T-word).
+   * Represented as a Wrapper for G-code generation.
+   */
+  private _tool: Wrapper<string> = new Wrapper('T', (value) => `="${value}"`);
+
+  /**
    * @method setPosition
    * @description Updates the machine's target position and returns the G-code string for the movement.
    * Only axes with new values will be included in the output.
@@ -133,14 +145,17 @@ export class Machine {
    * @param forcePrint - If true, prints the values even if they haven't changed.
    * @returns {string} The G-code string for the position change (e.g., "X10 Y20 Z5").
    */
-  public setPosition(value: {
-    x?: number;
-    y?: number;
-    z?: number;
-    a?: number;
-    b?: number;
-    c?: number;
-  }, forcePrint?: boolean) {
+  public setPosition(
+    value: {
+      x?: number;
+      y?: number;
+      z?: number;
+      a?: number;
+      b?: number;
+      c?: number;
+    },
+    forcePrint?: boolean,
+  ) {
     let output = '';
     output += this.position.x.render(value.x, forcePrint) + ' ';
     output += this.position.y.render(value.y, forcePrint) + ' ';
@@ -253,7 +268,10 @@ export class Machine {
    */
   public setSpindleDirection(value: DirectionEnum, forcePrint?: boolean) {
     let output = '';
-    output += this._spindleDirection.render(value === DirectionEnum.CW ? 3 : 4, forcePrint);
+    output += this._spindleDirection.render(
+      value === DirectionEnum.CW ? 3 : 4,
+      forcePrint,
+    );
     return output.trim();
   }
   /**
@@ -263,5 +281,18 @@ export class Machine {
    */
   public get spindleDirection() {
     return this._spindleDirection;
+  }
+
+  /**
+   * @method selectTool
+   * @description Selects the tool and returns the T-word G-code string.
+   * @param {string} value - The tool number (e.g., "T1").
+   * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
+   * @returns {string} The G-code string for the tool selection (e.g., "T1").
+   */
+  public selectTool(value: string, forcePrint?: boolean) {
+    let output = '';
+    output += this._tool.render(value, forcePrint);
+    return output.trim();
   }
 }
