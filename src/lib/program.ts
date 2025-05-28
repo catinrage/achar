@@ -53,25 +53,25 @@ class Event<Name extends keyof EventsType> {
 export class Program {
   /**
    * @private
-   * @property events
+   * @property _events
    * @description An array of Event instances loaded from the parser.
    */
-  private events: Event<keyof EventsType>[] = [];
+  private _events: Event<keyof EventsType>[] = [];
   /**
    * @private
-   * @property eventListeners
+   * @property _eventListeners
    * @description A map where keys are event names (strings) and values are arrays of EventListener functions for that event.
    * The type uses `any` for the listener array internally to satisfy TypeScript's generic constraints,
    * but the public `on`, `off`, and `trigger` methods maintain strong typing.
    */
-  private eventListeners: Record<string, EventListener<any>[]> = {};
+  private _eventListeners: Record<string, EventListener<any>[]> = {};
 
   /**
    * @private
-   * @property builder
+   * @property _builder
    * @description An instance of the Builder class used to construct the G-code output.
    */
-  private builder: Builder = new Builder();
+  private _builder: Builder = new Builder();
 
   /**
    * @constructor
@@ -93,7 +93,7 @@ export class Program {
       // Ensure to pass only relevant data to the Event constructor,
       // matching EventsType[Name] by excluding _eventName and _index.
       const { _eventName, _index, ...data } = eventData;
-      this.events.push(
+      this._events.push(
         new Event(this, eventName, data as EventsType[typeof eventName]),
       );
     });
@@ -112,12 +112,12 @@ export class Program {
     eventName: T,
     listener: EventListener<T>,
   ): void {
-    if (!this.eventListeners[eventName]) {
-      this.eventListeners[eventName] = [];
+    if (!this._eventListeners[eventName]) {
+      this._eventListeners[eventName] = [];
     }
     // The `as any` is used here to bridge the general internal type with the specific external type.
     // This is safe due to the strong typing of `eventName` and `listener` in the method signature.
-    this.eventListeners[eventName].push(listener as any);
+    this._eventListeners[eventName].push(listener as any);
   }
 
   /**
@@ -131,9 +131,9 @@ export class Program {
     eventName: T,
     listener: EventListener<T>,
   ): void {
-    const listeners = this.eventListeners[eventName];
+    const listeners = this._eventListeners[eventName];
     if (listeners) {
-      this.eventListeners[eventName] = listeners.filter((l) => l !== listener);
+      this._eventListeners[eventName] = listeners.filter((l) => l !== listener);
     }
   }
 
@@ -149,12 +149,12 @@ export class Program {
     eventName: T,
     params: EventsType[T] | Partial<EventsType[T]>, // Allow partial for manual trigger if needed by original code
   ): void {
-    const listeners = this.eventListeners[eventName];
+    const listeners = this._eventListeners[eventName];
     if (listeners) {
       listeners.forEach((listener) =>
         // Ensure params matches the listener's expectation; cast if necessary from Partial.
         // However, internal calls from process() will pass the full EventsType[T].
-        listener(params as EventsType[T], this.builder),
+        listener(params as EventsType[T], this._builder),
       );
     }
   }
@@ -165,7 +165,7 @@ export class Program {
    * @returns {Array<keyof EventsType>} An array of event names.
    */
   public listEvents(): Array<keyof EventsType> {
-    return this.events.map((event) => event.name);
+    return this._events.map((event) => event.name);
   }
 
   /**
@@ -175,7 +175,7 @@ export class Program {
    * This is the main method to start G-code generation based on loaded events and registered handlers.
    */
   public process(): void {
-    this.events.forEach((event) => {
+    this._events.forEach((event) => {
       event.trigger(); // This will call Program.trigger with event.name and event.data
     });
   }
@@ -187,7 +187,7 @@ export class Program {
    * @returns {string} The generated G-code program.
    */
   public generate(): string {
-    this.builder.flush();
-    return this.builder.gcode;
+    this._builder.flush();
+    return this._builder.gcode;
   }
 }

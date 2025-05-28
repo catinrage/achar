@@ -37,28 +37,28 @@ export interface EventData<T extends keyof EventsType = keyof EventsType> {
 export class Parser {
   /**
    * @private
-   * @property input
+   * @property _input
    * @description The multi-line string input that the parser will process.
    */
-  private input: string;
+  private _input: string;
 
   /**
    * @constructor
    * @param {string} input - The raw string data to be parsed.
    */
   constructor(input: string) {
-    this.input = input;
+    this._input = input;
   }
 
   /**
    * @private
-   * @method toPascalCase
+   * @method _toPascalCase
    * @description Helper function to convert a snake_case string to PascalCase.
    * For instance, 'example_event_name' would become 'ExampleEventName'.
    * @param {string} str - The snake_case string to be converted.
    * @returns {string} The string converted to PascalCase.
    */
-  private toPascalCase(str: string): string {
+  private _toPascalCase(str: string): string {
     return str
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -78,18 +78,18 @@ export class Parser {
    * with its properties. The `_eventName` is in PascalCase and `_index` is parser-assigned.
    */
   public parse(): EventData[] {
-    const lines = this.input.split('\n');
+    const lines = this._input.split('\n');
     const jsonObject: any[] = [];
     let currentEvent: any = null;
 
     let indexCounter = 0;
 
     lines.forEach((line) => {
-      const sectionMatch = line.match(/^\((\d+)\)@(\w+)/);
+      const sectionMatch = line.match(/^\s*\((\d+)\)@(\w+)/);
       if (sectionMatch) {
         if (currentEvent) jsonObject.push(currentEvent); // Save the previous event
         currentEvent = {
-          _eventName: this.toPascalCase(sectionMatch[2]),
+          _eventName: this._toPascalCase(sectionMatch[2]),
           _index: indexCounter,
         };
         indexCounter++;
