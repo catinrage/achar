@@ -1,6 +1,35 @@
-import type { EventsType } from '$src/types';
+import type { DeepPartial, EventsType } from '$src/types';
 import { Builder } from './builder';
 import type { EventData } from './parser';
+
+/**
+ * @description Configuration options for the Program class
+ */
+export type ProgramOptions = {
+  /**
+   * Settings for line numbering in generated G-code
+   */
+  numbering: {
+    /**
+     * Whether to enable line numbering (N-words), default is true
+     */
+    enabled: boolean;
+    /**
+     * The starting line number, default is 10
+     */
+    start: number;
+    /**
+     * The increment between line numbers, default is 10
+     */
+    increment: number;
+  };
+};
+
+export type EventListenerMetadata = {
+  index: number;
+  next: Event<keyof EventsType> | null;
+  previous: Event<keyof EventsType> | null;
+};
 
 /**
  * @type EventListener
@@ -9,10 +38,12 @@ import type { EventData } from './parser';
  * It receives event-specific parameters and a Builder instance to generate G-code.
  * @param {EventsType[T]} params - The parameters associated with the triggered event.
  * @param {Builder} builder - An instance of the Builder class for G-code generation.
+ * @param {EventListenerMetadata} metadata - Metadata about the event listener.
  */
 export type EventListener<T extends keyof EventsType = keyof EventsType> = (
-  params: EventsType[T],
   builder: Builder,
+  params: EventsType[T],
+  metadata: EventListenerMetadata,
 ) => void;
 
 /**
@@ -39,8 +70,8 @@ class Event<Name extends keyof EventsType> {
    * @description Triggers this event on its associated Program instance.
    * This will execute all registered listeners for this event name.
    */
-  public trigger(): void {
-    this.program.trigger(this.name, this.data);
+  public trigger(metadata: EventListenerMetadata): void {
+    this.program.trigger(this.name, this.data, metadata);
   }
 }
 
@@ -53,10 +84,24 @@ class Event<Name extends keyof EventsType> {
 export class Program {
   /**
    * @private
+   * @property _options
+   * @description The options for the Program.
+   */
+  private readonly _options: ProgramOptions = {
+    numbering: {
+      enabled: true,
+      start: 10,
+      increment: 10,
+    },
+  };
+
+  /**
+   * @private
    * @property _events
    * @description An array of Event instances loaded from the parser.
    */
   private _events: Event<keyof EventsType>[] = [];
+
   /**
    * @private
    * @property _eventListeners
@@ -71,14 +116,22 @@ export class Program {
    * @property _builder
    * @description An instance of the Builder class used to construct the G-code output.
    */
-  private _builder: Builder = new Builder();
+  private _builder: Builder;
 
   /**
    * @constructor
    * @description Initializes a new Program instance with an empty event list and a new Builder.
    */
-  constructor() {
-    // this.events = []; // Initialization is now done at property declaration.
+  constructor(options?: DeepPartial<ProgramOptions>) {
+    this._options = {
+      numbering: {
+        enabled: options?.numbering?.enabled ?? this._options.numbering.enabled,
+        start: options?.numbering?.start ?? this._options.numbering.start,
+        increment:
+          options?.numbering?.increment ?? this._options.numbering.increment,
+      },
+    };
+    this._builder = new Builder(this._options);
   }
 
   /**
@@ -117,7 +170,7 @@ export class Program {
     }
     // The `as any` is used here to bridge the general internal type with the specific external type.
     // This is safe due to the strong typing of `eventName` and `listener` in the method signature.
-    this._eventListeners[eventName].push(listener as any);
+    this._eventListeners[eventName].push(listener);
   }
 
   /**
@@ -148,13 +201,14 @@ export class Program {
   public trigger<T extends keyof EventsType>(
     eventName: T,
     params: EventsType[T] | Partial<EventsType[T]>, // Allow partial for manual trigger if needed by original code
+    metadata: EventListenerMetadata,
   ): void {
     const listeners = this._eventListeners[eventName];
     if (listeners) {
       listeners.forEach((listener) =>
         // Ensure params matches the listener's expectation; cast if necessary from Partial.
         // However, internal calls from process() will pass the full EventsType[T].
-        listener(params as EventsType[T], this._builder),
+        listener(this._builder, params as EventsType[T], metadata),
       );
     }
   }
@@ -175,8 +229,13 @@ export class Program {
    * This is the main method to start G-code generation based on loaded events and registered handlers.
    */
   public process(): void {
-    this._events.forEach((event) => {
-      event.trigger(); // This will call Program.trigger with event.name and event.data
+    this._events.forEach((event, index) => {
+      const metadata = {
+        index: index,
+        next: this._events[index + 1] ?? null,
+        previous: this._events[index - 1] ?? null,
+      };
+      this.trigger(event.name, event.data, metadata);
     });
   }
 
