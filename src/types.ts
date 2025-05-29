@@ -817,4 +817,6 @@ export type CommandsType = {
   SetFeedRate: number;
   SetHomeNumber: number;
   SelectTool: string;
+  Call: string;
+  ExtCall: string;
 };
