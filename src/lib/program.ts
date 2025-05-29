@@ -1,11 +1,11 @@
 import type { DeepPartial, EventsType } from '$src/types';
-import { Builder } from './builder';
+import { Builder, File } from './builder';
 import type { EventData } from './parser';
 
 /**
  * @description Configuration options for the Program class
  */
-export type ProgramOptions = {
+export interface ProgramOptions {
   /**
    * The name of the program, default is 'Setup'
    */
@@ -27,13 +27,17 @@ export type ProgramOptions = {
      */
     increment: number;
   };
-};
+}
 
-export type EventListenerMetadata = {
+export interface EventListenerMetadata {
   /**
    * The index of the current event in the program
    */
   index: number;
+  /**
+   * The current file in the program
+   */
+  currentFile: () => File;
   /**
    * The next event in the program
    */
@@ -43,7 +47,7 @@ export type EventListenerMetadata = {
    */
   previous: Event<keyof EventsType> | null;
   /**
-   * Find the last event in the program, into the past
+   * Find the last event before the current event that matches the event name
    */
   findLastEvent: <T extends keyof EventsType>(eventName: T) => Event<T> | null;
   /**
@@ -66,7 +70,7 @@ export type EventListenerMetadata = {
     eventName: T,
     n: number,
   ) => Event<T> | null;
-};
+}
 
 /**
  * @type EventListener
@@ -280,6 +284,7 @@ export class Program {
     this._events.forEach((event, index) => {
       const metadata: EventListenerMetadata = {
         index: index,
+        currentFile: () => this._builder.currentFile,
         next: this._events[index + 1] ?? null,
         previous: this._events[index - 1] ?? null,
         findLastEvent: <T extends keyof EventsType>(eventName: T) => {
