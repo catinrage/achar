@@ -7,6 +7,10 @@ import type { EventData } from './parser';
  */
 export type ProgramOptions = {
   /**
+   * The name of the program, default is 'Setup'
+   */
+  programName: string;
+  /**
    * Settings for line numbering in generated G-code
    */
   numbering: {
@@ -85,7 +89,7 @@ export type EventListener<T extends keyof EventsType = keyof EventsType> = (
  * @description Represents a single parsed event from the input.
  * It holds the event name, its associated data, and a reference to the Program instance.
  */
-class Event<Name extends keyof EventsType> {
+export class Event<Name extends keyof EventsType> {
   /**
    * @constructor
    * @param {Program} program - The Program instance this event belongs to.
@@ -121,6 +125,7 @@ export class Program {
    * @description The options for the Program.
    */
   private readonly _options: ProgramOptions = {
+    programName: 'Setup',
     numbering: {
       enabled: true,
       start: 10,
@@ -157,6 +162,7 @@ export class Program {
    */
   constructor(options?: DeepPartial<ProgramOptions>) {
     this._options = {
+      programName: options?.programName ?? this._options.programName,
       numbering: {
         enabled: options?.numbering?.enabled ?? this._options.numbering.enabled,
         start: options?.numbering?.start ?? this._options.numbering.start,
@@ -164,7 +170,12 @@ export class Program {
           options?.numbering?.increment ?? this._options.numbering.increment,
       },
     };
-    this._builder = new Builder(this._options);
+    this._builder = new Builder({
+      mainFileName: this._options.programName
+        ? this._options.programName + '.MPF'
+        : undefined,
+      numbering: this._options.numbering,
+    });
   }
 
   /**
@@ -238,11 +249,15 @@ export class Program {
   ): void {
     const listeners = this._eventListeners[eventName];
     if (listeners) {
-      listeners.forEach((listener) =>
-        // Ensure params matches the listener's expectation; cast if necessary from Partial.
-        // However, internal calls from process() will pass the full EventsType[T].
-        listener(this._builder, params as EventsType[T], metadata),
-      );
+      listeners.forEach((listener, index) => {
+        this._builder.currentEvent = new Event(
+          this,
+          eventName,
+          params as EventsType[T],
+        );
+        this._builder.currentEventListenerIndex = index;
+        listener(this._builder, params, metadata);
+      });
     }
   }
 
@@ -324,8 +339,11 @@ export class Program {
    * after all relevant events have been processed and their listeners have run.
    * @returns {string} The generated G-code program.
    */
-  public generate(): string {
+  public generate(): {
+    file: string;
+    code: string;
+  }[] {
     this._builder.flush();
-    return this._builder.gcode;
+    return this._builder.build();
   }
 }
