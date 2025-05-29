@@ -16,4 +16,11 @@ export enum StateEnum {
 
 export enum PlanEnum {
   XY = 'xy',
+  XZ = 'xz',
+  YZ = 'yz',
+}
+
+export enum FeedRateModeEnum {
+  UNITS_PER_MINUTE = 94,
+  UNITS_PER_REVOLUTION = 95,
 }

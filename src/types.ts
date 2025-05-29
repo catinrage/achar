@@ -819,4 +819,5 @@ export type CommandsType = {
   SelectTool: string;
   Call: string;
   ExtCall: string;
+  SetMachinePlane: PlanEnum;
 };
