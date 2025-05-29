@@ -270,10 +270,13 @@ export class Builder {
    * @description Adds a G-code word or segment (e.g., "G00", "X100", "M03") to the current line being built.
    * Sections should be valid G-code words. Empty strings will be ignored by `flush`.
    * @param {string} section - The G-code segment to add to the current line.
-   * @param {boolean} [flush] - Whether to flush the current line after adding the section.
+   * @param {CommandOptions} [options] - Optional settings for command generation.
    */
-  public put(section: string, flush?: boolean): void {
-    this._currentFile.put(section, flush);
+  public put(section: string, options?: CommandOptions): void {
+    this._currentFile.put(section, options?.forcePrint);
+    if (options?.skipNewLine) {
+      this._currentFile.flush();
+    }
   }
 
   /**
@@ -320,8 +323,8 @@ export class Builder {
    * @description Generates G-code to call a subprogram (SPF).
    * @param {string} name - The name of the subprogram to call.
    */
-  public Call(name: string): void {
-    this.put(`CALL "${name}.SPF"`, true);
+  public Call(params: CommandsType['Call'], options?: CommandOptions): void {
+    this.put(`CALL "${params}"`, options);
   }
 
   /**
@@ -329,8 +332,11 @@ export class Builder {
    * @description Generates G-code to call a subprogram (SPF) from an external source (e.g., a USB drive).
    * @param {string} name - The name of the subprogram to call.
    */
-  public ExtCall(name: string): void {
-    this.put(`EXTCALL "${name}.SPF"`);
+  public ExtCall(
+    params: CommandsType['ExtCall'],
+    options?: CommandOptions,
+  ): void {
+    this.put(`EXTCALL "${params}"`, options);
   }
 
   /**
@@ -344,9 +350,6 @@ export class Builder {
   public Rapid(params: CommandsType['Rapid'], options?: CommandOptions): void {
     this.put(this._machine.setMotionMode(0, options?.forcePrint));
     this.put(this._machine.setPosition(params, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -361,9 +364,6 @@ export class Builder {
   public Line(params: CommandsType['Line'], options?: CommandOptions): void {
     this.put(this._machine.setMotionMode(1, options?.forcePrint));
     this.put(this._machine.setPosition(params, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -377,9 +377,6 @@ export class Builder {
     options?: CommandOptions,
   ): void {
     this.put(this._machine.setSpindleSpeed(speed, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -394,9 +391,6 @@ export class Builder {
     options?: CommandOptions,
   ): void {
     this.put(this._machine.setSpindleDirection(direction, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -411,9 +405,6 @@ export class Builder {
     options?: CommandOptions,
   ): void {
     this.put(this._machine.setFeedRate(feedRate, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -428,9 +419,6 @@ export class Builder {
     options?: CommandOptions,
   ): void {
     this.put(this._machine.selectTool(toolNumber, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -440,9 +428,6 @@ export class Builder {
    */
   public ChangeTool(options?: CommandOptions): void {
     this.put('M6');
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -452,9 +437,6 @@ export class Builder {
    */
   public SetAbsoluteMode(options?: CommandOptions): void {
     this.put(this._machine.setPositioningMode(90, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -464,9 +446,6 @@ export class Builder {
    */
   public SetIncrementalMode(options?: CommandOptions): void {
     this.put(this._machine.setPositioningMode(91, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -476,9 +455,6 @@ export class Builder {
    */
   public UseMillimeters(options?: CommandOptions): void {
     this.put(this._machine.setUnitSystem(21, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 
   /**
@@ -488,8 +464,5 @@ export class Builder {
    */
   public UseInches(options?: CommandOptions): void {
     this.put(this._machine.setUnitSystem(20, options?.forcePrint));
-    if (!options?.skipNewLine) {
-      this._currentFile.flush();
-    }
   }
 }
