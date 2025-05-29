@@ -65,8 +65,8 @@ export class Emitter<T extends string | number> {
   render(
     event: Event<any>,
     eventListenerIndex: number,
-    newValue?: T,
-    forcePrint?: boolean,
+    newValue: T | undefined,
+    forcePrint: boolean | undefined,
   ): string {
     if (newValue === undefined) {
       this._log.push({
