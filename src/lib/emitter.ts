@@ -1,3 +1,5 @@
+import type { Event } from './program';
+
 /**
  * @class Emitter
  * @template T - The type of the value being wrapped, typically string or number.
@@ -7,9 +9,40 @@
  * It also handles prefixing the value (e.g., 'X' for X-coordinate).
  */
 export class Emitter<T extends string | number> {
+  /**
+   * @private
+   * @property _value
+   * @description The current value of the wrapped parameter.
+   */
   private _value: T | null = null;
+
+  /**
+   * @private
+   * @property _prefix
+   * @description The prefix for the wrapped parameter.
+   */
   private _prefix: string;
+
+  /**
+   * @private
+   * @property _transform
+   * @description An optional function to transform the value before rendering.
+   */
   private _transform?: (value: T) => string;
+
+  /**
+   * @private
+   * @property _log
+   * @description The log of events that this value has been used in.
+   */
+  private _log: {
+    event: Event<any>;
+    eventListenerIndex: number;
+    previousValue: T | null;
+    newValue?: T;
+    forcePrint?: boolean;
+    output: string;
+  }[] = [];
 
   /**
    * @constructor
@@ -29,14 +62,45 @@ export class Emitter<T extends string | number> {
    * @param {boolean} [forcePrint] - If true, prints the value even if it hasn't changed.
    * @returns {string} The G-code string segment (e.g., "X100.0") or an empty string if the value hasn't changed or is undefined.
    */
-  render(newValue?: T, forcePrint?: boolean): string {
+  render(
+    event: Event<any>,
+    eventListenerIndex: number,
+    newValue?: T,
+    forcePrint?: boolean,
+  ): string {
     if (newValue === undefined) {
+      this._log.push({
+        event,
+        eventListenerIndex,
+        previousValue: this._value,
+        newValue,
+        forcePrint,
+        output: '',
+      });
       return '';
     }
 
     if (!forcePrint && this._value === newValue) {
+      this._log.push({
+        event,
+        eventListenerIndex,
+        previousValue: this._value,
+        newValue,
+        forcePrint,
+        output: '',
+      });
       return '';
     }
+    this._log.push({
+      event,
+      eventListenerIndex,
+      previousValue: this._value,
+      newValue,
+      forcePrint,
+      output: `${this._prefix}${
+        this._transform ? this._transform(newValue) : newValue
+      }`,
+    });
     this._value = newValue;
     return `${this._prefix}${
       this._transform ? this._transform(newValue) : newValue
