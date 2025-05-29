@@ -321,7 +321,7 @@ export class Builder {
    * @param {string} name - The name of the subprogram to call.
    */
   public Call(name: string): void {
-    this._currentFile.put(`CALL "${name}.SPF"`, true);
+    this.put(`CALL "${name}.SPF"`, true);
   }
 
   /**
@@ -330,7 +330,7 @@ export class Builder {
    * @param {string} name - The name of the subprogram to call.
    */
   public ExtCall(name: string): void {
-    this._currentFile.put(`EXTCALL "${name}.SPF"`);
+    this.put(`EXTCALL "${name}.SPF"`);
   }
 
   /**
@@ -342,10 +342,8 @@ export class Builder {
    * @example 'G0 X100 Y50 Z10'
    */
   public Rapid(params: CommandsType['Rapid'], options?: CommandOptions): void {
-    this._currentFile.put(this._machine.setMotionMode(0, options?.forcePrint));
-    this._currentFile.put(
-      this._machine.setPosition(params, options?.forcePrint),
-    );
+    this.put(this._machine.setMotionMode(0, options?.forcePrint));
+    this.put(this._machine.setPosition(params, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
@@ -361,10 +359,8 @@ export class Builder {
    * @example 'G1 X100 Y50 Z10'
    */
   public Line(params: CommandsType['Line'], options?: CommandOptions): void {
-    this._currentFile.put(this._machine.setMotionMode(1, options?.forcePrint));
-    this._currentFile.put(
-      this._machine.setPosition(params, options?.forcePrint),
-    );
+    this.put(this._machine.setMotionMode(1, options?.forcePrint));
+    this.put(this._machine.setPosition(params, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
@@ -380,9 +376,7 @@ export class Builder {
     speed: CommandsType['SetSpindleSpeed'],
     options?: CommandOptions,
   ): void {
-    this._currentFile.put(
-      this._machine.setSpindleSpeed(speed, options?.forcePrint),
-    );
+    this.put(this._machine.setSpindleSpeed(speed, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
@@ -399,9 +393,7 @@ export class Builder {
     direction: CommandsType['SetSpindleDirection'],
     options?: CommandOptions,
   ): void {
-    this._currentFile.put(
-      this._machine.setSpindleDirection(direction, options?.forcePrint),
-    );
+    this.put(this._machine.setSpindleDirection(direction, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
@@ -418,9 +410,7 @@ export class Builder {
     feedRate: CommandsType['SetFeedRate'],
     options?: CommandOptions,
   ): void {
-    this._currentFile.put(
-      this._machine.setFeedRate(feedRate, options?.forcePrint),
-    );
+    this.put(this._machine.setFeedRate(feedRate, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
@@ -437,16 +427,67 @@ export class Builder {
     toolNumber: CommandsType['SelectTool'],
     options?: CommandOptions,
   ): void {
-    this._currentFile.put(
-      this._machine.selectTool(toolNumber, options?.forcePrint),
-    );
+    this.put(this._machine.selectTool(toolNumber, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
   }
 
+  /**
+   * @method ChangeTool
+   * @description Generates G-code to change the tool (M6).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
+   */
   public ChangeTool(options?: CommandOptions): void {
-    this._currentFile.put('M6');
+    this.put('M6');
+    if (!options?.skipNewLine) {
+      this._currentFile.flush();
+    }
+  }
+
+  /**
+   * @method SetAbsoluteMode
+   * @description Generates G-code to set the machine to absolute mode (G90).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
+   */
+  public SetAbsoluteMode(options?: CommandOptions): void {
+    this.put(this._machine.setPositioningMode(90, options?.forcePrint));
+    if (!options?.skipNewLine) {
+      this._currentFile.flush();
+    }
+  }
+
+  /**
+   * @method SetIncrementalMode
+   * @description Generates G-code to set the machine to incremental mode (G91).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
+   */
+  public SetIncrementalMode(options?: CommandOptions): void {
+    this.put(this._machine.setPositioningMode(91, options?.forcePrint));
+    if (!options?.skipNewLine) {
+      this._currentFile.flush();
+    }
+  }
+
+  /**
+   * @method UseMillimeters
+   * @description Generates G-code to set the machine to use millimeters (G21).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
+   */
+  public UseMillimeters(options?: CommandOptions): void {
+    this.put(this._machine.setUnitSystem(21, options?.forcePrint));
+    if (!options?.skipNewLine) {
+      this._currentFile.flush();
+    }
+  }
+
+  /**
+   * @method UseInches
+   * @description Generates G-code to set the machine to use inches (G20).
+   * @param {CommandOptions} [options] - Optional settings for command generation.
+   */
+  public UseInches(options?: CommandOptions): void {
+    this.put(this._machine.setUnitSystem(20, options?.forcePrint));
     if (!options?.skipNewLine) {
       this._currentFile.flush();
     }
