@@ -1,4 +1,5 @@
 import { DirectionEnum } from '$src/common/enums';
+import type { Builder } from './builder';
 import { Emitter } from './emitter';
 
 /**
@@ -83,6 +84,8 @@ export class Machine {
    */
   private _tool: Emitter<string> = new Emitter('T', (value) => `="${value}"`);
 
+  constructor(private _builder: Builder) {}
+
   /**
    * @method setPosition
    * @description Updates the machine's target position and returns the G-code string for the movement.
@@ -103,12 +106,48 @@ export class Machine {
     forcePrint?: boolean,
   ) {
     let output = '';
-    output += this.position.x.render(value.x, forcePrint) + ' ';
-    output += this.position.y.render(value.y, forcePrint) + ' ';
-    output += this.position.z.render(value.z, forcePrint) + ' ';
-    output += this.position.a.render(value.a, forcePrint) + ' ';
-    output += this.position.b.render(value.b, forcePrint) + ' ';
-    output += this.position.c.render(value.c, forcePrint) + ' ';
+    output +=
+      this.position.x.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.x,
+        forcePrint,
+      ) + ' ';
+    output +=
+      this.position.y.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.y,
+        forcePrint,
+      ) + ' ';
+    output +=
+      this.position.z.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.z,
+        forcePrint,
+      ) + ' ';
+    output +=
+      this.position.a.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.a,
+        forcePrint,
+      ) + ' ';
+    output +=
+      this.position.b.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.b,
+        forcePrint,
+      ) + ' ';
+    output +=
+      this.position.c.render(
+        this._builder.currentEvent!,
+        this._builder.currentEventListenerIndex,
+        value.c,
+        forcePrint,
+      ) + ' ';
     output = output.replace(/\s+/g, ' ');
     return output.trim();
   }
@@ -130,7 +169,12 @@ export class Machine {
    */
   public setMotionMode(value: 0 | 1, forcePrint?: boolean) {
     let output = '';
-    output += this.motionMode.render(value, forcePrint);
+    output += this.motionMode.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
+      value,
+      forcePrint,
+    );
     return output.trim();
   }
   /**
@@ -151,7 +195,12 @@ export class Machine {
    */
   public setHomeNumber(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._homeNumber.render(value, forcePrint);
+    output += this._homeNumber.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
+      value,
+      forcePrint,
+    );
     return output.trim();
   }
   /**
@@ -172,7 +221,12 @@ export class Machine {
    */
   public setFeedRate(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._feedRate.render(value, forcePrint);
+    output += this._feedRate.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
+      value,
+      forcePrint,
+    );
     return output.trim();
   }
   /**
@@ -193,7 +247,12 @@ export class Machine {
    */
   public setSpindleSpeed(value: number, forcePrint?: boolean) {
     let output = '';
-    output += this._spindleSpeed.render(value, forcePrint);
+    output += this._spindleSpeed.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
+      value,
+      forcePrint,
+    );
     return output.trim();
   }
   /**
@@ -215,6 +274,8 @@ export class Machine {
   public setSpindleDirection(value: DirectionEnum, forcePrint?: boolean) {
     let output = '';
     output += this._spindleDirection.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
       value === DirectionEnum.CW ? 3 : 4,
       forcePrint,
     );
@@ -238,7 +299,21 @@ export class Machine {
    */
   public selectTool(value: string, forcePrint?: boolean) {
     let output = '';
-    output += this._tool.render(value, forcePrint);
+    output += this._tool.render(
+      this._builder.currentEvent!,
+      this._builder.currentEventListenerIndex,
+      value,
+      forcePrint,
+    );
     return output.trim();
+  }
+
+  /**
+   * @property tool
+   * @description Gets the current tool wrapper.
+   * @readonly
+   */
+  public get tool() {
+    return this._tool;
   }
 }
