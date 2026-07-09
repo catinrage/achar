@@ -1,0 +1,9 @@
+{
+  "name": "siemens-828d-434-cam-2-milling",
+  "trace": "Setup1.MPF",
+  "reference": "reference",
+  "programName": "Setup1",
+  "post": "siemens-828d",
+  "out": "../../generated/siemens-828d-434-cam-2-milling",
+  "vmid": "Siemens_828D_Milling_4A.vmid"
+}

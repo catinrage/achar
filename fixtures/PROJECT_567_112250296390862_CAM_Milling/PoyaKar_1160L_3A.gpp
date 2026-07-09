@@ -1,0 +1,2228 @@
+; General Post Processor
+; Machine           : Haas
+; Type              : 3-axis Vertical
+; SubRoutines       : No
+; Comp Type         : Wear
+; Customer          : n/a
+;
+; Rev 0.1 :01.02.2009 Anthony : Created new General Post Processor for HAAS-3x
+; Rev 0.2 :02.20.2009 Anthony : Release for Zac to start using
+; Rev 0.3 :03.05.2009 Anthony : Fixed Feed not outputing for NonSyncRapidMoves between tool changes
+; Rev 0.4 :09.18.2009 Anthony : Updated to SC2009 New Tool Coolant options
+; Rev 0.41:10.06.2009 Anthony : Corrected Skipline problem when not using coolant (zpos after tool change)
+; Rev 0.5 :10.28.2009 Anthony : Updated to SC2009 (New Modality)
+; Rev 0.6 :11.03.2009 Anthony : Converted gMilling to add support Okuma
+;                               Added parameters for drill cycles (G71, G84 with G95/G94)
+;                               Added parameter for Height Comp (Okuma G54 = Fanuc G43)
+; Rev 0.61:03.10.2010 Anthony : Added fix for cWo changebit problem, also tightened the arc_max_angle in MAC
+; Rev 0.69:03.25.2010 Anthony : Added ~11 gMilling UserOptions from Russ and Anthony
+; Rev 0.70:03.29.2010 Anthony : Releasing gMilling Rev 0.70
+; Rev 0.71:04.29.2010 Anthony : Added iWorkoffsetmode = 0 to disable Work Offset output
+;                               Fixed possible bug with 3D Drilling, Z clearance move was being output between drill cycels without G80
+; --- Change Log ---
+;
+; Rev 1.00:11.09.2021 0utlandish : Tool preselection turned off (umbrella toolchanger doesn't support)
+; CFIN Added next to SOFT Command
+;
+; --- Things to do ---
+;
+; 1. Comment out parentheses to avoid error in siemens controller
+
+@initiate
+  global numeric GPX_XHOME GPX_YHOME GPX_ZHOME GPX_XHOMEND GPX_YHOMEND
+  {nl}
+  {nb, 'DEF REAL _camtolerance'}
+  {nb, 'DEF REAL _X_HOME, _Y_HOME, _Z_HOME'}
+  {nb, 'DEF REAL ToolWearBuffer'}
+  {nb, 'DEF BOOL WearChanged'}
+  {nb, ';'}
+  {nb, '_X_HOME='GPX_XHOME:xpos_f' _Y_HOME='GPX_YHOME:ypos_f' _Z_HOME='GPX_ZHOME:zpos_f}
+  {nb, 'WearChanged = FALSE'}
+  {nb, ';'}
+endp
+
+@inch_system
+  if inch_system == 0
+    {nb, 'G710'}
+  else
+    {nb, 'G700'}
+  endif
+endp
+
+@init_post
+
+  global string sUS_date sUS_time sUsrmsg sHomestr sHomestrbegin sHomestrtc sHomestrend sHomestrstpdiff sHomestrstpsame sHomeline
+  global string sCamfilepath sSubspath cWo cPb cPe cG84 cG84p cCycs cHomep cTCcodep cTCcodes fG84spin cDr cCb cCe cDrZp cDrZs sPartname
+  global string cDrCys cDrPts cG84endl cPn cHoffset
+  global string sProgramType sOperationType sLastPreselect
+  global string z_feed_f sPrevTool sWBCM_MSG_
+  global integer igSpin iPrevTool iWBCM_
+  global logical bTitlePrinted GPX_G80 bCpmFlag b832ASK bDelay bPreselected bIgnorePreselect bToolSetting
+  global logical bStartFile bTlchg bSkipxyrapid bWorkoffsettc
+  global logical bSubs bTlseperation bTcseperation bDateTimeOutput bStopM00difftool bToolChangeAtEnd
+  global logical bFromendprogram bFrombeginchangetool bFromendchangetool bFromendoffile bMultiplefixtures
+  global logical bSafetyprep bSyncdrapid bFeedoutput bNnumtc
+  global logical bOptstpbegin bOptstptc bOptstpend bUseprognum bUseprogname bCoolspinaftertc bCoolAfterHeightComp
+  global logical bCoolExist bCoolofftc bSpinofftc bCooloffend bSpinoffend bG84spin bTest bHeightComp bHeightCompOffset
+  global logical bHeightCompZsameLine bTCSplit bSpinOnlyUseS bDiameterCompOutputD bCompTypeOutput bPostRevOutput bUseFileName
+  global logical bOutputToolList bOutputToolMessage bOutputUserMessages bSimpleformat
+
+  global integer iMplane iAbsincmode iWorkoffset iHeightcomp iStopmode iMotionmode C85_RFFF
+  global integer iDiametercomp iDrillmode iTcnumber iNumpecks iPworkoffset iSpindleDir
+  global integer iSlength_g_file_name iSlength_full_g_file_name iSlengthcampartpath iDiameteroffset iArcmode iG84feed
+  global integer iHomingmode iWorkOffsetmode iProgendmode iG187_P_gpp iSplit_ProgName_Num iNumSeparationLines iOperationMessage
+  global integer iCoolantM1 iCoolantM2 iCoolantM3 iCoolantM4 iCoolantM5 iCoolantM6 iCoolantM7 iCoolantM8
+  global integer iCoolantM1ON iCoolantM2ON iCoolantM3ON iCoolantM4ON iCoolantM5ON iCoolantM6ON iCoolantM7ON iCoolantM8ON
+  global integer iCoolantM1OFF iCoolantM2OFF iCoolantM3OFF iCoolantM4OFF iCoolantM5OFF iCoolantM6OFF iCoolantM7OFF iCoolantM8OFF
+  global numeric nTcXnext nTcYnext nTcZnext nTcCnext nCorrectedpeck nRapidfeed nG187_E_gpp nHeightCompcode nG84feed nDefaultSec
+
+  ; GPX Env Variable
+  global logical GPX_CYCLE832 GPX_XYSUPA GPX_ZSUPA GPX_TODB GPX_FNORM GPX_PESUPA GPX_G500 GPX_SEPARATE_FILES
+  global numeric GPX_ACDE GPX_ACDU GPX_ADIS GPX_ROUGHLIMIT GPX_FINISHLIMIT
+  global integer GPX_CPM GPX_TRACE
+
+  ; Temp
+  ; 400 plc cycle = 1 sec [can be adjusted if not accurate]
+  nDefaultSec = 400
+  ; + iProgendmode
+
+  ; Toggle Tool Setter Activity
+  bToolSetting = false
+
+  ; homes  (default <<54>>)
+  global integer iHomes<<54>>
+  global string sHomeCache
+  ; Non GPPL variables
+  num_user_procs  =    1
+  remove_blanks   = FALSE
+  line_labels     = FALSE     ; Jump to N...
+  clear_change_after_gen = 1
+
+  ; GPPL variables
+  numeric_def_f   = '5.4(p)'
+  integer_def_f   = '5.0(p)'
+  gcode_f         = '1/2.0(p)'
+  mcode_f         = '1/2.0(p)'
+  xpos_f          = '5.5(p)'
+  ypos_f          = '5.5(p)'
+  zpos_f          = '5.5(p)'
+  feed_f          = '4.4(p)'
+  z_feed_f        = '4.4(p)'
+  blknum_f        = '5.0(p)'
+  blknum_gen      = true
+  call @usr_ip_useroptions
+  call @usr_ip_postwriteroptions
+
+  ; Notes
+  ; change : return true if last assignment changed variable's value
+  ; active : return true if the variable can be used in the current procedure or when the variable is assigned a value.
+
+endp
+
+@usr_ip_useroptions
+  ; Handle setting of options -- For end users & post writers
+
+  ;--------- Tool Change ---------
+  ; bToolPreselect        = true      ;0.70: True = Next tool is Preselected after tool change
+  bTCSplit              = false      ;0.70: True = Outputs M06 and T1 on separate lines (set 'M06' in cTCcodes, not cTCcodep)
+  ;                     == warn ==
+  cTCcodep              = 'M6'     ;0.70: Sets the Prefix Code(s) used for Tool Change (i.e. 'M06')
+  cTCcodes              = ''         ;0.70: Sets the Suffix Code(s) used for Tool Change (i.e. 'M06')
+  bHeightComp           = false       ;0.70: True = Outputs Height Compensation (i.e. G43)
+  bHeightCompOffset     = false       ;0.70: True = Outputs Height Offset (i.e. H1)
+  nHeightCompcode       = 43         ;0.70: Sets the code for activating Hieght Compensation (i.e. 43,56)
+  cHoffset              = 'H'        ;0.70: Sets the Character(s) for Height Offset (i.e. H)
+  bHeightCompZsameLine  = true       ;0.70: True = Z outputs on same line with Height Compensation (i.e. G43 H1 Z1.0)
+  bToolChangeAtEnd      = false       ;0.70: True = Tool Change for First Tool at end of program
+  bOutputToolMessage    = false       ;0.70: True = Outputs Tool Message at Tool Change
+
+  ;--------- Program Header & End ---------
+  bUseprognum           = false       ;0.70: True = Outputs Program Number
+  bUseprogname          = false       ;0.70: True = Outputs Program Name
+  iSplit_ProgName_Num   = 2          ;0.70: Sets if Program Name and Number are on separate lines (0=No, 1=Name->Number, 2=Number->Name)
+  bUseFileName          = false      ;0.70: True = Outputs Gcode file name at beginning of file
+  cPn                   = '; O'        ;0.70: Sets the Character(s) before program number (i.e. 'O', ':', or nothing)
+  iProgendmode          = 2          ;0.70: Sets the code for ending a program (1=M30,2=M2)
+  cPb                   = '%'        ;0.70: Sets the Character(s) used for the beginning of file (i.e %)
+  cPe                   = ''         ;0.70: Sets the Character(s) used for the beginning of file (i.e %)
+  bCompTypeOutput       = true       ;0.70: True = Outputs the Cutter Compensation type as a message (i.e. (COMPENSATION-WEAR) )
+  bPostRevOutput        = false       ;0.70: True = Outputs the Post Revision as a message (i.e. (REV-0.61) )
+  bDateTimeOutput       = true       ;0.70: True = Outputs Date & Time
+  cCb                   = '; '        ;0.70: Sets the begginning Character(s) for comments
+  cCe                   = ' '        ;0.70: Sets the ending Character(s) for comments
+  bOutputToolList       = true       ;0.70: True = Outputs Tool List at the beginning of program
+  GPX_ROUGHLIMIT           = 0.1
+  GPX_FINISHLIMIT          = 0.015
+
+  ;--------- Motion (Lines, Arc, etc) ---------
+  bSyncdrapid           = false      ;0.70: True = Machine Sync's Rapid Motion (Non-Box Move)
+  nRapidfeed            = 650.       ;0.70: Set your value for Max Feed in G1 (Used with Non-Sync'd Rapid Moves)
+  iArcmode              = 2          ;0.70: Sets Arc Output Mode (1=AbsIJK, 2=IncIJK, 3=R 360AbsIJK, 4=R 360IncIJK)
+  GPX_CPM               = 645        ;Continuous-path mode [0(off), 64, 641-5]
+  b832ASK               = 1          ;Input for CYCLE832
+
+  ;--------- Work Offset ---------
+  cWo                   = 'G'        ;0.70: Sets the Character(s) used for Work Offset (i.e. G, E, G54.1 P)
+  iWorkOffsetmode       = 2          ;0.70: Sets the Mode used for Work Offset (0=OFF, 1=G54, 2=E1, 3=G54.1 P1)
+  bWorkoffsettc         = true       ;0.70: True = Forces output of Work Offset at each Tool Change
+
+  ;--------- Drilling ---------
+  cDr                   = 'G98 '     ;0.70: Sets the Character(s) used at the begging of a drill cycle (i.e. G98,G98,or nothing '')
+  cG84                  = 'G84'      ;0.70: Sets the Drill Cycle Character(s) used tapping (i.e. G84, G84.1)
+  cG84p                 = ''         ;0.70: Sets the Preperation Line used for G84 Tapping (i.e. G84.2)**FADAL setting
+  bG84spin              = false      ;0.70: True = RPM is output during G84 Tapping Cycles
+  fG84spin              = '5.1'      ;0.70: Sets Formatting for RPM used for G84 Tapping Cycles ('5.1' = Decimal point 1 place)
+  iG84feed              = 1          ;0.70: Sets the Mode for Feed when for G84 Tapping (1=Feed rate 2=Pitch)
+  cG84endl              = ''         ;0.70: Sets the Line after G80 for G84 Tapping (i.e. G94, or nothing)
+  cCycs                 = 'L0 '      ;0.70: Sets the Suppression Code to ignore Drill Cycles (i.e. L0)
+  cDrZp                 = ''         ;0.70: Sets the Prefix Code(s) used to set retract position for drilling (i.e. G71, or nothing)
+  cDrZs                 = ''         ;0.70: Sets the Suffix Code(s) used to set retract position for drilling (i.e. G71, or nothing)
+  cDrCys                = ''         ;0.70: Sets the Suffix Code(s) used on Drill Cycle line (i.e. M53, or nothing)
+  cDrPts                = ''         ;0.70: Sets the Suffix Code(s) used on Drill Point line (i.e. M53, or nothing)
+  GPX_G80                  = false       ; Deselection
+
+  ;--------- Coolant and Spindle ---------
+  bCoolExist            = true       ;0.70: True = Outputs Coolant codes (Coolant,Air,Mist,etc)
+  bCoolofftc            = false       ;0.70: True = Outputs Coolant off between Tool Changes
+  bSpinofftc            = false       ;0.70: True = Outputs Spindle off between Tool Changes
+  bCooloffend           = true       ;0.70: True = Outputs Coolant off at end of program
+  bSpinoffend           = true       ;0.70: True = Outputs Spindle off at end of program
+  bCoolspinaftertc      = false      ;0.70: True = Outputs Coolant&Spindle directly after Tool Change
+  bCoolAfterHeightComp  = false      ;0.70: True = Outputs Coolant on a separate line, after G43 H1 Z1.0.
+  iCoolantM1ON          = 8          ;0.70: Code: Flood Coolant ON
+  iCoolantM1OFF         = 9          ;0.70: Code: Flood Coolant OFF
+  iCoolantM2ON          = 8          ;0.70: Code: Mist Coolant ON
+  iCoolantM2OFF         = 9          ;0.70: Code: Mist Coolant OFF
+  iCoolantM3ON          = 8          ;0.70: Code: High Pressure Flood Coolant ON
+  iCoolantM3OFF         = 9          ;0.70: Code: High Pressure Flood Coolant OFF
+  iCoolantM4ON          = 8          ;0.70: Code: Low Pressure Flood Coolant ON
+  iCoolantM4OFF         = 9          ;0.70: Code: Low Pressure Flood Coolant OFF
+  iCoolantM5ON          = 88         ;0.70: Code: High Pressure Coolant Through Tool ON
+  iCoolantM5OFF         = 89         ;0.70: Code: High Pressure Coolant Through Tool OFF
+  iCoolantM6ON          = 8          ;0.70: Code: Low Pressure Coolant Through Tool ON
+  iCoolantM6OFF         = 9          ;0.70: Code: Low Pressure Coolant Through Tool OFF
+  iCoolantM7ON          = 7         ;0.70: Code: Air Blast ON
+  iCoolantM7OFF         = 9         ;0.70: Code: Air Blast OFF
+  iCoolantM8ON          = 8          ;0.70: Code: Minimum Quantity Lubrication ON
+  iCoolantM8OFF         = 9          ;0.70: Code: Minimum Quantity Lubrication OFF
+  bSpinOnlyUseS         = false      ;0.70: True = Disables outputting M3/M4, only used S (ie. "S1000" instead of "S1000 M3")
+
+  ;--------- Block/Line Numbering ---------
+  bNnumtc               = false       ;0.70: True = Outputs N Numbers at Tool Changes (i.e. N1,N2,N3)
+  blknum_exist          = true       ;0.70: True = Outputs Line Numbers
+  blknum                = 10        ;0.70: Sets Starting Line Number
+  blknum_delta          = 10          ;0.70: Sets the delta for Line Numbers
+  blknum_max            = 320000000    ;0.70: Sets the maximum value for Line Numbers
+
+  ;--------- Cutter Compensation ---------
+  bDiameterCompOutputD  = false       ;0.70: True = Outputs D number when turning on Cutter Compensation (i.e. G41 D1)
+
+  ;--------- Optional Stops (M01) ---------
+  bOptstpbegin          = false      ;0.70: True = Outputs Optional Stop at beginning of program
+  bOptstptc             = true       ;0.70: True = Outputs Optional Stop between Tool Changes
+  bOptstpend            = false      ;0.70: True = Outputs Optional Stop at end of program
+
+  ;--------- Gcode Separation (Visual setting) ---------
+  bTlseperation         = true       ;0.70: True = Seperates Tool List by blank line(s)
+  bTcseperation         = true       ;0.70: True = Seperates Tool List by blank line(s)
+  iNumSeparationLines   = 2          ;0.70: Sets the amount of Blank lines when using Tool List Separation
+
+  ;--------- Misc. Options ---------
+  iOperationMessage     = 1          ;0.70: Controls output of Operation messge (0=off, 1=long style, 2=short style)
+  bOutputUserMessages   = true       ;0.70: true = outputs user messages (message field found in Operation - Misc parameters tab)
+  bSimpleformat         = false      ;0.70: true = Simple G/M code format for special controllers (WinCNC, Millpwr, etc)
+
+  ;---------          Homing & Zero Returning axis             ---------
+  ;--------- Instructions and explaination of definition below ---------
+
+  ;  Format: [x][integer:][Prepstr :][AxisStr1 ;][AxisStrN]
+  ;  x       = Putting 'x' as the first character means "Homing Mode" must be set for each line (i.e. 'x2:G0 :Z0 ;3:G0 :X-15.0 ' )
+  ;  integer = Homing Output Mode (1=G28, 2=G28 G91, 3=G53 Non-Modal, 4=G53 Modal, 5=G30, 6=G30 G91, 7= any string)
+  ;  PrepStr = Sets the code(s) for the begging of line used for Homing Axis (i.e. 'G0')
+  ;  AxisStr = Homing Axis Definition (i.e. 'Z0.0', 'H0.0 W0.')
+  ;  Note: You can define up to 49 "Homing Lines" seperated by ";"
+  ;  Note: Only use ";" if using more then 1 "Homing Line"
+  ;  Note: Define string as empty '' to ignore Specific Homing Definition
+  sHomestrbegin         = ''                           ; Program Begin Homing Definition
+  sHomestrtc            = ''                           ; Tool Change Homing Definition
+  sHomestrend           = '2:G0 :Z0 ;X-15.0 Y0. '     ; Program End Homing Definition
+  sHomestrstpsame       = '2:G0 :Z0 '                 ; M00 Same Tool Homing Definition
+  sHomestrstpdiff       = '2:G0 :Z0 '                 ; M00 Different Tool Homing Definition
+
+  bTitlePrinted = false
+  ; GPX Data Here
+  GPX_SEPARATE_FILES = true
+  GPX_CYCLE832 = true
+  GPX_TODB = false
+  GPX_FNORM = false
+  GPX_G500 = false
+  GPX_G80 = false
+  GPX_XYSUPA =true
+  GPX_ZSUPA = true
+  GPX_PESUPA = true
+  GPX_TRACE = 0
+  GPX_XHOME = -465
+  GPX_XHOMEND = 260
+  GPX_YHOME = 190
+  GPX_YHOMEND = 190
+  GPX_ZHOME = 0
+  GPX_ROUGHLIMIT = 0.1
+  GPX_FINISHLIMIT = 0.05
+  GPX_ACDE = 8
+  GPX_ACDU = 0.5
+  GPX_ADIS = 0.05
+
+
+endp
+
+@change_ref_point
+  if ref_point_init eq false
+    {nb, 'TRANS X'xhome' Y'yhome' Z'zhome}
+    loop_matr_info_ncol = loop_matr_info_ncol - 1
+  else
+    {nb, 'TRANS'}
+    ;{nb, 'XXX: 'loop_matr_info_ncol}
+    ;{nb, next_tool_id_string ' => ' tool_id_string}
+    if (iWBCM eq 2 or iWBCM eq 3) and (loop_matr_info_ncol eq 1)
+      {nb,'R101=GETT("'tool_name'")'}
+      {nb,'R100=$TC_DP3[R101,1]'}
+      {nb,'MSG("'sWBCM_MSG_'")'}
+      {nb,'M9 '}
+      {nb,'M5 '}
+      {nb,'M1 '}
+      {nb,"IF (R100<>$TC_DP3[R101,1]) "}
+      {nb,"  GOTOB LTC"}
+      {nb,"ENDIF"}
+    endif
+  endif
+endp
+
+@usr_ip_postwriteroptions
+  ; Handle setting of options -- For Post Writers
+  bSubs = false          ;True = Using sub routines, False = Not using sub routines
+  ; ------ Tracing functions -----
+  trace "all":GPX_TRACE                                                         ; Mode 1 (standard)d)
+  ; trace "@rapid_move, @move_4x, @move_5x":5                             ; Mode 3
+  ; trace "@line, @arc, @line_4X, @line_5x, @compensation":5              ; Mode 4
+  ; trace "@drill, @drill_point, @drill4x_pnt, @end_drill":5              ; Mode 5
+  ; trace "@tool_path_info":5                                             ; Mode 6
+  ; trace "@start_of_job, @end_of_job, @tmatrix":5                        ; Mode 7
+  ; trace "@change_tool, @turn_change_tool, @def_tool, @def_turn_tool":5  ; Mode 8
+  ; trace "@feed_spin, @m_feed_spin":5                                    ; Mode 9
+  ; trace "@rotate, @rotary_info":5                                       ; Mode 10
+endp
+
+;-------------------
+
+@start_of_file
+  sProgramType = 'MPF'
+  ; store part name in a global variable for future usage
+  sPartname = part_name
+  ; Handle what is output at the start of the file
+  ; This is the first procedure called (lie...@init_post is actually first)
+  if iNumber_of_Fixtures > 1
+    bMultiplefixtures = true
+    blknum_exist    = false
+  endif
+  call @usr_campart_path
+  call @usr_init_gmstates
+  call @usr_sof_character
+  call @usr_sof_progname
+  call @usr_sof_commentsbeforecodes
+  call @usr_sof_gmcodes
+  ; call @usr_sof_commentsaftercodes
+  bStartFile = true
+endp
+
+@usr_sof_character
+  ; Handle start of file character
+  ; {,cPb'_N_'sPartname'_'sProgramType}
+endp
+
+@usr_sof_progname
+  ; Handle Program Number and/or Name
+  if iSplit_ProgName_Num and bUseprognum and bUseprogname
+    if iSplit_ProgName_Num == 1
+      {nb, cCb, part_name,cCe}
+      {nb, cPn, program_number}
+    else
+      {nb, cPn, program_number}
+      {nb, cCb, part_name,cCe}
+    endif
+  else
+    if bUseprognum
+      {nb, cPn,program_number}
+      if bUseprogname
+        {' 'cCb, part_name,cCe}
+      endif
+    else
+      if bUseprogname
+        {nb, cCb, part_name,cCe}
+      endif
+    endif
+  endif
+  if bUseFileName
+    {nb, cCb, g_file_name,cCe}
+  endif
+
+endp
+
+@usr_sof_commentsbeforecodes
+  ; Handle HardCoded or PartControlled comments  (Before G/M codes)
+  if bCompTypeOutput
+    {nb,cCb'COMPENSATION-WEAR'cCe}
+  endif
+  if bPostRevOutput
+    {nb,cCb'REV-0.70'cCe}
+  endif
+  call @usr_US_date
+  call @usr_US_time
+  {nb,cCb'Author \t\t: ',user_account,cCe}
+  if bDateTimeOutput
+    {nb,cCb,'Date \t\t: 'sUS_date'-'sUS_time,cCe}
+  endif
+  ; Handle printing information about CAM project
+  local string sL_PartModelNameReversed sL_PartFullNameReversed sL_PartName sL_CAMProjectName;
+  local integer iL_SlashPosition;
+  sL_PartModelNameReversed = rev(part_model_name)
+  sL_PartFullNameReversed = rev(part_full_name)
+  iL_SlashPosition = instr(sL_PartModelNameReversed, '\\')
+  sL_PartName = right(part_model_name, iL_SlashPosition-1);
+  {nb,cCb'Part Name \t: ',sL_PartName,cCe}
+  iL_SlashPosition = instr(sL_PartFullNameReversed, '\\')
+  sL_CAMProjectName = right(part_full_name, iL_SlashPosition-1);
+  {nb,cCb'CAM Project Name  : ',sL_CAMProjectName,cCe}
+endp
+
+@usr_sof_gmcodes
+  ; Handle HardCoded or PartControlled G/M codes
+endp
+
+@usr_sof_commentsaftercodes
+  ; Handle HardCoded or UserDefined comments (After G/M codes)
+  if bTlseperation and bOutputToolList
+    local integer i ii
+    i = 0
+    if iNumSeparationLines == 0
+      ii = 1
+    else
+      ii = iNumSeparationLines
+    endif
+    while i < ii
+      {nl}
+      i = i + 1
+    endw
+  endif
+endp
+
+@usr_US_date
+  ; Converts Europe Date format to US format
+  Local Integer iInt1
+  iInt1 = instr(date,'-')
+  sUS_date = substr(date,(iInt1+1),3) + '-' + substr(date,1,(iInt1-1)) + '-' + right(date,4)
+endp
+
+@usr_US_time
+  ; Converts Military time to 12hr format
+  Local Integer iInt1 iHr_Mil_int iHour
+  Local String iHr_Mil iTm_of_day
+  iInt1 = instr(time,':')
+  iHr_Mil = left(time,(iInt1-1))
+  iHr_Mil_int = tonum(iHr_Mil)
+  if iHr_Mil_int < 12
+    if iHr_Mil_int < 1
+      iHour = 12
+    else
+      iHour = iHr_Mil_int
+    endif
+    iTm_of_day = 'AM'
+  else
+    if iHr_Mil_int < 13
+      iHour = 12
+    else
+      iHour = iHr_Mil_int - 12
+    endif
+    iTm_of_day = 'PM'
+  endif
+  sUS_time = tostr(iHour:'5.0(p)') + substr(time,iInt1,8) + iTm_of_day
+endp
+
+@usr_init_gmstates
+  ; Handle initializing G/M codes for correct modality from beginning of file
+  iMplane         = 9999
+  iAbsincmode     = 9999
+  iWorkoffset     = 9999
+  iHeightcomp     = 9999
+  iMotionmode     = 9999
+  iDiametercomp   = 9999
+  iDiameteroffset = 9999
+  iDrillmode      = 9999
+  iTcnumber       = 1
+  iCoolantM1      = iCoolantM1OFF
+  iCoolantM2      = iCoolantM2OFF
+  iCoolantM3      = iCoolantM3OFF
+  iCoolantM4      = iCoolantM4OFF
+  iCoolantM5      = iCoolantM5OFF
+  iCoolantM6      = iCoolantM6OFF
+  iCoolantM7      = iCoolantM7OFF
+  iCoolantM8      = iCoolantM8OFF
+  iG187_P_gpp     = 2
+  nG187_E_gpp     = 0
+endp
+
+;-------------------
+
+@def_tool
+  ; Handle Tool List Output at top of program
+  ; Use bTlchg to use different message for tool_change
+  if !bTitlePrinted
+    bTitlePrinted = true
+    {nl}
+    {nb, '; Tools Used In This Program : '}
+  endif
+  if bOutputToolList
+    if tool_message == '' then
+      {nb, cCb'TOOL 'tool_number, ' - DIA '(tool_offset*2),cCe }
+    else
+      {nb,cCb'T'tool_number,'-' tool_message,cCe}
+      if msg_mill_tool1 ne ''
+        {nb,cCb'---' msg_mill_tool1,cCe}
+      endif
+      if msg_mill_tool2 ne ''
+        {nb,cCb'---' msg_mill_tool2,cCe}
+      endif
+      if msg_mill_tool3 ne ''
+        {nb,cCb'---' msg_mill_tool3,cCe}
+      endif
+      if msg_mill_tool4 ne ''
+        {nb,cCb'---' msg_mill_tool4,cCe}
+      endif
+      if msg_mill_tool5 ne ''
+        {nb,cCb'---' msg_mill_tool5,cCe}
+      endif
+    endif
+  endif
+  if next_command ne '@def_tool' and bTlchg eq false
+    if bTlseperation and bOutputToolList
+      local integer i ii
+      i = 0
+      if iNumSeparationLines == 0
+        ii = 1
+      else
+        ii = iNumSeparationLines
+      endif
+      while i < ii
+        ; {nl}
+        i = i + 1
+      endw
+    endif
+    if bOptstpbegin
+      call @usr_optionalstop
+    endif
+    if bNnumtc
+      {nl,'N'iTcnumber' '}
+    else
+      ; {nb}
+    endif
+
+  endif
+endp
+
+;-------------------
+
+@settings
+  ; define if system is using metric or inch
+  call @inch_system
+  {' G94 '}
+  if !bSimpleformat
+    call @usr_abs_inc_output
+    call @usr_mp_output
+    side = COMP_OFF
+    call @compensation
+    call @usr_compensation_output
+    ; skipline = false
+    ; call @end_drill
+    ; {'G0 '}
+    if GPX_FNORM
+      {'FNORM '}
+    endif
+  endif
+endp
+
+;-------------------
+
+@start_program
+  ; Handle any safety G/M codes for top of program
+  call @initiate
+  call @settings
+  if sHomestrbegin ne ''
+    sHomestr = sHomestrbegin
+    ; call @usr_prep_home_axis
+  endif
+endp
+
+;-------------------
+
+@end_program
+  ; Handle output for end of program
+  if bMultiplefixtures eq True
+    bFromendprogram = True
+    call @Multiple_Fixtures
+  endif
+  if bCooloffend and bCoolExist
+    iCoolantM1      = iCoolantM1OFF
+    iCoolantM2      = iCoolantM2OFF
+    iCoolantM3      = iCoolantM3OFF
+    iCoolantM4      = iCoolantM4OFF
+    iCoolantM5      = iCoolantM5OFF
+    iCoolantM6      = iCoolantM6OFF
+    iCoolantM7      = iCoolantM7OFF
+    iCoolantM8      = iCoolantM8OFF
+    call @usr_coolant_output
+  endif
+  if bSpinoffend
+    iSpindleDir = 5
+    {nb}
+    call @usr_spindle_mcode_output
+  endif
+  if sHomestrend ne ''
+    sHomestr = sHomestrend
+    ; call @usr_prep_home_axis
+  endif
+  if change(iAbsincmode)
+    {nb}
+    call @usr_abs_inc_output
+  endif
+  if change(iWorkoffset)
+    {nb}
+    call @usr_homenumber_output
+  endif
+  if bOptstpend
+    call @usr_optionalstop
+  endif
+  if bToolChangeAtEnd
+    {nb,cTCcodes'T'next_tool_number' 'cTCcodep}
+  endif
+  if iProgendmode eq 1
+    if GPX_PESUPA then
+      {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+      {nb, 'G0 SUPA X'GPX_XHOMEND:xpos_f' Y'GPX_YHOMEND:ypos_f}
+    endif
+    {nb, 'M30 ', nl}
+  endif
+  if iProgendmode eq 2
+    if GPX_PESUPA then
+      {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+      {nb, 'G0 SUPA X'GPX_XHOMEND:xpos_f' Y'GPX_YHOMEND:ypos_f}
+    endif
+    {nb, 'M2 ', nl}
+  endif
+
+endp
+
+;-------------------
+
+@end_of_file
+  ; Handle end of file character
+  if cPe ne ''
+    {nl,cPe}
+  endif
+  if bMultiplefixtures eq True
+    bFromendoffile = True
+    call @Multiple_Fixtures
+  endif
+endp
+
+;-------------------
+
+@relative_mode
+  ; Handle setting of IncrementalMode Gcode
+  iAbsincmode = 91
+  if bSimpleformat
+    if change(iAbsincmode)
+      {nb}
+      call @usr_abs_inc_output
+    endif
+  endif
+endp
+
+@absolute_mode
+  ; Handle setting of AbsoluteMode Gcode
+  iAbsincmode = 90
+  if bSimpleformat
+    if change(iAbsincmode)
+      {nb}
+      call @usr_abs_inc_output
+    endif
+  endif
+endp
+
+@usr_abs_inc_output
+  ; Handle output of Absolute/Incremental Mode Gcode
+  {['G'iAbsincmode, ' ']}
+endp
+
+;-------------------
+
+@machine_plane
+  ; Handle setting of MachinePlane Gcode
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we may Sync with arc_zx_yz
+  if machine_plane eq XY
+    iMplane = 17
+  endif
+  if machine_plane eq ZX
+    iMplane = 18
+  endif
+  if machine_plane eq YZ
+    iMplane = 19
+  endif
+  if bSimpleformat
+    if change(iMplane)
+      {nb}
+      call @usr_mp_output
+    endif
+  endif
+endp
+
+@usr_mp_output
+  ; Handle output of MachinePlane Gcode
+  ; Use bStartFile variable to ignore this output at beginning of file
+  {['G'iMplane' ']}
+endp
+
+;-------------------
+
+@home_number
+  ; Handle setting WorkOffset Gcode
+  if iWorkOffset_Method eq 0
+    if iWorkOffsetmode eq 1
+      if home_number <= 6
+        iWorkoffset = 53 + home_number
+      else
+        iWorkoffset = 103 + home_number
+      endif
+    endif
+    if iWorkOffsetmode eq 2 or iWorkOffsetmode eq 3
+      iWorkoffset = home_number
+    endif
+  else
+    iWorkoffset = tonum(home_user_name)
+  endif
+  if  iWorkOffsetmode eq 0
+    change(iWorkOffset) = false
+  endif
+  if bSimpleformat
+    if change(iWorkoffset)
+      {nb}
+      call @usr_homenumber_output
+    endif
+  endif
+endp
+
+@usr_homenumber_output
+  ; Handle output WorkOffset Gcode
+  if  iWorkOffsetmode eq 0
+    change(iWorkOffset) = false
+  endif
+  {[cWo,iWorkoffset' ']}
+  change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
+endp
+
+;-------------------
+
+@change_tool
+  ; Delayed Tool Change handling to @start_of_job to have access to Operation(Job) data
+  nTcXnext = xnext
+  nTcYnext = ynext
+  nTcZnext = znext
+  nTcCnext = cnext
+  bTlchg = true
+
+  if (iWBCM > 0)
+    iWBCM_ = iWBCM
+    sWBCM_MSG_ = sWCM_MSG
+    {nb, 'LTC:'}
+  endif
+  if (iWBCM eq 1 or iWBCM eq 3)
+    {nb,'IF (WearChanged == TRUE)'}
+    {nb,'  $TC_DP15[R103,1] = $TC_DP15[R103,1] * 0.8'}
+    {nb,"ENDIF"}
+  endif
+endp
+
+@usr_ct
+  if used_in_transform_translate
+    nTcXnext = xnext
+    nTcYnext = ynext
+    nTcZnext = znext
+    nTcCnext = cnext
+  endif
+
+  if bTlchg or used_in_transform_translate then
+    ; Handle all aspects of Tool Change
+    if bMultiplefixtures eq True
+      bFrombeginchangetool = True
+      call @Multiple_Fixtures
+    endif
+    if !first_tool
+      iTcnumber = iTcnumber + 1
+    endif
+    bStartFile = false
+    if !first_tool
+      call @usr_ct_before_notfirsttool
+    endif
+    if first_tool
+      call @usr_ct_before_firsttool
+    endif
+    call @usr_ct_toolchange
+  endif
+  ; HERE WE CHECK IF TOOL LENGTH IS SET TO 0, WE BREAK WITH M2
+  ;{nb,'R102=GETT("'tool_name'")'}
+  ;{nb,'R103=$TC_DP3[R102,1]'}
+  ;{nb,"IF (R103==0) "}
+  ;{nb,"M2"}
+  ;{nb,"ENDIF"}
+  if bTlchg or used_in_transform_translate then
+    call @usr_ct_init_gmstates
+    call @usr_ct_after
+    if !bMultiplefixtures
+      bSkipxyrapid = true
+    endif
+    if bMultiplefixtures eq True
+      bFromendchangetool = True
+      call @Multiple_Fixtures
+    endif
+    bTlchg = false
+  endif
+  if bAirCoolant == true
+    {nb, nb, 'R10=0'}
+    {nb, 'DELAY = 'nAirCoolantDelay}
+    {nb, 'DURATION = 'nAirCoolantDuration, nb}
+    {nb, 'IDS=3 FROM TRUE DO $R10 = $R10 + 1'}
+    {nb, 'IDS=1 EVERY ($R10 == 'nDefaultSec' * DURATION) DO M9'}
+    {nb, 'IDS=2 EVERY ($R10 == 'nDefaultSec' * (DELAY + DURATION)) DO M7 R10=0',nb}
+  endif
+  call @cycle832
+endp
+
+@usr_ct_before_notfirsttool
+  ; Handle output before the next tool change
+  ; This is not called before the first tool change
+  if !bStopM00difftool
+    if bCoolofftc and bCoolExist
+      iCoolantM1      = iCoolantM1OFF
+      iCoolantM2      = iCoolantM2OFF
+      iCoolantM3      = iCoolantM3OFF
+      iCoolantM4      = iCoolantM4OFF
+      iCoolantM5      = iCoolantM5OFF
+      iCoolantM6      = iCoolantM6OFF
+      iCoolantM7      = iCoolantM7OFF
+      iCoolantM8      = iCoolantM8OFF
+      call @usr_coolant_output
+    endif
+    if bSpinofftc
+      iSpindleDir = 5
+      {nb}
+      call @usr_spindle_mcode_output
+    endif
+    if sHomestrtc ne ''
+      sHomestr = sHomestrtc
+      ; call @usr_prep_home_axis
+    endif
+  endif
+  if bTcseperation
+    {nl}
+  endif
+  if !bSimpleformat
+    bSafetyprep = true
+    call @usr_ct_init_gmstates
+  endif
+  if bNnumtc
+    {nl,'N'iTcnumber' '}
+  else
+    {nb}
+  endif
+  if !bSimpleformat
+    ; call @usr_abs_inc_output
+    ; call @usr_mp_output
+    ; call @usr_compensation_output
+    skipline = false
+    ; call @end_drill
+    call @settings
+  endif
+endp
+
+@usr_ct_before_firsttool
+  ; Handle output before the first tool change
+endp
+
+@usr_ct_toolchange
+  if nTC_YSUPA eq 0
+    nTC_YSUPA = 140
+  endif
+  if nTC_XSUPA eq 0
+    nTC_XSUPA = -465.000
+  endif
+  if hlength > 2
+    if GPX_ZSUPA then
+      if iTC_SUPA_MODE ne 0
+        {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+      endif
+    endif
+    if GPX_XYSUPA then
+      if iTC_SUPA_MODE ne 0
+        if iTC_SUPA_MODE eq 1
+          {nb, 'G0 SUPA Y'nTC_YSUPA:ypos_f}
+          {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f}
+        elseif iTC_SUPA_MODE eq 2
+          {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f}
+          {nb, 'G0 SUPA Y'nTC_YSUPA:ypos_f}
+        else
+          {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f' Y'nTC_YSUPA:ypos_f}
+        endif
+      endif
+    endif
+  endif
+  ; Handle G/M code output to make tool change
+  if bTCSplit
+    if first_tool
+      ; if iM1 ne 0
+      ;   if iM1 eq 3
+      ;     {nb, 'MSG("'sM1_MSG'")'}
+      ;     {nb,'M9 '}
+      ;     {nb,'M5 '}
+      ;     {nb,'M1 '}
+      ;     ; HERE
+
+      ;   endif
+      ; endif
+      {nb,'T="'tool_id_string'"'}
+      if iM1 ne 0
+        if iM1 eq 1
+          {nb, 'MSG("'sM1_MSG'")'}
+          {nb,'M9 '}
+          {nb,'M5 '}
+          {nb,'M1 '}
+        elseif iM1 eq 2
+          {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+          {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f' Y'nTC_YSUPA:ypos_f}
+          {nb, 'MSG("'sM1_MSG'")'}
+          {nb,'M9 '}
+          {nb,'M5 '}
+          {nb,'M1 '}
+        endif
+      endif
+    endif
+    {nb,cTCcodep}
+    if bOutputToolMessage
+      {' 'cCb,tool_message,cCe}
+    endif
+    {nb,cTCcodes}
+  else
+    ; if iM1 ne 0
+    ;   if iM1 eq 3
+    ;     {nb, 'MSG("'sM1_MSG'")'}
+    ;     {nb,'M9 '}
+    ;     {nb,'M5 '}
+    ;     {nb,'M1 '}
+    ;   endif
+    ; endif
+    {nb,'T="'tool_id_string'" ',cTCcodep' 'cTCcodes}
+    {nb,'D1 '}
+    if iM1 ne 0
+      if iM1 eq 1
+        {nb, 'MSG("'sM1_MSG'")'}
+        {nb,'M9 '}
+        {nb,'M5 '}
+        {nb,'M1 '}
+      elseif iM1 eq 2
+        {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+        {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f' Y'nTC_YSUPA:ypos_f}
+        {nb, 'MSG("'sM1_MSG'")'}
+        {nb,'M9 '}
+        {nb,'M5 '}
+        {nb,'M1 '}
+      endif
+    endif
+    if bOutputToolMessage
+      {cCb,'Tool Desc:'tool_message,cCe}
+    endif
+  endif
+  call @usr_bToolPreselect
+  if GPX_G500 then
+    {nb,'G500'}
+  endif
+  ; call @usr_coolant
+  ; call @usr_bToolPreselect
+endp
+
+@usr_toolset
+  if bToolSetting == false
+    return
+  endif
+  ; measurement for tools
+  local numeric ucr uloffs uroffs
+  ucr = corner_radius
+  uloffs = corner_radius
+  if tool_id_string == 'HF25' or tool_id_string == 'HF40' then
+    ucr = 4.3
+    uloffs = 1.2
+  endif
+  uroffs = (tool_diameter / 2 - ucr);
+  if ts_mtype > 0 then ; get data from gpp-manager enterprise
+    if ts_mtype == 1 then
+      {nb, 'CYCLE832(0,_OFF,1)'}
+      {nb, 'G0'}
+      ; {nb, 'BZ9912('ts_type', 'tolerance_len', 'uroffs')'}
+      if ts_type == 2
+        {nb, 'BZ9912('ts_type',0.4,)'}
+        {nb, 'G0 X0 Y0'}
+      else
+        {nb, 'BZ9912('ts_type',,)'}
+      endif
+    endif
+    if ts_mtype == 2 then
+      {nb, 'CYCLE832(0,_OFF,1)'}
+      ; {nb, 'BZ9913('ts_type', 'tolerance_len', 'tolerance_rad', 'uloffs', 'uroffs')'}
+      {nb, 'BZ9913('ts_type',0.1,0.1,,)'}
+      ;{nb, 'G0'}
+    endif
+  endif
+endp
+
+@usr_ct_after
+  if ts_type != 2
+    call @usr_toolset
+  endif
+  ;Handle output after tool change
+  ; *Note: Coolant & job Options need handling
+  local integer i poz1 l1b pr1
+  local string msg1 msg1a msg1b
+  if iOperationMessage eq 2
+    {nb, cCb,job_name,cCe}
+  endif
+  if msg ne '' and bOutputUserMessages
+    i = 1
+    while i < 50
+      i = i + 1
+      poz1=instr(msg,'\n')
+      if poz1 eq 0
+        poz1=strlen(msg)
+        msg1=msg
+      else
+        poz1 = poz1-2
+        msg1=left(msg,poz1)
+      endif
+      {nb, cCb,msg1,cCe}
+      poz1=instr(msg,'\n')
+      if poz1 eq 0
+        i = 51
+      else
+        l1b=strlen(msg)-strlen(msg1)
+        pr1=poz1+1
+        msg1b=substr(msg,pr1,l1b)
+        msg=msg1b
+      endif
+    endw
+  endif
+  if bCoolspinaftertc
+    ; skipline = true
+    call @start_tool
+    ; if bCoolExist
+    ;   skipline = true
+    ;   call @usr_coolant
+    ; endif
+    xpos = nTcXnext
+    ypos = nTcYnext
+    change(zpos) = false
+    call @usr_rapid
+    call @usr_heightcomp_on
+  else
+    xpos = nTcXnext
+    ypos = nTcYnext
+    change(zpos) = false
+    call @usr_rapid
+    ; skipline = false
+    call @start_tool
+    call @usr_heightcomp_on
+    ; if bCoolExist
+    ;   if !bCoolAfterHeightComp
+    ;     skipline = false
+    ;   endif
+    ;   call @usr_coolant
+    ;   skipline = true          ;!@#$%AC Incase no coolant output, need to override 'skipline = false' 3 lines above
+    ; endif
+  endif
+  if bOptstptc
+    call @usr_optionalstop
+  endif
+endp
+
+@usr_ct_init_gmstates
+  ; Handle initializing G/M codes for correct modality after tool change
+  if first_tool
+    iMotionmode = 9999
+    iDiametercomp = 40
+    if !bSimpleformat
+      change(iAbsincmode) = true
+      if  iWorkOffsetmode eq 0
+        change(iWorkOffset) = false
+      else
+        change(iWorkoffset) = true
+      endif
+    endif
+    change(iDiameteroffset) = false
+    iHeightcomp = 9999
+    iDrillmode = 9999
+    iCoolantM1      = iCoolantM1OFF
+    iCoolantM2      = iCoolantM2OFF
+    iCoolantM3      = iCoolantM3OFF
+    iCoolantM4      = iCoolantM4OFF
+    iCoolantM5      = iCoolantM5OFF
+    iCoolantM6      = iCoolantM6OFF
+    iCoolantM7      = iCoolantM7OFF
+    iCoolantM8      = iCoolantM8OFF
+  else
+    if bSafetyprep
+      call @machine_plane
+      change(iMplane) = true
+      change(iAbsincmode) = true
+      change(iDiametercomp) = true
+      iDrillmode = 9999
+      bSafetyprep = false
+    else
+      iMotionmode = 9999
+      if bWorkoffsettc and iWorkoffsetmode ne 0
+        change(iWorkoffset) = true
+      endif
+      if !bSimpleformat
+        change(iAbsincmode) = true
+      endif
+      iDiametercomp = 40
+      change(iDiameteroffset) = false
+      iHeightcomp = 9999
+      iDrillmode = 9999
+      iCoolantM1      = iCoolantM1OFF
+      iCoolantM2      = iCoolantM2OFF
+      iCoolantM3      = iCoolantM3OFF
+      iCoolantM4      = iCoolantM4OFF
+      iCoolantM5      = iCoolantM5OFF
+      iCoolantM6      = iCoolantM6OFF
+      iCoolantM7      = iCoolantM7OFF
+      iCoolantM8      = iCoolantM8OFF
+      change(nRapidfeed) = true
+    endif
+  endif
+endp
+
+@usr_heightcomp_on
+  ; Handle line to turn on Height Compensation (Typically after tool change)
+  iHeightcomp = nHeightCompcode
+  if bHeightComp or bHeightCompOffset
+    {nb}
+  endif
+  if bHeightComp
+    {'G'iHeightcomp' '}
+  endif
+  if bHeightCompOffset
+    {cHoffset,tool_number' '}
+  endif
+  if (bHeightComp or bHeightCompOffset) and bHeightCompZsameLine
+    skipline = false
+  endif
+  zpos = nTcZnext
+  change(xpos) = false
+  change(ypos) = false
+  ; call @rapid_move
+endp
+
+@usr_heightcomp_off
+  ; Handle line to turn off Height Compensation (Typically don't use)
+  iHeightcomp = 49
+  if change(iHeightcomp)
+    {nb, 'G'iHeightcomp' '}
+  endif
+endp
+
+@usr_coolant
+  ; Handle setting of coolant variable
+  if flood_coolant eq 1
+    iCoolantM1 = iCoolantM1ON
+  endif
+  if flood_coolant eq 0 or flood_coolant eq 2
+    iCoolantM1 = iCoolantM1OFF
+  endif
+  if mist_coolant eq 1
+    iCoolantM2 = iCoolantM2ON
+  endif
+  if mist_coolant eq 0 or mist_coolant eq 2
+    iCoolantM2 = iCoolantM2OFF
+  endif
+  if hp_flood_coolant eq 1
+    iCoolantM3 = iCoolantM3ON
+  endif
+  if hp_flood_coolant eq 0 or hp_flood_coolant eq 2
+    iCoolantM3 = iCoolantM3OFF
+  endif
+  if lp_flood_coolant eq 1
+    iCoolantM4 = iCoolantM4ON
+  endif
+  if lp_flood_coolant eq 0 or lp_flood_coolant eq 2
+    iCoolantM4 = iCoolantM4OFF
+  endif
+  if HP_Through_coolant eq 1
+    iCoolantM5 = iCoolantM5ON
+  endif
+  if HP_Through_coolant eq 0 or HP_Through_coolant eq 2
+    iCoolantM5 = iCoolantM5OFF
+  endif
+  if lp_through_coolant eq 1
+    iCoolantM6 = iCoolantM6ON
+  endif
+  if lp_through_coolant eq 0 or lp_through_coolant eq 2
+    iCoolantM6 = iCoolantM6OFF
+  endif
+  if Air_Blast_coolant eq 1
+    iCoolantM7 = iCoolantM7ON
+  endif
+  if Air_Blast_coolant eq 0 or Air_Blast_coolant eq 2
+    iCoolantM7 = iCoolantM7OFF
+  endif
+  if minimum_quantity_l eq 1
+    iCoolantM8 = iCoolantM8ON
+  endif
+  if minimum_quantity_l eq 0 or minimum_quantity_l eq 2
+    iCoolantM8 = iCoolantM8OFF
+  endif
+  call @usr_coolant_output
+endp
+
+@usr_bToolPreselect
+  if bPreselected == false
+    bPreselected = true
+    if bToolPreselect
+      if !last_tool and next_tool_id_string != sLastPreselect and !bIgnorePreselect
+        sLastPreselect = next_tool_id_string
+        {nb,'T="'next_tool_id_string'"'}
+      else
+        if !bToolChangeAtEnd
+          ; ~~~~ CHANGED ~~~~ preventing unwanted preselection of next tool for caution
+          ; {nb,'T'next_tool_number}
+        endif
+      endif
+    endif
+  endif
+endp
+
+@usr_coolant_output
+  ; Handle output of coolant variable
+  if change(iCoolantM1)
+    ;  if bPreselected and iCoolantM1 == 8 and bToolPreselect
+    ;    local integer i
+    ;    i = 0
+    ;    while i < iM8_NumberOfIterations
+    ;  {nb, 'R'(11 + i)' = 0'}
+    ;      {nb, 'INTERVAL'i' = '(nM8_CommitInterval * (i + 1))}
+    ;      {nb, 'IDS='(4 + i * 2)' WHENEVER $R'(11 + i)' <= 400. * INTERVAL'i' DO $R'(11 + i)' = $R'(11 + i)' + 1'}
+    ;      {nb, 'IDS='(5 + i * 2)' WHEN ($R'(11 + i)' >= 400. * INTERVAL'i') DO M8'}
+    ;      i = i + 1
+    ;    endw
+    ;  else
+    ;  endif
+    {nb,'M'iCoolantM1:mcode_f' '}
+    {nb,'G04F2 '}
+    return
+  endif
+  if change(iCoolantM2)
+    {nb,['M'iCoolantM2:mcode_f' ']}
+    return
+  endif
+  if change(iCoolantM3)
+    {nb,['M'iCoolantM3:mcode_f' ']}
+    return
+  endif
+  if change(iCoolantM4)
+    {nb,['M'iCoolantM4:mcode_f' ']}
+    return
+  endif
+  if change(iCoolantM5)
+    {nb,['M'iCoolantM5:mcode_f' ']}
+    return
+  endif
+  if change(iCoolantM6)
+    {nb,['M'iCoolantM6:mcode_f' ']}
+    return
+  endif
+  if change(iCoolantM7)
+    {nb,['M'iCoolantM7:mcode_f' ']}
+    if iCoolantM7 == 9
+      bDelay = true
+    endif
+    return
+  endif
+  if change(iCoolantM8)
+    {nb,['M'iCoolantM8:mcode_f' ']}
+    return
+  endif
+endp
+
+@usr_HSM_mode
+  ; Handle output of HSM code
+  if iG187_P eq 0
+    iG187_P = 2 ;Default = 2
+  endif
+  iG187_P_gpp = iG187_P
+  nG187_E_gpp = nG187_E
+  if change(iG187_P_gpp) or change (nG187_E_gpp)
+    if change(nG187_E_gpp) and nG187_E_gpp eq 0
+      {nb,'G187 '}
+      change(nG187_E_gpp) = false
+      change(iG187_P_gpp) = false
+      if (iG187_P_gpp) ne 2
+        change(iG187_P_gpp) = true
+      endif
+    endif
+    if change(iG187_P_gpp) or change (nG187_E_gpp)
+      {nb,'G187 '['P'iG187_P_gpp' ']['E'nG187_E_gpp' ']}
+    endif
+    change(iG187_P_gpp) = false
+    change(nG187_E_gpp) = false
+  endif
+endp
+
+;--------------------
+
+@cycle832
+  if GPX_CYCLE832 and b832type != 0 then
+    if job_type ne 'drill' then
+      if b832type eq 1 then
+        {nb, 'CYCLE832(_camtolerance,'sOperationType',1)'}
+        {nb, 'G0'}
+      elseif b832type eq 2 then
+        {nb, 'CYCLE832(_camtolerance,_TOP_SURFACE_SMOOTH_OFF+'+sOperationType+',1)'}
+        {nb, 'G0'}
+      elseif b832type eq 3 then
+        {nb, 'CYCLE832(_camtolerance,_TOP_SURFACE_SMOOTH_ON+'+sOperationType+',1)'}
+        {nb, 'G0'}
+      endif
+    endif
+  else
+    {nb, 'CYCLE832(0,_OFF,1)'}
+    {nb, 'G0'}
+  endif
+endp
+
+;--------------------
+
+@start_of_job
+  ; Handle what happens at start of operation(job)
+  ; If using Subs we do not make tool change in @start_of_job
+
+
+  bPreselected = false
+  if GPX_SEPARATE_FILES == true
+    local string parsed_name
+    parsed_name = replace(job_name, '-', '_', 10)
+    if used_in_transform_translate eq true
+      {nl '!! delete file = 'parsed_name'.SPF !!' }
+    endif
+    {nl '!! open file = 'parsed_name'.SPF !!' }
+  endif
+  {nb, 'DEF REAL _camtolerance'}
+  if bAirCoolant == true
+    {nb, 'DEF INT DELAY, DURATION'}
+  endif
+  ; if bToolPreselect == true
+  ;   {nb, 'DEF INT '}
+  ;   local integer i
+  ;   i = 0
+  ;   while i < iM8_NumberOfIterations
+  ;     {'INTERVAL'i}
+  ;     if i != iM8_NumberOfIterations - 1
+  ;       {', '}
+  ;     endif
+  ;     i = i + 1
+  ;   endw
+  ; endif
+  bCpmFlag = true
+  if Cut_tolerance eq 0 then
+    Cut_tolerance = 0.100
+  endif
+  if job_type eq 'profile' then
+    cut_tolerance = 0.003
+  endif
+  if Cut_tolerance >= GPX_ROUGHLIMIT then
+    sOperationType = '_ROUGH'
+  elseif Cut_tolerance > GPX_FINISHLIMIT then
+    sOperationType = '_SEMIFIN'
+  else
+    sOperationType = '_FINISH'
+  endif
+  {nl }
+  {nb, 'MSG("'job_name' , Tool : 'tool_id_string'")'}
+  {nl }
+  {nb, '_camtolerance=' Cut_tolerance}
+  if bSubs
+    {nb, cCb,job_name,cCe}
+  else
+    if next_job_tool_number == iPrevTool then
+      bIgnorePreselect = true
+    else
+      bIgnorePreselect = false
+    endif
+    call @usr_ct
+    iPrevTool = tool_number
+    sPrevTool = tool_name
+    if bTlchg eq false
+      {nb, cCb,job_name,cCe}
+      if iPworkoffset ne iWorkoffset
+        {nb}
+        call @usr_homenumber_output
+        skipline = false
+        change(xpos) = false
+        change(ypos) = false
+        zpos = znext
+        change(zpos) = true
+        call @rapid_move
+        change(xpos) = true
+        change(ypos) = true
+        change(zpos) = false
+        call @rapid_move
+        bSkipxyrapid = true
+      endif
+    endif
+  endif
+  if job_type eq 'drill_hr'
+    bSkipxyrapid = false
+  endif
+  ; if bCoolExist
+  ;   call @usr_coolant
+  ; endif
+  call @usr_HSM_mode
+endp
+
+;--------------------
+
+@end_of_job
+  ; Handle what happens at end of operation(job)
+  ; If using Subs we do not make tool change in @start_of_job
+
+  if ts_type == 2 and (last_tool == true or tool_number != next_tool_number)
+    call @usr_toolset
+  endif
+  if bStopM00
+    if tool_number eq next_job_tool_number
+      call @usr_StopM00_sametool
+    else
+      call @usr_StopM00_difftool
+    endif
+  endif
+  bSkipxyrapid = false
+  bStopM00difftool = false
+  iPworkoffset = iWorkoffset
+  if bAirCoolant == true
+    {nb, 'CANCEL(1)'}
+    {nb, 'CANCEL(2)'}
+    {nb, 'CANCEL(3)'}
+    {nb, 'M9'}
+  endif
+  local integer i
+  i = 0
+  if bPreselected
+    while i < iM8_NumberOfIterations
+      {nb, 'CANCEL('(4 + i * 2)')'}
+      {nb, 'CANCEL('(5 + i * 2)')'}
+      i = i + 1
+    endw
+  endif
+  if GPX_SEPARATE_FILES == true
+    {nb, 'RET ', nl}
+    local string parsed_name
+    parsed_name = replace(job_name, '-', '_', 10)
+    {nl '!! close file = 'parsed_name'.SPF !!' }
+    if Adims(iHomes) > 1
+      if tool_number eq next_job_tool_number
+        sHomeCache = sHomeCache + parsed_name + ';'
+      else
+        local integer home, i
+        i = 1
+        while i <= Adims(iHomes)
+          home = alen(iHomes, i)
+          {nb, 'G'home}
+          if sHomeCache != ''
+            local integer nextDelimiterIndex, index
+            local string extracted
+            index = 1
+            nextDelimiterIndex = instr(sHomeCache, ';', index)
+            while nextDelimiterIndex != 0
+              extracted = substr(sHomeCache, index, nextDelimiterIndex - index)
+              index = nextDelimiterIndex + 1
+              nextDelimiterIndex = instr(sHomeCache, ';', index)
+              if bSPF_CM
+                {nb, 'CALL "'extracted'.SPF"'}
+              else
+                {nb, 'EXTCALL "'extracted'.SPF"'}
+              endif
+            endw
+          endif
+          if bSPF_CM
+            {nb, 'CALL "'parsed_name'.SPF"'}
+          else
+            {nb, 'EXTCALL "'parsed_name'.SPF"'}
+          endif
+          i = i + 1
+        endw
+        sHomeCache = ''
+      endif
+    else
+      if bSPF_CM
+        {nb, 'CALL "'parsed_name'.SPF"'}
+      else
+        {nb, 'EXTCALL "'parsed_name'.SPF"'}
+      endif
+    endif
+  endif
+  ;{nb, tool_number'  KTL  'next_job_tool_number}
+  if (tool_number != next_job_tool_number and iWBCM_ > 0)
+    if (iWBCM_ eq 1 or iWBCM_ eq 3)
+      {nb,'STOPRE'}
+      {nb,'IF (WearChanged == TRUE)'}
+      {nb,'  $TC_DP15[R103,1] = ToolWearBuffer'}
+      {nb,"ENDIF"}
+    endif
+    if (iWBCM_ eq 2 or iWBCM_ eq 3) and used_in_transform_translate eq false
+      {nb,'R101=GETT("'tool_name'")'}
+      {nb,'R100=$TC_DP3[R101,1]'}
+      {nb,'MSG("'sWBCM_MSG_'")'}
+      {nb,'M9 '}
+      {nb,'M5 '}
+      {nb,'M1 '}
+      {nb,"IF (R100<>$TC_DP3[R101,1]) "}
+      {nb,"  GOTOB LTC"}
+      {nb,"ENDIF"}
+    endif
+    if (iWBCM_ eq 1 or iWBCM_ eq 3)
+      {nb,'R103=GETT("'tool_name'")'}
+      {nb,'R102=$TC_DP15[R103,1]'}
+      {nb,'MSG("'sWBCM_MSG_'")'}
+      {nb,'M9 '}
+      {nb,'M5 '}
+      {nb,'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
+      {nb,'G0 SUPA X'nTC_XSUPA:xpos_f' Y'nTC_YSUPA:ypos_f}
+      {nb,'M1 '}
+      {nb,"IF (R102<>$TC_DP15[R103,1]) "}
+      {nb,"  WearChanged = TRUE"}
+      {nb,"  ToolWearBuffer = $TC_DP15[R103,1]"}
+      {nb,"  GOTOB LTC"}
+      {nb,"ENDIF"}
+      {nb,"WearChanged = FALSE"}
+    endif
+    iWBCM_ = 0
+  endif
+
+  ;if not used_in_transform_translate
+  ;  {nb, 'TRANS'}
+  ;endif
+endp
+
+;-------------------
+
+@rapid_move
+  ; Handle GPP direct call to Rapid Move (G0)
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we may...
+  ;   Sync with @rapid_move, @move_5x, @move_4x, @move4x_polar, @move4x_cartesian
+  call @usr_rapid
+endp
+
+@usr_rapid
+  ; Handle output for Rapid Move (G0)
+  ; Note: XYZ not allowed together on a single line
+  if !bSkipxyrapid
+    if !bSyncdrapid
+      if job_type eq '3-d model'
+        iMotionmode = 1
+      else
+        iMotionmode = 0
+      endif
+    else
+      iMotionmode = 0
+    endif
+    if (change(xpos)or change(ypos)) and change(zpos) ;!@#$% clear change
+      bTest = true
+    endif
+    {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' '],['X'xpos ' '],['Y'ypos ' ']}
+    if change(zpos)
+      ;if change(xpos) eq true or change(ypos) eq true
+      if bTest  ;!@#$% clear change
+        {nb,['Z'zpos ' ']}
+        bTest = false
+      else
+        {['Z'zpos ' ']}
+      endif
+    endif
+    if !bSyncdrapid
+      if job_type eq '3-d model'
+        {['F'nRapidfeed' ']}
+      endif
+    endif
+    bSkipxyrapid = false
+  else
+    {nb,['Z'zpos ' ']}
+    if !bSyncdrapid
+      if job_type eq '3-d model'
+        {['F'nRapidfeed' ']}
+      endif
+    endif
+    bSkipxyrapid = false
+  endif
+  if !bSyncdrapid
+    bFeedoutput        = true
+  endif
+  change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
+endp
+
+;-------------------
+
+@line
+  ; Handle GPP direct call to Line Movement (G01)
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we may...
+  ;   Sync with @line, @line_5x, @line_4x, @line4x_polar, @line4x_cartesian
+  call @usr_line
+endp
+
+@usr_cpm
+  if bSoft
+    {nb,'SOFT'}
+  endif
+  if iCPM ne 0 then
+    if iCPM == 601 or iCPM == 602 or iCPM == 603
+      {nb, 'G60'}
+    endif
+    {nb,'G'iCPM}
+    if iCPM == 641
+      local numeric ADIS
+      ADIS = 0.05
+      if wall_offset ne 0 then
+        ADIS = wall_offset * GPX_ADIS
+      endif
+      {nb, 'ADIS='ADIS}
+    endif
+  endif
+endp
+
+@usr_line
+  ; call @usr_bToolPreselect
+  if bCoolExist
+    call @usr_coolant
+  endif
+  if bCpmFlag eq true then
+    bCpmFlag = false
+    ;print iCPM
+    call @usr_cpm
+  endif
+  ; Handle output for line movement (G01)
+  if bFeedoutput
+    change(feed) = true
+    bFeedoutput  = false
+  endif
+  iMotionmode = 1
+  {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],['G'iDiametercomp' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' ']}
+  {['D'iDiameteroffset' '],['X'xpos ' '],['Y'ypos ' '],['Z'zpos ' '],['F'feed ' ']}
+  change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
+endp
+
+; -----------
+@arc
+  ; SolidCAM call to normal arc movement
+  ; We do not use this procedure to output code
+  ; We create our own procedure for this so that we have one arc formatting section
+  call @usr_arc
+endp
+
+@arc_yz
+  ; SolidCAM call to YZ arc movement
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we have one arc formatting section
+  call @usr_arc
+endp
+
+@arc_zx
+  ; SolidCAM call to ZX arc movement
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we have one arc formatting section
+  call @usr_arc
+endp
+
+@usr_arc
+  if bCoolExist
+    call @usr_coolant
+  endif
+  ; call @usr_bToolPreselect
+  if bCpmFlag eq true then
+    bCpmFlag = false
+    call @usr_cpm
+  endif
+  ; Handle output for arc movement (G02/G03)
+  if bFeedoutput
+    change(feed) = true
+    bFeedoutput  = false
+  endif
+  if arc_direction eq CCW then
+    iMotionmode = 3
+  else
+    iMotionmode = 2
+  endif
+  if arc_plane eq XY
+    iMplane = 17
+  endif
+  if arc_plane eq ZX
+    iMplane = 18
+  endif
+  if arc_plane eq YZ
+    iMplane = 19
+  endif
+  {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],['G'iDiametercomp' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' ']}
+  {['D'iDiameteroffset' '],['X'xpos ' '],['Y'ypos ' '],['Z'zpos ' ']}
+  if arc_plane eq XY then
+    if iArcmode eq 1 or (arc_size eq 360 and iArcmode eq 3)
+      {'I'xcenter ' ', 'J'ycenter ' '}
+    endif
+    if iArcmode eq 2 or (arc_size eq 360 and iArcmode eq 4)
+      {'I'xcenter_rel ' ', 'J'ycenter_rel ' '}
+    endif
+    if (iArcmode eq 3 or iArcmode eq 4) and arc_size ne 360
+      if arc_size >= 180 then
+        radius = -radius
+      endif
+      {'R'radius' '}
+    endif
+  endif
+  if arc_plane eq ZX then
+    if iArcmode eq 1 or (arc_size eq 360 and iArcmode eq 3)
+      {'I'xcenter ' ', 'K'zcenter ' '}
+    endif
+    if iArcmode eq 2 or (arc_size eq 360 and iArcmode eq 4)
+      {'I'xcenter_rel ' ', 'K'zcenter_rel ' '}
+    endif
+    if (iArcmode eq 3 or iArcmode eq 4) and arc_size ne 360
+      if arc_size >= 180 then
+        radius = -radius
+      endif
+      {'R'radius' '}
+    endif
+  endif
+  if arc_plane eq YZ then
+    if iArcmode eq 1 or (arc_size eq 360 and iArcmode eq 3)
+      {'J'ycenter ' ', 'K'zcenter ' '}
+    endif
+    if iArcmode eq 2 or (arc_size eq 360 and iArcmode eq 4)
+      {'J'ycenter_rel ' ', 'K'zcenter_rel ' '}
+    endif
+    if (iArcmode eq 3 or iArcmode eq 4) and arc_size ne 360
+      if arc_size >= 180 then
+        radius = -radius
+      endif
+      {'R'radius' '}
+    endif
+  endif
+  {['F'feed ' ']}
+  change(nRapidfeed)          = true
+  change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
+endp
+
+;-------------------
+
+@compensation
+  ; Handle setting of Diameter Compensation Gcode
+  ; We not use this procedure to output code
+  ; We create our own procedure for this so that we..
+  ;   have can control placement during @line,@arc
+  if side eq COMP_LEFT then
+    iDiametercomp = 41
+    if bDiameterCompOutputD
+      change(iDiameteroffset) = true
+    endif
+  endif
+  if side eq COMP_RIGHT then
+    iDiametercomp = 42
+    if bDiameterCompOutputD
+      change(iDiameteroffset) = true
+    endif
+  endif
+  if side eq COMP_OFF then
+    iDiametercomp = 40
+    change(iDiameteroffset) = false
+  endif
+endp
+
+@usr_compensation_output
+  ; Handle output of Diameter Compensation Gcode
+  if change(iDiametercomp)
+    if iDiametercomp eq 40 or !bDiameterCompOutputD
+      ; {'G'iDiametercomp' '}
+    else
+      ; {'G'iDiametercomp, ' D'tool_number' '}
+    endif
+  endif
+endp
+
+;-------------------
+
+@usr_optionalstop
+  ; Handle line for Optional Stop G/M code
+  iStopmode = 1
+  ; {nb, 'MSG("Please Approve The Tool : 'tool_name'")'}
+  ; {nb, 'M'iStopmode:mcode_f' '}
+  ; {nb, 'MSG("'job_name' , Tool : 'tool_name'")'}
+endp
+
+@usr_forcedstop
+  ; Handle line for forced Stop gmcode
+  iStopmode = 0
+  {nb, 'M'iStopmode:mcode_f' '}
+endp
+
+@usr_StopM00_sametool
+  ; Handle output for forced stopM00 between operations using the same tool
+  if bCoolExist
+    iCoolantM1      = iCoolantM1OFF
+    iCoolantM2      = iCoolantM2OFF
+    iCoolantM3      = iCoolantM3OFF
+    iCoolantM4      = iCoolantM4OFF
+    iCoolantM5      = iCoolantM5OFF
+    iCoolantM6      = iCoolantM6OFF
+    iCoolantM7      = iCoolantM7OFF
+    iCoolantM8      = iCoolantM8OFF
+    call @usr_coolant_output
+  endif
+  iSpindleDir = 5
+  {nb}
+  call @usr_spindle_mcode_output
+  if sHomestrstpsame ne ''
+    sHomestr = sHomestrstpsame
+    ; call @usr_prep_home_axis
+  endif
+  call @usr_forcedstop
+  sUsrmsg = sStopMessage
+  call @usr_message
+  {nb}
+  call @usr_abs_inc_output
+  call @m_feed_spin
+  call @usr_spindle_mcode_output
+  change(xpos) = true
+  change(ypos) = true
+  change(zpos) = false
+  call @rapid_move
+  call @usr_heightcomp_on
+endp
+
+@usr_StopM00_difftool
+  ; Handle output for forced stopM00 between operations using different tools
+  if bCoolExist
+    iCoolantM1      = iCoolantM1OFF
+    iCoolantM2      = iCoolantM2OFF
+    iCoolantM3      = iCoolantM3OFF
+    iCoolantM4      = iCoolantM4OFF
+    iCoolantM5      = iCoolantM5OFF
+    iCoolantM6      = iCoolantM6OFF
+    iCoolantM7      = iCoolantM7OFF
+    iCoolantM8      = iCoolantM8OFF
+    call @usr_coolant_output
+  endif
+  iSpindleDir = 5
+  {nb}
+  call @usr_spindle_mcode_output
+  if sHomestrstpdiff ne ''
+    sHomestr = sHomestrstpdiff
+    ; call @usr_prep_home_axis
+  endif
+  call @usr_forcedstop
+  sUsrmsg = sStopMessage
+  call @usr_message
+  bStopM00difftool = true
+endp
+
+
+@rotate
+  ; @rotate Not Supported in this template
+endp
+
+;-------------------
+
+@mirror
+  ; @mirror Not Supported in this template
+endp
+
+;-------------------
+
+@fourth_axis
+  ; @fourth_axis Not Supported in this template
+endp
+;-------------------
+
+@message
+  ; We don't always use messages directly from SolidCAM
+  if iOperationMessage eq 1
+    {nb, cCb,message,cCe}
+  endif
+endp
+
+@usr_message
+  ; Handle output for messages
+  ; We don't use messages directly from SolidCAM
+  {nb, cCb,sUsrmsg,cCe}
+endp
+
+;-------------------
+
+@drill
+  drill_upper_z = drill_upper_z - safety
+  C83_FDEP = C83_FDEP * tool_diameter
+  C83_FDEP = drill_upper_z - C83_FDEP
+  C83_MDEP = C83_MDEP * tool_diameter
+  ; Handle output for drill cycles
+  local logical skipZpos
+  skipZpos = false
+  if job_type eq '3-d drill' and prev_command eq '@drill_point'
+    skipZpos = true
+  endif
+  if !skipZpos and drill_type ne CYCLE84
+    {nb,cDrZp'Z'zpos' 'cDrZs}
+  endif
+  if bCoolExist
+    call @usr_coolant
+  endif
+  ; call @usr_bToolPreselect
+  if drill_type eq CYCLE84
+    {nb, 'S100 M3'}
+  endif
+endp
+
+;-------------------
+
+@drill_point
+  ; Handle output for drill positions
+  ; local integer i
+  ; if drill_type eq G84_Peck
+  ;   iNumpecks = (drill_depth/Q_Peck)+1.
+  ;   nCorrectedpeck = drill_depth/iNumpecks
+  ;   i = 1
+  ;   while i <= iNumpecks
+  ;     {nb,'X'xpos ' ', 'Y'ypos ' ', 'Z'(drill_upper_z-(nCorrectedpeck*i))' 'cDrPts}
+  ;     i = i + 1
+  ;   endw
+  ; else
+  ;   if !first_drill then
+  ;     {nb,['X'xpos ' '], ['Y'ypos ' '], ['Z'zpos ' ']cDrPts}
+  ;   endif
+  ; endif
+  {nb, 'G0', [' X'xpos], [' Y'ypos]}
+  {nb, 'F'z_feed}
+  if drill_type eq CYCLE81 then
+    {nb, 'CYCLE81('job_clearance_plane','drill_upper_z','safety','drill_lower_z',,'C81_DTB',0,1,12)'}
+  endif
+  if drill_type eq CYCLE83 then
+    ; (tool_diameter * C830_FDEP) calc in @drill
+    {nb, 'CYCLE83('job_clearance_plane','drill_upper_z','safety','drill_lower_z',,'C83_FDEP',,'C83_DAM','C83_DTB','C83_DTS','C83_FRF','C83_VARI',0,'C83_MDEP','C83_VRT','C83_DTD','C83_DIS1','C83_GMODE',1,12221112)'}
+  endif
+  if drill_type eq CYCLE830 then
+    local integer S_AMODE3 S_AMODE2 Q_AMODE Q_DMODE Q_GMODE Q_VARI
+    local integer C830_U_MP C830_U_TSCSF C830_U_Z1 C830_U_D
+    C830_U_D = 0
+    C830_U_Z1 = 1
+    C830_U_TSCSF = 0
+    C830_U_MP = 1
+
+    S_AMODE3 = C830_U_ZA + 10 * C830_U_ZP + 100 * C830_U_ZD
+
+    S_AMODE2 = C830_U_F + 10 * C830_U_FA + 100 * C830_U_FP + 1000 * C830_U_FS + 10000 * C830_U_FD + 100000 * C830_U_FR + 1000000 * C830_U_S_V5 + 10000000 * C830_U_SP_V4 + 100000000 * C830_U_SR_V6
+    Q_AMODE   = C830_U_Z1 + 10 * C830_U_DTB + 100 * C830_U_DTS + 1000 * C830_U_DT + 10000 * C830_U_D + 100000 * C830_U_DF + 1000000 * C830_U_V3
+    Q_DMODE   = C830_U_MP + 10000 * C830_U_TSCSF
+    Q_GMODE   = 10 * C830_U_DD_TS
+    Q_VARI     = C830_U_MM + 10 * C830_U_RDSR + 100 * C830_U_SFC + 1000 * C830_U_TT + 10000 * C830_U_PP + 100000 * C830_U_RT
+    ;{nb, 'M1'}
+    {nb,'CYCLE830('job_clearance_plane','drill_upper_z','safety','drill_lower_z','(tool_diameter * C830_FDEP)','C830_DAM','C830_DTB','C830_DTS','C830_FRF','Q_VARI','(tool_diameter * C830_MDEP)','C830_VRT','C830_DTD','C830_DIS1', 'C830_S_FP', 3, 'C830_S_SV2', 'z_feed', 'C830_SDAC', 'spin', 'C830_S_SPOS', '(tool_diameter * C830_S_ZA)', 'C830_S_FA', 'C830_S_ZP', 'C830_S_FS', '(tool_diameter * C830_S_ZS1)','(tool_diameter * C830_S_ZS2)','C830_S_N','C830_S_ZD','C830_S_FD','C830_S_FR','C830_S_SDAC3','C830_S_SV3',"M8","M8",'Q_GMODE','Q_DMODE','Q_AMODE','S_AMODE2','S_AMODE3','C830_S_ZPV')'}
+  endif
+  ; if drill_type eq CYCLE84 then
+  ;   {nb, 'M1'}
+  ;   {nb, 'CYCLE84('job_clearance_plane', 'drill_upper_z', 'safety', 'drill_lower_z', , 'C84_DTB', 'C84_SDAC', , 'C84_PIT', 'C84_POSS', 'C84_SST', 'C84_SST1', 'C84_AXN', 'C84_PTAB', 'C84_TECHNO', 'C84_VARI', 'C84_DAM', 'C84_VRT')'}
+  ; endif
+  if drill_type eq CYCLE84 then
+    local integer Q_TECHNO Q_VARI Q_DMODE Q_AMODE
+    Q_TECHNO = C84_U_ESR + 10 * C84_U_FC + 100 * C84_U_A + 1000 * C84_U_MSM
+    Q_VARI   = C84_U_MT + 10 * C84_U_ISM
+    Q_DMODE  = C84_U_MP + 1000 * C84_U_CM + 10000 * C84_U_RS
+    Q_AMODE  = C84_U_DD + 1000 * C84_U_TD + 1000000 * C84_U_RD
+    {nb, 'M1'}
+    {nb, 'CYCLE84('job_clearance_plane','drill_upper_z','safety','drill_lower_z','','C84_DTB',3,'','tool_drill_lead','C84_POSS','spin','(spin * C84_SST1)','C84_AXN','C84_PITA','Q_TECHNO','Q_VARI','(tool_drill_lead * C84_DAM)','(tool_drill_lead * C84_VRT)','C84_PITM','C84_PTAB','C84_PTABA','','Q_DMODE','Q_AMODE')'}
+  endif
+  if drill_type eq CYCLE85 then
+    if tool_type eq reamer_mill then
+      C85_RFFF = z_feed * C85_RFF
+    else
+      C85_RFF = 6000
+    endif
+    ;{nb, 'M1'}
+    {nb, 'CYCLE85('job_clearance_plane','drill_upper_z','safety','drill_lower_z',,'C85_DTB','z_feed','C85_RFFF',,1,12)'}
+  endif
+  if drill_type eq CYCLE86 then
+    {nb, 'CYCLE86('job_clearance_plane', 'drill_upper_z', 'safety', 'drill_lower_z', , 'C86_DTB', 'C86_SDIR', 'C86_RPA', 'C86_PRO', 'C86_RPAP', 'C86_POSS')'}
+  endif
+
+endp
+
+
+;-------------------
+
+@end_drill
+  ; Handle output to cancel drill cycles
+  iDrillmode = 80
+  if change(iDrillmode)
+    if GPX_G80 eq true then
+      {nb, 'G'iDrillmode' '}
+    endif
+  endif
+endp
+
+;-------------------
+
+@m_feed_spin
+  ; Handle output for spindle change
+  if tool_direction eq CW then
+    iSpindleDir = 3
+  else
+    iSpindleDir = 4
+  endif
+  call @usr_spindle_output
+endp
+
+@start_tool
+  ; Handle setting and output for spindle start
+  if tool_direction eq CW then
+    iSpindleDir = 3
+  else
+    iSpindleDir = 4
+  endif
+  call @usr_spindle_output
+  if GPX_TODB then
+    { 'D'tool_number' ' }
+  endif
+  if !bSpinOnlyUseS
+    if bSimpleformat
+      {nb}
+    endif
+    call @usr_spindle_mcode_output
+  endif
+endp
+
+@usr_spindle_output
+  ; Handle output for spindle
+  igSpin = spin
+  ;if change(igSpin)
+  ; if job_type ne 'drill' then
+  {nb,'S'spin:integer_def_f ' '}
+  {nb,'M'iSpindleDir:mcode_f ' '}
+  ; endif
+  ;endif
+endp
+
+@usr_spindle_mcode_output
+  ; Handle output for spindle
+  ; if job_type ne 'drill' or iSpindleDir eq 5 then
+  {nb,'M'iSpindleDir:mcode_f ' '}
+  if bDelay
+    bDelay = false
+    {nb, 'G04 F120'}
+    {nb, 'M1'}
+  endif
+  ; endif
+endp
+
+;-------------------
+
+@offset_change
+  ; Handle setting of Diameter offset
+  iDiameteroffset = d_offset
+endp
+
+;-------------------
+
+@job_plane
+  ; @job_plane Not Supported in this template
+endp
+
+;-------------------
+
+@call_proc
+  ; Handle call to subroutine
+  call @usr_ct
+  {nb, 'M98 P'label}
+  {[' ('message, ')']}
+endp
+
+;-------------------
+
+@proc
+  ; Handle beggining of subroutine
+  {nb, 'O'label}
+endp
+
+;-------------------
+
+@end_proc
+  ; Handle end of subroutine
+  {nb, 'M99'}
+endp
+
+;----------------
+
+@loop_matrix_info
+  bSkipxyrapid = false
+endp
+
+@loop
+  ; Loops Not Supported in this template
+
+endp
+
+;----------------
+
+@end_loop
+  ; Loops Not Supported in this template
+
+endp
+
+;-------------------
+
+@usr_home_axis
+  ; Handle output for homing the X-axis
+  local integer sav_iWorkOffset
+  sav_iWorkOffset = iWorkOffset
+  if iHomingmode eq 1
+    {nb,cHomep'G28 'sHomeline}
+  endif
+  if iHomingmode eq 2
+    {nb,cHomep'G28 '}
+    iAbsincmode = 91
+    change(iAbsincmode) = true
+    call @usr_abs_inc_output
+    { sHomeline}
+    iAbsincmode = 90
+    change(iAbsincmode) = true
+  endif
+  if iHomingmode eq 3 or iHomingmode eq 4
+    if iWorkOffsetmode eq 1 or iWorkOffsetmode eq 3
+      iWorkOffset = 53
+      {nb,cHomep,[cWo,iWorkoffset' ']}
+    endif
+    if iWorkOffsetmode eq 2
+      iWorkOffset = 0
+      {nb,cHomep,[cWo,iWorkoffset' ']}
+    endif
+    call @usr_abs_inc_output
+    { sHomeline}
+    iWorkOffset = sav_iWorkOffset
+    if iHomingmode eq 3
+      change(iWorkOffset) = false
+    endif
+    change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
+  endif
+  if iHomingmode eq 5
+    {nb,cHomep'G30 'sHomeline}
+  endif
+  if iHomingmode eq 6
+    {nb,cHomep'G30 '}
+    iAbsincmode = 91
+    change(iAbsincmode) = true
+    call @usr_abs_inc_output
+    { sHomeline}
+    iAbsincmode = 90
+    change(iAbsincmode) = true
+  endif
+  if iHomingmode eq 7
+    {nb, sHomeline}
+  endif
+endp
+
+;-------------------
+
+@usr_campart_path
+  ; Uses String Functions to get the Windows Folder Path to the CAM-Part
+  iSlength_g_file_name = strlen( g_file_name)
+  iSlength_full_g_file_name = strlen(full_g_file_name)
+  iSlengthcampartpath = iSlength_full_g_file_name - iSlength_g_file_name
+  sCamfilepath = left(full_g_file_name,iSlengthcampartpath)
+endp
+
+;-------------------
+
+@Multiple_Fixtures
+  ; Handle multiple fixture support
+  local integer i
+  ;----From tools 2 and up
+  ;----Closes the sSubspath(tempfile) for the previous tool change
+  ;----Runs loop to print G5x and copy in the tempfile
+  ;----Sets the tempfile to new name for next tool
+  if bFrombeginchangetool eq True
+    if !first_tool
+      {nl,'!!close file=' sSubspath '!!'}
+      i = 1
+      while i <= iNumber_of_Fixtures
+        {nl,cCb'-----LOOPING CODE-----'cCe}
+        if i ne 1
+          {nb,cWo,((iWorkoffset-1)+i)}
+        endif
+        {nl,'!!copy file=' sSubspath '!!'}
+        i = i + 1
+      endw
+      sSubspath = sCamfilepath + 'TEMPFILE' + tostr(iTcnumber:'5.0(n)')
+    endif
+    bFrombeginchangetool = False
+  endif
+
+  ;----At end of tool_change
+  ;----Opens tempfile to print out gcode
+  if bFromendchangetool eq True
+    sSubspath = sCamfilepath + 'TEMPFILE' + tostr(iTcnumber:'5.0(n)')
+    {nl,'!!open file=' sSubspath '!!'}
+    bFromendchangetool = False
+  endif
+
+  ;----At end_program
+  ;----Closes the sSubspath(tempfile) for the current tool change
+  ;----Runs loop to print G5x and copy in the tempfile
+  if bFromendprogram eq True
+    {nl,'!!close file=' sSubspath '!!'}
+    i = 1
+    while i <= iNumber_of_Fixtures
+      {nl,cCb'-----LOOPING LAST TOOL CHANGE CODE-----'cCe}
+      if i ne 1
+        {nb,cWo,((iWorkoffset-1)+i)}
+      endif
+      {nl,'!!copy file=' sSubspath '!!'}
+      i = i + 1
+    endw
+    bFromendprogram = False
+  endif
+
+  ;----At eng_of_file
+  ;----Delete all tempfiles
+  if bFromendoffile eq True
+    i = 1
+    while i <= iTcnumber
+      sSubspath = sCamfilepath + 'TEMPFILE' + tostr(i:'5.0(n)')
+      {nl,'!!delete file=' sSubspath '!!'}
+      i = i + 1
+    endw
+    bFromendoffile = false
+  endif
+
+endp
+
+;-------------------
+
+; TODO :
+; Standard Cycles

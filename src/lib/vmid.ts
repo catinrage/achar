@@ -1,0 +1,267 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { EventData } from './parser';
+
+export interface VmidAxis {
+  name: string;
+  type?: string;
+  min?: number;
+  max?: number;
+  home?: number;
+}
+
+export interface VmidParameter {
+  gppName: string;
+  name?: string;
+  type?: string;
+  source: 'Param' | 'ParamJobs';
+}
+
+export interface VmidDefinition {
+  file?: string;
+  machine: Record<string, string>;
+  axes: VmidAxis[];
+  postProcessors: string[];
+  parameters: VmidParameter[];
+}
+
+export interface VmidValidationIssue {
+  severity: 'error' | 'warning';
+  message: string;
+  event?: string;
+  key?: string;
+}
+
+export async function parseVmidFile(vmidPath: string): Promise<VmidDefinition> {
+  return {
+    ...parseVmid(await readFile(vmidPath, 'utf-8')),
+    file: path.resolve(vmidPath),
+  };
+}
+
+export function parseVmid(source: string): VmidDefinition {
+  const machine = parseFirstAttributes(source, 'Machine');
+  const axes = parseElements(source, 'Axis')
+    .map((attrs) => ({
+      name: attrs.Name ?? '',
+      type: attrs.Type,
+      min: parseOptionalNumber(attrs.MinLim),
+      max: parseOptionalNumber(attrs.MaxLim),
+      home: parseOptionalNumber(attrs.HomeRef),
+    }))
+    .filter((axis) => axis.name.length > 0);
+  const postProcessors = parseElements(source, 'PostProcessor')
+    .map((attrs) => attrs.Name)
+    .filter((name): name is string => typeof name === 'string');
+  const parameters: VmidParameter[] = [
+    ...parseElements(source, 'Param').map((attrs) => ({
+      gppName: attrs.GppName ?? '',
+      name: attrs.Name,
+      type: attrs.Type,
+      source: 'Param' as const,
+    })),
+    ...parseElements(source, 'ParamJobs').map((attrs) => ({
+      gppName: attrs.GppName ?? '',
+      name: attrs.Name,
+      type: attrs.Type,
+      source: 'ParamJobs' as const,
+    })),
+  ].filter((param) => param.gppName.length > 0);
+
+  return {
+    machine,
+    axes,
+    postProcessors,
+    parameters,
+  };
+}
+
+export function validateTraceAgainstVmid(
+  events: EventData[],
+  vmid: VmidDefinition,
+): VmidValidationIssue[] {
+  const issues: VmidValidationIssue[] = [];
+  const parameterNames = new Set(vmid.parameters.map((param) => param.gppName));
+  const axisNames = new Set(vmid.axes.map((axis) => axis.name.toUpperCase()));
+  const startOfFile = events.find(
+    (event) => event._eventName === 'StartOfFile',
+  );
+  const traceVmidName = stringValue(startOfFile?.VMID_file);
+  const machineName = vmid.machine.Name;
+
+  if (
+    traceVmidName &&
+    machineName &&
+    normalizeName(traceVmidName) !== normalizeName(machineName)
+  ) {
+    issues.push({
+      severity: 'error',
+      event: 'StartOfFile',
+      key: 'VMID_file',
+      message: `Trace VMID ${traceVmidName} does not match VMID machine ${machineName}.`,
+    });
+  }
+
+  for (const event of events) {
+    for (const [key, value] of Object.entries(event)) {
+      if (key.startsWith('_')) continue;
+
+      const axisName = axisFieldName(key);
+      if (axisName && typeof value === 'number' && !axisNames.has(axisName)) {
+        issues.push({
+          severity: 'error',
+          event: String(event._eventName),
+          key,
+          message: `Trace uses ${axisName} axis, but the VMID does not define it.`,
+        });
+        continue;
+      }
+
+      if (looksLikeUserParameter(key) && !parameterNames.has(key)) {
+        issues.push({
+          severity: 'warning',
+          event: String(event._eventName),
+          key,
+          message: `Trace user parameter ${key} is not declared in the VMID.`,
+        });
+      }
+    }
+  }
+
+  return uniqueIssues(issues);
+}
+
+export function formatVmidSummary(vmid: VmidDefinition): string {
+  const name = vmid.machine.Name ?? 'unknown machine';
+  const axes = vmid.axes.map((axis) => axis.name).join(', ') || 'none';
+
+  return `${name}: ${vmid.parameters.length} user parameters, axes ${axes}`;
+}
+
+export function formatVmidValidation(issues: VmidValidationIssue[]): string {
+  if (issues.length === 0) {
+    return 'VMID validation passed';
+  }
+
+  return issues
+    .map((issue) => {
+      const location =
+        issue.event && issue.key ? ` (${issue.event}.${issue.key})` : '';
+      return `${issue.severity.toUpperCase()}: ${issue.message}${location}`;
+    })
+    .join('\n');
+}
+
+export function generateVmidTraceTypes(
+  vmid: VmidDefinition,
+  options: { interfaceName?: string } = {},
+): string {
+  const interfaceName = options.interfaceName ?? 'VmidTraceExtensions';
+  const globals = vmid.parameters.filter((item) => item.source === 'Param');
+  const jobs = vmid.parameters.filter((item) => item.source === 'ParamJobs');
+  const fields = (parameters: VmidParameter[]) =>
+    [...new Map(parameters.map((item) => [item.gppName, item])).values()]
+      .sort((left, right) => left.gppName.localeCompare(right.gppName))
+      .map(
+        (item) =>
+          `  ${typescriptProperty(item.gppName)}?: ${vmidParameterType(item)};`,
+      )
+      .join('\n');
+
+  return [
+    '// Generated by achar vmid-types. Do not edit by hand.',
+    "import type { EventsType } from 'achar';",
+    '',
+    `export interface ${interfaceName} {`,
+    fields(globals),
+    '}',
+    '',
+    `export interface ${interfaceName}StartOfJob {`,
+    fields(jobs),
+    '}',
+    '',
+    `export type ${interfaceName}Job = EventsType['StartOfJob'] & ${interfaceName}StartOfJob;`,
+    '',
+  ].join('\n');
+}
+
+function parseFirstAttributes(
+  source: string,
+  tagName: string,
+): Record<string, string> {
+  const match = source.match(new RegExp(`<${tagName}\\b([^>]*)>`));
+  return match ? parseAttributes(match[1]) : {};
+}
+
+function parseElements(
+  source: string,
+  tagName: string,
+): Array<Record<string, string>> {
+  const elements: Array<Record<string, string>> = [];
+  const pattern = new RegExp(`<${tagName}\\b([^>]*)>`, 'g');
+
+  for (const match of source.matchAll(pattern)) {
+    elements.push(parseAttributes(match[1]));
+  }
+
+  return elements;
+}
+
+function parseAttributes(source: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const pattern = /([A-Za-z_][\w:-]*)="([^"]*)"/g;
+
+  for (const match of source.matchAll(pattern)) {
+    attributes[match[1]] = match[2];
+  }
+
+  return attributes;
+}
+
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function normalizeName(value: string): string {
+  return value.replace(/\.[^.]+$/, '').toLowerCase();
+}
+
+function axisFieldName(key: string): string | undefined {
+  return /^[xyzabc]$/i.test(key) ? key.toUpperCase() : undefined;
+}
+
+function looksLikeUserParameter(key: string): boolean {
+  return /^(?:C\d+_|MISC_|Iteration_|ts_|[bins][A-Z0-9_])/.test(key);
+}
+
+function uniqueIssues(issues: VmidValidationIssue[]): VmidValidationIssue[] {
+  const seen = new Set<string>();
+
+  return issues.filter((issue) => {
+    const key = `${issue.severity}:${issue.event}:${issue.key}:${issue.message}`;
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function vmidParameterType(parameter: VmidParameter): string {
+  const type = parameter.type?.toLowerCase();
+  if (type?.includes('string') || parameter.gppName.startsWith('s')) {
+    return 'string';
+  }
+  if (type?.includes('bool')) return 'boolean';
+  return 'number';
+}
+
+function typescriptProperty(name: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
+}

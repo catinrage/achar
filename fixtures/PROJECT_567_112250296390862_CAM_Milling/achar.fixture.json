@@ -1,0 +1,10 @@
+{
+  "name": "siemens-828d-567-1160l-3a-cam-milling",
+  "trace": "567_112250296390862_CAM_Milling.MPF",
+  "reference": "reference",
+  "programName": "567_112250296390862_CAM_Milling",
+  "post": "siemens-828d",
+  "out": "../../generated/siemens-828d-567-1160l-3a-cam-milling",
+  "vmid": "PoyaKar_1160L_3A.vmid",
+  "machineProfile": "PoyaKar_1160L_3A.machine.json"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "poyakar-1160l-3a",
+  "name": "PoyaKar 1160L 3A",
+  "controller": "siemens-828d",
+  "axes": 3,
+  "features": {
+    "toolMeasurementProgram": true,
+    "toolMeasurementProgramDeferred": true,
+    "mainToolListComments": true,
+    "dwellAfterCoolantOn": true,
+    "dwellAfterCoolantOff": true,
+    "cancelAirCoolantSchedule": false,
+    "forceInitialApproachPosition": true,
+    "inlineFeedRateMode": false,
+    "compactCoordinates": true
+  },
+  "home": {
+    "x": -465,
+    "y": 190,
+    "z": 0
+  },
+  "returnHome": {
+    "x": 260,
+    "y": 190,
+    "z": 0
+  }
+}
