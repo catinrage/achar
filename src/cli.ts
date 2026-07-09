@@ -49,6 +49,7 @@ import {
   type VmidValidationIssue,
   validateTraceAgainstVmid,
 } from './lib/vmid';
+import { startAcharMcpServer } from './mcp/server';
 
 interface CliOptions {
   all?: boolean;
@@ -76,6 +77,8 @@ interface CliOptions {
   update?: boolean;
   vmid?: string;
   watch?: boolean;
+  workspace?: string;
+  logs?: boolean;
 }
 
 interface RunInput {
@@ -226,6 +229,26 @@ cli
         console.log(`${chalk.green(post.id)}  ${post.name}${aliases}`);
       }
 
+      return 0;
+    }),
+  );
+
+cli
+  .command('mcp')
+  .description('Run the Achar MCP stdio server for LLM clients.')
+  .option(
+    '--workspace <directory>',
+    'Workspace root. Defaults to ACHAR_WORKSPACE or the current project.',
+  )
+  .option('--logs', 'Allow parser/backend logs on stderr.')
+  .action(
+    runCommand(async (options: CliOptions) => {
+      await startAcharMcpServer({
+        workspaceRoot: options.workspace
+          ? path.resolve(options.workspace)
+          : undefined,
+        logs: options.logs,
+      });
       return 0;
     }),
   );

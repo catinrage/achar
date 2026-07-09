@@ -16,7 +16,21 @@ export interface DesktopBootstrap {
   workspaceRoot: string;
   fixturesRoot?: string;
   fixtures: DesktopFixture[];
+  machineProfiles: DesktopMachineProfile[];
   posts: Array<{ id: string; name: string }>;
+  mcp: {
+    command: string;
+    args: string[];
+    environment: Record<string, string>;
+  };
+}
+
+export interface DesktopMachineProfile {
+  id: string;
+  name?: string;
+  controller?: string;
+  axes?: number;
+  path: string;
 }
 
 export interface DesktopDiagnostic {

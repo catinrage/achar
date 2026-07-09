@@ -1,4 +1,7 @@
 import type { ElectrobunConfig } from 'electrobun';
+import { sveltePlugin } from './src/desktop/svelte-plugin';
+
+const svelte = sveltePlugin();
 
 export default {
   app: {
@@ -16,6 +19,7 @@ export default {
       mainview: {
         entrypoint: 'src/desktop/mainview/index.ts',
         tsconfig: 'tsconfig.json',
+        plugins: [svelte],
       },
     },
     copy: {

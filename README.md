@@ -173,7 +173,8 @@ and the elapsed time.
 ### Desktop UI
 
 The Electrobun desktop app is primarily packaged for Windows 11 x64 and exposes
-the same generation and validation core as the CLI. It supports fixture
+the same generation and validation core as the CLI. The view is built with
+Svelte 5 and supports dark, light, and system theme modes. It supports fixture
 selection, custom Trace 5/VMID/profile paths, native file dialogs, parity
 status, diagnostics, generated-file browsing, and G-code preview. The Windows
 build uses the installed Microsoft Edge WebView2 runtime instead of bundling
@@ -198,6 +199,35 @@ command intentionally rejects non-Windows hosts. Windows 11 provides WebView2;
 older or stripped-down installations must install the WebView2 Evergreen
 Runtime. Linux remains useful for development and requires GTK 3 and WebKitGTK
 4.1 development/runtime packages.
+
+### MCP Server
+
+Achar also ships a stdio MCP server for LLM clients. It exposes tools for
+listing the workspace, validating Trace 5/VMID/profile inputs, generating G-code,
+and reading generated output previews.
+
+```bash
+bun run achar mcp
+```
+
+The package shortcut runs the same CLI subcommand:
+
+```bash
+bun run achar:mcp
+```
+
+For clients that run the server outside the repository directory, pass the
+workspace explicitly:
+
+```bash
+ACHAR_WORKSPACE=/path/to/achar bun run achar mcp
+# or
+bun run achar mcp --workspace /path/to/achar
+```
+
+On Windows, use the same command from PowerShell in the project directory, or
+set `ACHAR_WORKSPACE` in the client configuration. The desktop UI includes this
+MCP command in its sidebar for quick client setup.
 
 ### Fixture Manifests
 

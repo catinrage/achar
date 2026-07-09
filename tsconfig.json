@@ -32,5 +32,6 @@
       "$common/*": ["./src/common/*"],
       "$types": ["./src/types.ts"]
     }
-  }
+  },
+  "exclude": ["artifacts", "build", "generated", "node_modules"]
 }
