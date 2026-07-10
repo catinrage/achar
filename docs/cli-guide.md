@@ -306,6 +306,9 @@ Initial schema:
     "mainToolListComments": true,
     "dwellAfterCoolantOn": true,
     "dwellAfterCoolantOff": true,
+    "drillApproachZBeforeCoolant": true,
+    "trackArcFeedRate": true,
+    "retainCoolantAcrossJobs": true,
     "cancelAirCoolantSchedule": false,
     "forceInitialApproachPosition": true,
     "inlineFeedRateMode": false,
@@ -337,6 +340,9 @@ Supported fields:
 | `features.mainToolListComments` | No | Whether to emit a main-file `Tools Used In This Program` comment block even when tool measurement output is enabled. |
 | `features.dwellAfterCoolantOn` | No | Whether to emit `G04F2` after `M8`. |
 | `features.dwellAfterCoolantOff` | No | Whether to emit `G04F2` after final `M9`. |
+| `features.drillApproachZBeforeCoolant` | No | Whether drill events emit their approach Z before turning coolant on. |
+| `features.trackArcFeedRate` | No | Whether arc feed becomes the modal feed used to suppress the next unchanged `F` word. |
+| `features.retainCoolantAcrossJobs` | No | Whether an already-active coolant state suppresses repeated coolant-on output in a later job. |
 | `features.cancelAirCoolantSchedule` | No | Whether to emit scheduled-air-coolant `CANCEL(...)` cleanup. Defaults to true for existing Siemens parity. |
 | `features.forceInitialApproachPosition` | No | Whether to repeat the first approach XY position after the first job-start Z move. |
 | `features.inlineFeedRateMode` | No | Whether first feed moves emit an inline `G94`. Defaults to true for existing Siemens parity. |

@@ -12,6 +12,7 @@ export interface SiemensToolDefinition {
 export interface SiemensPostContextState {
   machineProfile?: MachineProfile;
   tools: Map<string, SiemensToolDefinition>;
+  jobFiles: Set<string>;
   toolIndex: number;
   currentDrill: EventsType['Drill'] | null;
   emittedToolList: boolean;
@@ -56,6 +57,7 @@ export function createSiemensPostContext(machineProfile?: MachineProfile) {
   return createPostContext<SiemensPostContextState>(() => ({
     machineProfile,
     tools: new Map(),
+    jobFiles: new Set(),
     toolIndex: 0,
     currentDrill: null,
     emittedToolList: false,

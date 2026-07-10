@@ -9,6 +9,9 @@ export interface MachineProfileFeatures {
   mainToolListComments?: boolean;
   dwellAfterCoolantOn?: boolean;
   dwellAfterCoolantOff?: boolean;
+  drillApproachZBeforeCoolant?: boolean;
+  trackArcFeedRate?: boolean;
+  retainCoolantAcrossJobs?: boolean;
   cancelAirCoolantSchedule?: boolean;
   forceInitialApproachPosition?: boolean;
   inlineFeedRateMode?: boolean;
@@ -151,6 +154,21 @@ function parseFeatures(
       value.dwellAfterCoolantOff,
       source,
       'features.dwellAfterCoolantOff',
+    ),
+    drillApproachZBeforeCoolant: optionalBoolean(
+      value.drillApproachZBeforeCoolant,
+      source,
+      'features.drillApproachZBeforeCoolant',
+    ),
+    trackArcFeedRate: optionalBoolean(
+      value.trackArcFeedRate,
+      source,
+      'features.trackArcFeedRate',
+    ),
+    retainCoolantAcrossJobs: optionalBoolean(
+      value.retainCoolantAcrossJobs,
+      source,
+      'features.retainCoolantAcrossJobs',
     ),
     cancelAirCoolantSchedule: optionalBoolean(
       value.cancelAirCoolantSchedule,

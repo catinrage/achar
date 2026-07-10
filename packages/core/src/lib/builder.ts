@@ -409,6 +409,12 @@ export class Builder {
     return this;
   }
 
+  /** Removes one trailing blank line from the current file. */
+  public RemoveTrailingBlankLine(): Builder {
+    this.currentFile.removeTrailingBlankLine();
+    return this;
+  }
+
   /**
    * @method NumberedBlankLine
    * @description Adds a numbered empty line to the current file.

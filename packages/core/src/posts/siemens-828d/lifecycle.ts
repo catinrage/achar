@@ -14,7 +14,6 @@ export function registerIgnoredLifecycleEvents(
   post.on('LoopMatrixInfo', () => {});
   post.on('PlaneData', () => {});
   post.on('RotaryInfo', () => {});
-  post.on('FourthAxis', () => {});
   post.on('RotateToPlane', () => {});
   post.on('OffsetChange', () => {});
   post.on('ToolBreakage', () => {});

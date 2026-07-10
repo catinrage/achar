@@ -48,6 +48,12 @@ describe('Machine', () => {
       const pos = machine.setPosition({ a: 1, b: 2, c: 3 });
       expect(pos).toBe('A1. B2. C3.');
     });
+
+    it('should preserve signed zero on linear axes', () => {
+      expect(machine.setPosition({ x: -0, y: -0, z: -0 })).toBe(
+        'X-0 Y-0 Z-0',
+      );
+    });
   });
 
   describe('setMachinePlane', () => {

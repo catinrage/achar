@@ -88,6 +88,16 @@ describe('Builder', () => {
       expect(result[0].code).toBe('N10 G710\n\nN20 G90');
     });
 
+    it('should remove one trailing blank line before appending content', () => {
+      builder.put('G710');
+      builder.BlankLine();
+      builder.BlankLine();
+      builder.RemoveTrailingBlankLine();
+      builder.put('G90');
+
+      expect(builder.build()[0].code).toBe('N10 G710\n\nN20 G90');
+    });
+
     it('should handle skipNewLine option', () => {
       builder.put('G0', { skipNewLine: true });
       builder.put('X10', { skipNewLine: true });

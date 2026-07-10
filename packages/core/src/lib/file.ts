@@ -257,6 +257,15 @@ export class File {
     return this;
   }
 
+  /** Removes one trailing blank line before appending another program section. */
+  public removeTrailingBlankLine(): File {
+    this.flush();
+    if (this._lines.at(-1) === '') {
+      this._lines.pop();
+    }
+    return this;
+  }
+
   /**
    * @method numberedBlankLine
    * @description Adds a numbered empty line, consuming one line number.

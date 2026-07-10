@@ -3,6 +3,7 @@ import type { EventsType } from '../../types';
 
 export const siemens828dPolicy = definePostPolicy({
   formatNumber(value: number): string {
+    if (Object.is(value, -0)) return '-0';
     return Number.isInteger(value)
       ? value.toString()
       : value.toFixed(5).replace(/0+$/, '').replace(/\.$/, '');

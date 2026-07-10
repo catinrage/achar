@@ -32,6 +32,9 @@ interface MachinePropertyTypes {
   currentTool: string;
 }
 
+const formatLinearAxis = (value: number): string =>
+  Object.is(value, -0) ? '-0' : value.toString();
+
 /**
  * @class Machine
  * @description Represents the state of a CNC machine. It tracks various parameters
@@ -55,9 +58,9 @@ export class Machine {
     b: Emitter<number>;
     c: Emitter<number>;
   } = {
-    x: new Emitter('X'),
-    y: new Emitter('Y'),
-    z: new Emitter('Z'),
+    x: new Emitter('X', formatLinearAxis),
+    y: new Emitter('Y', formatLinearAxis),
+    z: new Emitter('Z', formatLinearAxis),
     a: new Emitter('A', (value) =>
       Number.isInteger(value) ? `${value}.` : value.toString(),
     ),

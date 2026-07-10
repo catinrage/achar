@@ -182,6 +182,19 @@ export class Siemens828dDriver {
     return this.emit('M1');
   }
 
+  public ToolChangePosition(mode: number, home: SupaRapidParams): this {
+    this.SupaRapid({ z: home.z });
+    if (mode === 1) {
+      this.SupaRapid({ y: home.y });
+      return this.SupaRapid({ x: home.x });
+    }
+    if (mode === 2) {
+      this.SupaRapid({ x: home.x });
+      return this.SupaRapid({ y: home.y });
+    }
+    return this.SupaRapid({ x: home.x, y: home.y });
+  }
+
   public CoolantOn(): this {
     this.builder.CoolantOn();
     return this;
@@ -369,10 +382,18 @@ export class Siemens828dDriver {
     const safety = this.formatNumber(context.safety);
 
     switch (params.drill_cycle_name) {
-      case 'CYCLE83':
+      case 'CYCLE83': {
+        const job = context.job;
+        const firstDepth =
+          params.drill_upper_z -
+          context.safety -
+          (job.C83_FDEP ?? 0) * context.toolDiameter;
+        const minimumDepth = (job.C83_MDEP ?? 0) * context.toolDiameter;
+
         return this.emit(
-          `CYCLE83(${clearance},${upper},${safety},${lower},,${this.formatNumber(params.down_step || params.drill_depth)},,30,0,0,100,1,0,12,0,0,1,0,1,12221112)`,
+          `CYCLE83(${clearance},${upper},${safety},${lower},,${this.formatNumber(firstDepth)},,${this.formatNumber(job.C83_DAM ?? 30)},${this.formatNumber(job.C83_DTB ?? 0)},${this.formatNumber(job.C83_DTS ?? 0)},${this.formatNumber(job.C83_FRF ?? 100)},${job.C83_VARI ?? 1},0,${this.formatNumber(minimumDepth)},${this.formatNumber(job.C83_VRT ?? 0)},${this.formatNumber(job.C83_DTD ?? 0)},${this.formatNumber(job.C83_DIS1 ?? 1)},${job.C83_GMODE ?? 0},1,12221112)`,
         );
+      }
       case 'CYCLE830': {
         const job = context.job;
         const toolDiameter = context.toolDiameter;
@@ -450,10 +471,28 @@ export class Siemens828dDriver {
           finalPosition: job.C830_S_ZPV ?? 2,
         });
       }
-      case 'CYCLE84':
+      case 'CYCLE84': {
+        const job = context.job;
+        const qTechno =
+          (job.C84_U_ESR ?? 0) +
+          10 * (job.C84_U_FC ?? 0) +
+          100 * (job.C84_U_A ?? 0) +
+          1000 * (job.C84_U_MSM ?? 0);
+        const qVari = (job.C84_U_MT ?? 0) + 10 * (job.C84_U_ISM ?? 0);
+        const qDmode =
+          (job.C84_U_MP ?? 0) +
+          1000 * (job.C84_U_CM ?? 0) +
+          10000 * (job.C84_U_RS ?? 0);
+        const qAmode =
+          (job.C84_U_DD ?? 0) +
+          1000 * (job.C84_U_TD ?? 0) +
+          1000000 * (job.C84_U_RD ?? 0);
+        const lead = job.tool_drill_lead ?? 0;
+
         return this.emit(
-          `CYCLE84(${clearance},${upper},${safety},${lower},,0.5,3,,1.337,0,300,450,0,1,1111,0,4.011,1.337,,,,,1,2001002)`,
+          `CYCLE84(${clearance},${upper},${safety},${lower},,${this.formatNumber(job.C84_DTB ?? 0)},3,,${this.formatNumber(lead)},${this.formatNumber(job.C84_POSS ?? 0)},${this.formatNumber(params.spin)},${this.formatNumber(params.spin * (job.C84_SST1 ?? 1))},${job.C84_AXN ?? 0},${job.C84_PITA ?? 1},${qTechno},${qVari},${this.formatNumber(lead * (job.C84_DAM ?? 0))},${this.formatNumber(lead * (job.C84_VRT ?? 0))},${job.C84_PITM ?? ''},${job.C84_PTAB ?? ''},${job.C84_PTABA ?? ''},,${qDmode},${qAmode})`,
         );
+      }
       case 'CYCLE85': {
         const retractFeed =
           context.cycle85RetractFactor === undefined

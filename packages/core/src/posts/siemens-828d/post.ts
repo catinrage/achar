@@ -1,5 +1,5 @@
 import { FeedRateModeEnum, PlaneEnum } from '../../common/enums';
-import type { Builder } from '../../lib/builder';
+import type { Builder, GCodeWord } from '../../lib/builder';
 import type { MachineProfile } from '../../lib/machine-profile';
 import { definePost } from '../../lib/post-definition';
 import type { Program } from '../../lib/program';
@@ -192,7 +192,10 @@ export function registerSiemens828dPost(
     state,
     controller,
     coolantOn: emitCoolantOn,
+    formatCoordinate,
+    formatRotary,
     sameNumber,
+    traceChanged,
     updateLastPosition,
   });
 
@@ -253,9 +256,27 @@ export function registerSiemens828dPost(
       state.pendingCompensation = 'G40';
     }
   });
+  post.on('FourthAxis', ($, params) => {
+    if (state.currentJob?.used_in_transform_4x) return;
+    const planeAngle =
+      (-Math.atan2(params.normal_to_plane_y, params.normal_to_plane_z) * 180) /
+      Math.PI;
+    const angle =
+      Math.abs(planeAngle - params.angle) <= 0.001
+        ? Number(planeAngle.toFixed(4))
+        : params.angle;
+    $.Word('A', formatNumber(angle));
+    state.lastPosition.a = angle;
+  });
 
   post.on('StartOfJob', ($, params, metadata) => {
-    $.OpenFile(jobFileName(params), 'SPF', 'replace');
+    const jobFile = jobFileName(params);
+    const fileMode = state.jobFiles.has(jobFile) ? 'append' : 'replace';
+    state.jobFiles.add(jobFile);
+    $.OpenFile(jobFile, 'SPF', fileMode);
+    if (fileMode === 'append') {
+      $.RemoveTrailingBlankLine();
+    }
 
     const explicitToolChange = state.pendingToolChange;
     const toolChange =
@@ -299,6 +320,14 @@ export function registerSiemens828dPost(
     }
 
     if (toolChange) {
+      const toolChangePositionMode = params.iTC_SUPA_MODE ?? 0;
+      if (toolChangePositionMode !== 0) {
+        controller($).ToolChangePosition(toolChangePositionMode, {
+          x: params.nTC_XSUPA ?? home.x,
+          y: params.nTC_YSUPA ?? home.y,
+          z: returnHome.z,
+        });
+      }
       $.SelectTool(toolChange.tool_id_string, {
         forcePrint: true,
         skipNewLine: true,
@@ -307,15 +336,14 @@ export function registerSiemens828dPost(
         .Word('D', 1);
       if (params.iM1 === 1 || params.iM1 === 2) {
         controller($).ToolChangePrompt(params.iM1, params.sM1_MSG ?? '', {
-          x: params.nTC_XSUPA,
-          y: params.nTC_YSUPA,
+          x: params.nTC_XSUPA === 0 ? home.x : params.nTC_XSUPA,
+          y: params.nTC_YSUPA === 0 ? home.y : params.nTC_YSUPA,
           z: returnHome.z,
         });
       }
       if (
         explicitToolChange &&
         !toolChange.last_tool &&
-        !params.iM1 &&
         params.next_job_tool_number !== state.previousJobToolNumber &&
         toolChange.next_tool_id_string !== state.lastPreselectedToolId
       ) {
@@ -347,17 +375,27 @@ export function registerSiemens828dPost(
       );
     }
 
-    $.Block([
-      toolChange ? `G0 G${state.currentHomeNumber} G90` : undefined,
-      { letter: 'X', value: formatCoordinate(params.xnext) },
-      { letter: 'Y', value: formatCoordinate(params.ynext) },
-      state.numberOfAxes !== 3 && params.anext !== undefined
-        ? { letter: 'A', value: formatRotary(params.anext) }
-        : undefined,
-    ]);
-    state.lastPosition = { x: params.xnext, y: params.ynext, a: params.anext };
+    const emitStartPosition =
+      toolChange !== null || options.machineProfile === undefined;
+    if (emitStartPosition) {
+      $.Block([
+        toolChange ? `G0 G${state.currentHomeNumber} G90` : undefined,
+        { letter: 'X', value: formatCoordinate(params.xnext) },
+        { letter: 'Y', value: formatCoordinate(params.ynext) },
+        state.numberOfAxes !== 3 &&
+        !params.used_in_transform_4x &&
+        params.anext !== undefined
+          ? { letter: 'A', value: formatRotary(params.anext) }
+          : undefined,
+      ]);
+      state.lastPosition = {
+        x: params.xnext,
+        y: params.ynext,
+        a: params.used_in_transform_4x ? state.lastPosition.a : params.anext,
+      };
+    }
     if (toolChange) {
-      state.forceNextApproachXY = forceInitialApproachPosition;
+      state.forceNextApproachXY = true;
       $.SetSpindleSpeed(Math.round(params.spin_rate), { forcePrint: true });
       $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
       $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
@@ -390,6 +428,8 @@ export function registerSiemens828dPost(
   });
 
   post.on('EndOfJob', ($, _params, metadata) => {
+    const startOfJob = metadata.findLastEventOrThrow('StartOfJob').data;
+
     if (state.currentJobAirCoolant) {
       if (cancelAirCoolantSchedule) {
         controller($).Cancel(1).Cancel(2).Cancel(3).CoolantOff();
@@ -402,12 +442,17 @@ export function registerSiemens828dPost(
     $.BlankLine();
     $.BlankLine();
     $.CloseFile();
-    callSubprogram(
-      $,
-      `${jobFileName(metadata.findLastEventOrThrow('StartOfJob').data)}.SPF`,
-    );
 
-    const startOfJob = metadata.findLastEventOrThrow('StartOfJob').data;
+    if (
+      startOfJob.used_in_transform_4x &&
+      startOfJob.anext !== undefined &&
+      !sameNumber(startOfJob.anext, state.lastPosition.a)
+    ) {
+      $.Word('A', formatNumber(startOfJob.anext));
+      state.lastPosition.a = startOfJob.anext;
+    }
+    callSubprogram($, `${jobFileName(startOfJob)}.SPF`);
+
     if (
       state.lastToolChange &&
       state.lastToolChange.tool_number !== startOfJob.next_job_tool_number &&
@@ -543,7 +588,7 @@ export function registerSiemens828dPost(
         ]);
         state.lastPosition.x = state.currentJob.xnext;
         state.lastPosition.y = state.currentJob.ynext;
-        state.forceNextApproachXY = false;
+        state.forceNextApproachXY = state.currentJobHadToolChange;
       }
       state.deferredJobStartZ = false;
       state.forceFeedOutput = true;
@@ -553,7 +598,25 @@ export function registerSiemens828dPost(
     if (
       state.pendingPathMode &&
       state.forceNextApproachXY &&
-      (!state.currentJobHadToolChange || forceInitialApproachPosition)
+      state.currentJobHadToolChange &&
+      (params.xpos !== undefined ||
+        params.ypos !== undefined ||
+        params.zpos !== undefined)
+    ) {
+      if (params.zpos !== undefined) {
+        $.RapidResolved({ z: compactCoordinate(params.zpos) });
+      }
+      updateLastPosition(params);
+      state.forceNextApproachXY = false;
+      state.deferredJobStartZ = false;
+      state.forceFeedOutput = true;
+      return;
+    }
+
+    if (
+      state.pendingPathMode &&
+      state.forceNextApproachXY &&
+      !state.currentJobHadToolChange
     ) {
       const words = [
         params.xpos !== undefined
@@ -568,7 +631,7 @@ export function registerSiemens828dPost(
               value: formatCoordinate(params.ypos),
             }
           : undefined,
-      ].filter((word) => word !== undefined);
+      ].filter((word) => word !== undefined) as GCodeWord[];
 
       if (words.length > 0) {
         $.Block(words);
@@ -598,21 +661,18 @@ export function registerSiemens828dPost(
     }
 
     const coords: CommandsType['Rapid'] = {};
-    if (
-      !sameRapidNumber(params.xpos, state.lastPosition.x) &&
-      traceChanged(params, 'xpos') !== false
-    ) {
+    const xChanged = traceChanged(params, 'xpos');
+    if (xChanged !== false && !sameNumber(params.xpos, state.lastPosition.x)) {
       coords.x = compactCoordinate(params.xpos);
     }
-    if (
-      !sameRapidNumber(params.ypos, state.lastPosition.y) &&
-      traceChanged(params, 'ypos') !== false
-    ) {
+    const yChanged = traceChanged(params, 'ypos');
+    if (yChanged !== false && !sameNumber(params.ypos, state.lastPosition.y)) {
       coords.y = compactCoordinate(params.ypos);
     }
+    const zChanged = traceChanged(params, 'zpos');
     if (
-      !sameNumber(params.zpos, state.lastPosition.z) ||
-      (state.deferredJobStartZ && traceChanged(params, 'zpos') === true)
+      zChanged === true ||
+      (zChanged !== false && !sameNumber(params.zpos, state.lastPosition.z))
     ) {
       coords.z = compactCoordinate(params.zpos);
     }
@@ -631,7 +691,7 @@ export function registerSiemens828dPost(
       return;
     }
 
-    $.Rapid(coords);
+    $.RapidResolved(coords);
     updateLastPosition(params);
     state.deferredJobStartZ = false;
     state.forceFeedOutput = true;
@@ -677,22 +737,25 @@ export function registerSiemens828dPost(
     if (
       state.pendingPathMode &&
       state.forceNextApproachXY &&
-      (!state.currentJobHadToolChange || forceInitialApproachPosition)
+      !state.currentJobHadToolChange
     ) {
       const words = [
-        params.xpos !== undefined
+        params.xpos !== undefined &&
+        !sameNumber(params.xpos, state.lastPosition.x)
           ? {
               letter: 'X' as const,
               value: formatCoordinate(params.xpos),
             }
           : undefined,
-        params.ypos !== undefined
+        params.ypos !== undefined &&
+        !sameNumber(params.ypos, state.lastPosition.y)
           ? {
               letter: 'Y' as const,
               value: formatCoordinate(params.ypos),
             }
           : undefined,
-        params.apos !== undefined
+        params.apos !== undefined &&
+        !sameNumber(params.apos, state.lastPosition.a)
           ? {
               letter: 'A' as const,
               value: formatRotary(
@@ -700,12 +763,28 @@ export function registerSiemens828dPost(
               ),
             }
           : undefined,
-      ].filter((word) => word !== undefined);
+      ].filter((word) => word !== undefined) as GCodeWord[];
+
+      const hasPlanarPosition =
+        params.xpos !== undefined || params.ypos !== undefined;
+      if (
+        params.zpos !== undefined &&
+        params.apos !== undefined &&
+        !hasPlanarPosition
+      ) {
+        words.push({
+          letter: 'Z',
+          value: formatCoordinate(params.zpos),
+        });
+      }
 
       if (words.length > 0) {
         $.Block(words);
       }
-      if (params.zpos !== undefined) {
+      if (
+        params.zpos !== undefined &&
+        (hasPlanarPosition || params.apos === undefined)
+      ) {
         $.Word('Z', formatCoordinate(params.zpos));
       }
 
@@ -716,21 +795,26 @@ export function registerSiemens828dPost(
     }
 
     const coords: CommandsType['Rapid'] = {};
+    const xChanged = traceChanged(params, 'xpos');
     if (
-      !sameRapidNumber(params.xpos, state.lastPosition.x) &&
-      traceChanged(params, 'xpos') !== false
+      xChanged === true ||
+      (xChanged !== false &&
+        !sameRapidNumber(params.xpos, state.lastPosition.x))
     ) {
       coords.x = compactCoordinate(params.xpos);
     }
+    const yChanged = traceChanged(params, 'ypos');
     if (
-      !sameRapidNumber(params.ypos, state.lastPosition.y) &&
-      traceChanged(params, 'ypos') !== false
+      yChanged === true ||
+      (yChanged !== false &&
+        !sameRapidNumber(params.ypos, state.lastPosition.y))
     ) {
       coords.y = compactCoordinate(params.ypos);
     }
+    const zChanged = traceChanged(params, 'zpos');
     if (
-      !sameNumber(params.zpos, state.lastPosition.z) ||
-      (state.deferredJobStartZ && traceChanged(params, 'zpos') === true)
+      zChanged === true ||
+      (zChanged !== false && !sameNumber(params.zpos, state.lastPosition.z))
     ) {
       coords.z = compactCoordinate(params.zpos);
     }
@@ -738,19 +822,26 @@ export function registerSiemens828dPost(
       coords.a = compactCoordinate(params.apos);
     }
 
-    if (
+    if (state.deferredJobStartZ && coords.z !== undefined) {
+      $.Word('Z', formatNumber(coords.z));
+      state.deferredJobStartZ = false;
+    } else if (
+      coords.z !== undefined &&
+      coords.a !== undefined &&
+      coords.x === undefined &&
+      coords.y === undefined
+    ) {
+      $.Rapid({}, { skipNewLine: true });
+      $.Word('A', formatRotary(coords.a), { skipNewLine: true });
+      $.Word('Z', formatCoordinate(coords.z));
+    } else if (
       coords.z !== undefined &&
       (coords.x !== undefined ||
         coords.y !== undefined ||
         coords.a !== undefined)
     ) {
-      const { z, ...positioningCoords } = coords;
-      $.RapidResolved(positioningCoords);
-      $.RapidResolved({ z });
-      state.deferredJobStartZ = false;
-    } else if (state.deferredJobStartZ && coords.z !== undefined) {
-      $.Word('Z', formatNumber(coords.z));
-      state.deferredJobStartZ = false;
+      $.RapidResolved({ ...coords, z: undefined });
+      $.Word('Z', formatCoordinate(coords.z));
     } else {
       $.RapidResolved(coords);
     }
@@ -817,6 +908,9 @@ export function registerSiemens828dPost(
       $.SetFeedRate(params.feed, { forcePrint: true });
     } else {
       $.flush();
+    }
+    if (options.machineProfile?.features?.trackArcFeedRate === true) {
+      state.previousLineFeed = params.feed;
     }
     state.deferredJobStartZ = false;
     state.forceFeedOutput = false;

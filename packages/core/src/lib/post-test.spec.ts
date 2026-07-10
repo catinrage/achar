@@ -137,16 +137,16 @@ const parityBaseline: Record<
     missingReference: 0,
   },
   'siemens-828d-434-cam-2-milling': {
-    match: 12,
-    different: 13,
+    match: 25,
+    different: 0,
     missingGenerated: 0,
     missingReference: 0,
   },
   'siemens-828d-567-1160l-3a-cam-milling': {
-    match: 0,
-    different: 21,
+    match: 22,
+    different: 0,
     missingGenerated: 0,
-    missingReference: 1,
+    missingReference: 0,
   },
 };
 
