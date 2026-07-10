@@ -206,7 +206,7 @@ bun run achar posts
 ```
 
 The core framework does not require a Siemens controller. Siemens 828D is just
-one built-in post under `src/posts/siemens-828d`.
+one built-in post under `packages/core/src/posts/siemens-828d`.
 
 ## Scalable Post Architecture
 

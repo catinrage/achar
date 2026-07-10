@@ -4,52 +4,46 @@ import { existsSync, statSync, unwatchFile, watchFile } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import chalk from 'chalk';
-import cliSpinners from 'cli-spinners';
-import { Command } from 'commander';
-import inquirer from 'inquirer';
-import { listBuiltinPosts, resolveBuiltinPost } from './lib/builtin-posts';
-import {
-  discoverFixtures,
-  loadFixture,
-  type ResolvedFixture,
-} from './lib/fixture';
-import { Logger } from './lib/logger';
-import {
-  loadMachineProfile,
-  type MachineProfile,
-  validateMachineProfileCompatibility,
-} from './lib/machine-profile';
-import type { EventData } from './lib/parser';
-import {
-  formatPostLintIssues,
-  lintPostSource,
-  lintUnhandledEvents,
-} from './lib/post-lint';
-import { loadPost, type RegisterPost } from './lib/post-loader';
 import {
   type CompareOptions,
   compareAgainstReference,
   deriveProgramName,
+  discoverFixtures,
+  type EventData,
   formatCompareResults,
-  generatePostFiles,
-  generatePostProgram,
-  parseTraceFile,
-  testPost,
-  writeGeneratedFiles,
-  writeHtmlReport,
-} from './lib/post-test';
-import { Program } from './lib/program';
-import {
+  formatPostLintIssues,
   formatVmidSummary,
   formatVmidValidation,
+  generatePostFiles,
+  generatePostProgram,
   generateVmidTraceTypes,
+  Logger,
+  lintPostSource,
+  lintUnhandledEvents,
+  listBuiltinPosts,
+  loadFixture,
+  loadMachineProfile,
+  loadPost,
+  type MachineProfile,
+  Program,
+  parseTraceFile,
   parseVmidFile,
+  type RegisterPost,
+  type ResolvedFixture,
+  resolveBuiltinPost,
+  testPost,
   type VmidDefinition,
   type VmidValidationIssue,
+  validateMachineProfileCompatibility,
   validateTraceAgainstVmid,
-} from './lib/vmid';
-import { startAcharMcpServer } from './mcp/server';
+  writeGeneratedFiles,
+  writeHtmlReport,
+} from '@achar/core';
+import { startAcharMcpServer } from '@achar/mcp';
+import chalk from 'chalk';
+import cliSpinners from 'cli-spinners';
+import { Command } from 'commander';
+import inquirer from 'inquirer';
 
 interface CliOptions {
   all?: boolean;

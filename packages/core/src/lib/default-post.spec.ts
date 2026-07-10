@@ -18,7 +18,7 @@ describe('Default post', () => {
 
     registerDefaultPost(program);
 
-    const fixtureRoot = path.join(__dirname, '../../fixtures');
+    const fixtureRoot = path.join(__dirname, '../../../../fixtures');
     const observedEvents = new Set<string>();
 
     for (const entry of readdirSync(fixtureRoot, { withFileTypes: true })) {

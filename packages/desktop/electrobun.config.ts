@@ -1,5 +1,5 @@
 import type { ElectrobunConfig } from 'electrobun';
-import { sveltePlugin } from './src/desktop/svelte-plugin';
+import { sveltePlugin } from './src/svelte-plugin';
 
 const svelte = sveltePlugin();
 
@@ -12,19 +12,19 @@ export default {
   },
   build: {
     bun: {
-      entrypoint: 'src/desktop/bun/index.ts',
+      entrypoint: 'src/bun/index.ts',
       tsconfig: 'tsconfig.json',
     },
     views: {
       mainview: {
-        entrypoint: 'src/desktop/mainview/index.ts',
+        entrypoint: 'src/mainview/index.ts',
         tsconfig: 'tsconfig.json',
         plugins: [svelte],
       },
     },
     copy: {
-      'src/desktop/mainview/index.html': 'views/mainview/index.html',
-      'src/desktop/mainview/index.css': 'views/mainview/index.css',
+      'src/mainview/index.html': 'views/mainview/index.html',
+      'src/mainview/index.css': 'views/mainview/index.css',
     },
     mac: { bundleCEF: false },
     linux: { bundleCEF: false },

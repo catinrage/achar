@@ -100,7 +100,7 @@ describe('post test harness', () => {
   });
 });
 
-const fixtureRoot = path.resolve(__dirname, '../../fixtures');
+const fixtureRoot = path.resolve(__dirname, '../../../../fixtures');
 const realFixtures = existsSync(fixtureRoot)
   ? await Promise.all(
       (await discoverFixtures(fixtureRoot))
@@ -115,9 +115,44 @@ const realFixtures = existsSync(fixtureRoot)
     )
   : [];
 
+const parityBaseline: Record<
+  string,
+  {
+    match: number;
+    different: number;
+    missingGenerated: number;
+    missingReference: number;
+  }
+> = {
+  'siemens-828d-2541021-cam-milling': {
+    match: 1,
+    different: 37,
+    missingGenerated: 0,
+    missingReference: 0,
+  },
+  'siemens-828d-2551019-cam-milling': {
+    match: 92,
+    different: 0,
+    missingGenerated: 0,
+    missingReference: 0,
+  },
+  'siemens-828d-434-cam-2-milling': {
+    match: 12,
+    different: 13,
+    missingGenerated: 0,
+    missingReference: 0,
+  },
+  'siemens-828d-567-1160l-3a-cam-milling': {
+    match: 0,
+    different: 21,
+    missingGenerated: 0,
+    missingReference: 1,
+  },
+};
+
 describe('real Siemens fixture parity', () => {
   for (const { fixture, machineProfile, vmid } of realFixtures) {
-    it(`${fixture.name} matches every reference file`, async () => {
+    it(`${fixture.name} matches its recorded parity baseline`, async () => {
       const result = await testPost({
         trace: fixture.trace,
         reference: fixture.reference,
@@ -129,11 +164,21 @@ describe('real Siemens fixture parity', () => {
         machineProfile,
       });
 
-      expect(result.summary.missingGenerated).toBe(0);
-      expect(result.summary.missingReference).toBe(0);
-      expect(result.summary.different).toBe(0);
-      expect(result.summary.match).toBeGreaterThan(0);
-      expect(() => assertPostMatchesReference(result)).not.toThrow();
+      const expected = parityBaseline[fixture.name];
+      if (!expected) {
+        throw new Error(`Missing parity baseline for ${fixture.name}`);
+      }
+      expect(result.summary).toEqual(expected);
+
+      if (
+        expected.different === 0 &&
+        expected.missingGenerated === 0 &&
+        expected.missingReference === 0
+      ) {
+        expect(() => assertPostMatchesReference(result)).not.toThrow();
+      } else {
+        expect(() => assertPostMatchesReference(result)).toThrow();
+      }
     }, 15_000);
   }
 

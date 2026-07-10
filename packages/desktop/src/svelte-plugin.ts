@@ -1,9 +1,12 @@
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import { compile } from 'svelte/compiler';
 
-const projectRoot = path.resolve(import.meta.dir, '../..');
-const svelteRoot = path.join(projectRoot, 'node_modules', 'svelte');
+const desktopRoot = path.resolve(import.meta.dir, '..');
+const svelteRoot = realpathSync(
+  path.join(desktopRoot, 'node_modules', 'svelte'),
+);
 
 const packageImports: Record<string, string> = {
   '#client/constants': path.join(

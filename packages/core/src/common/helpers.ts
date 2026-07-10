@@ -1,5 +1,3 @@
-import chalk from 'chalk';
-
 /**
  * Wraps a value in an array if it is not already an array.
  * @param value - The value to wrap.
@@ -39,26 +37,14 @@ export class PerformanceTimer {
 
   print() {
     const totalTime = this.getTotalTime();
-    console.log(chalk.blue(`Timer: ${chalk.bold(this.name)}`));
-    console.log(chalk.yellow(`Proc: ${chalk.bold(this.times.length)}`));
+    console.log(`Timer: ${this.name}`);
+    console.log(`Proc: ${this.times.length}`);
+    console.log(`Total time: ${totalTime.toFixed(2)}ms`);
     console.log(
-      chalk.white(`Total time: ${chalk.bold(totalTime.toFixed(2))}ms`),
+      `Average time: ${(totalTime / this.times.length).toFixed(2)}ms`,
     );
-    console.log(
-      chalk.white(
-        `Average time: ${chalk.bold((totalTime / this.times.length).toFixed(2))}ms`,
-      ),
-    );
-    console.log(
-      chalk.red(
-        `Max time: ${chalk.bold(Math.max(...this.times).toFixed(2))}ms`,
-      ),
-    );
-    console.log(
-      chalk.green(
-        `Min time: ${chalk.bold(Math.min(...this.times).toFixed(2))}ms`,
-      ),
-    );
+    console.log(`Max time: ${Math.max(...this.times).toFixed(2)}ms`);
+    console.log(`Min time: ${Math.min(...this.times).toFixed(2)}ms`);
     console.log();
   }
 
@@ -67,7 +53,7 @@ export class PerformanceTimer {
       PerformanceTimer.timers[name].print();
     });
     if (Object.keys(PerformanceTimer.timers).length === 0) {
-      console.log(chalk.red('No timers to print.'));
+      console.log('No timers to print.');
     }
   }
 
@@ -82,5 +68,5 @@ export class PerformanceTimer {
 }
 
 export function warn(message: string) {
-  console.log(chalk.yellow(`${chalk.bold('Warning')}: ${message}`));
+  console.log(`Warning: ${message}`);
 }

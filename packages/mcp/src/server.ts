@@ -1,14 +1,14 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
 import {
   bootstrapAchar,
   generateAcharFiles,
+  Logger,
   readGeneratedFile,
   resolveWorkspaceRoot,
   validateAcharInput,
-} from '../desktop/backend';
-import { Logger } from '../lib/logger';
+} from '@achar/core';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 
 export interface AcharMcpServerOptions {
   workspaceRoot?: string;

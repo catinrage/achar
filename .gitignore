@@ -178,3 +178,5 @@ dist
 generated/
 /build/
 /artifacts/
+/packages/*/build/
+/packages/*/artifacts/

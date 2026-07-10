@@ -5,12 +5,12 @@ This directory contains comprehensive tests for the Achar CNC post-processor.
 ## Test Organization
 
 ### Unit Tests
-Located in `src/lib/*.spec.ts`, these tests cover individual components:
-- **Parser Tests** (`src/lib/parser.spec.ts`): Tests the SolidCAM trace file parser
-- **Machine Tests** (`src/lib/machine.spec.ts`): Tests the machine state management
-- **Program Tests** (`src/lib/program.spec.ts`): Tests the event-driven program orchestration
-- **Builder Tests** (`src/lib/builder.spec.ts`): Tests the G-code generation builder
-- **Emitter Tests** (`src/lib/emitter.spec.ts`): Tests the stateful G-code emitters
+Located in `packages/core/src/lib/*.spec.ts`, these tests cover individual components:
+- **Parser Tests** (`packages/core/src/lib/parser.spec.ts`): Tests the SolidCAM trace file parser
+- **Machine Tests** (`packages/core/src/lib/machine.spec.ts`): Tests the machine state management
+- **Program Tests** (`packages/core/src/lib/program.spec.ts`): Tests the event-driven program orchestration
+- **Builder Tests** (`packages/core/src/lib/builder.spec.ts`): Tests the G-code generation builder
+- **Emitter Tests** (`packages/core/src/lib/emitter.spec.ts`): Tests the stateful G-code emitters
 
 ### End-to-End Tests
 Located in `test/e2e/e2e.test.ts`, these tests cover the complete pipeline:
@@ -51,7 +51,7 @@ Located in `test/e2e/e2e.test.ts`, these tests cover the complete pipeline:
    - Consistency across different trace files
 
 ### Post Golden Tests
-Located in `src/lib/post-test.spec.ts`, these tests cover the post regression
+Located in `packages/core/src/lib/post-test.spec.ts`, these tests cover the post regression
 test harness. Post developers can use the same helpers in their own Vitest
 files to compare generated MPF/SPF output against known-good GPP output.
 
@@ -62,7 +62,7 @@ files to compare generated MPF/SPF output against known-good GPP output.
 bun test
 
 # Run only unit tests
-bun test src/lib/
+bun test packages/core/src/lib/
 
 # Run only e2e tests
 bun test test/e2e/

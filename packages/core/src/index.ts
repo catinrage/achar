@@ -1,4 +1,27 @@
 export type {
+  AcharBootstrap,
+  AcharDiagnostic,
+  AcharFixtureSummary,
+  AcharGeneratedFile,
+  AcharGenerationResult,
+  AcharInput,
+  AcharMachineProfileSummary,
+  AcharValidationResult,
+} from './application/achar-service';
+export {
+  bootstrapAchar,
+  generateAcharFiles,
+  readGeneratedFile,
+  resolveWorkspaceRoot,
+  validateAcharInput,
+} from './application/achar-service';
+export {
+  DirectionEnum,
+  FeedRateModeEnum,
+  PlaneEnum,
+  StateEnum,
+} from './common/enums';
+export type {
   CommandOptions,
   EmissionDiagnostic,
   GCodeWord,
@@ -14,8 +37,10 @@ export {
 export { registerDefaultPost } from './lib/default-post';
 export type { BuilderDriver } from './lib/driver';
 export { defineDriver } from './lib/driver';
+export type { EventListenerMetadata } from './lib/event';
 export type { FixtureManifest, ResolvedFixture } from './lib/fixture';
 export { discoverFixtures, loadFixture } from './lib/fixture';
+export { Logger } from './lib/logger';
 export type {
   MachineProfile,
   MachineProfileFeatures,
@@ -27,6 +52,7 @@ export {
   requireMachineProfile,
   validateMachineProfileCompatibility,
 } from './lib/machine-profile';
+export type { EventData } from './lib/parser';
 export { Parser } from './lib/parser';
 export type { ContextFactory } from './lib/post-context';
 export { createPostContext, PostContext } from './lib/post-context';
@@ -57,6 +83,7 @@ export {
   formatCompareResults,
   generatePostFiles,
   generatePostProgram,
+  parseTraceFile,
   summarizeCompareResults,
   testPost,
   writeGeneratedFiles,
@@ -78,3 +105,8 @@ export {
   parseVmidFile,
   validateTraceAgainstVmid,
 } from './lib/vmid';
+export type {
+  CommandsType,
+  DeepPartial,
+  EventsType,
+} from './types';

@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { BrowserView, BrowserWindow, Utils } from 'electrobun/bun';
 import {
   bootstrapAchar,
   generateAcharFiles,
   readGeneratedFile,
   resolveWorkspaceRoot,
   validateAcharInput,
-} from '../backend';
+} from '@achar/core';
+import { BrowserView, BrowserWindow, Utils } from 'electrobun/bun';
 import type { AcharDesktopRPC, PathKind } from '../rpc';
 
 const workspaceRoot = resolveWorkspaceRoot();

@@ -26,7 +26,7 @@ bun run achar --help
 Or run the entrypoint directly while developing:
 
 ```bash
-bun src/cli.ts --help
+bun run achar --help
 ```
 
 Generate files from a fixture:
@@ -721,20 +721,20 @@ or trace event produced it.
 Check a post module for maintainability issues:
 
 ```bash
-bun run achar lint-post src/posts/siemens-828d/index.ts
+bun run achar lint-post packages/core/src/posts/siemens-828d/index.ts
 ```
 
 Also report trace events without handlers:
 
 ```bash
-bun run achar lint-post src/posts/siemens-828d/index.ts \
+bun run achar lint-post packages/core/src/posts/siemens-828d/index.ts \
   --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
 ```
 
 Check a controller driver:
 
 ```bash
-bun run achar lint-post src/posts/siemens-828d/driver.ts --driver
+bun run achar lint-post packages/core/src/posts/siemens-828d/driver.ts --driver
 ```
 
 Options:
@@ -836,7 +836,7 @@ bun run achar test posts/acme-mill
 ```bash
 bun run achar parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/debug-report.html
 bun run achar explain fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --file F_contour8.SPF
-bun run achar lint-post src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
+bun run achar lint-post packages/core/src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
 ```
 
 ### Refresh Golden Output Intentionally
@@ -949,7 +949,7 @@ used a different file name. Use:
 
 ```bash
 bun run achar explain fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --event StartProgram
-bun run achar lint-post src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
+bun run achar lint-post packages/core/src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
 ```
 
 ### Lockfile or Bun Path Problems

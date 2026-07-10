@@ -10,7 +10,7 @@ Achar is not a generic CAM system. It is a TypeScript framework and CLI for
 writing SolidCAM trace-driven post-processors without writing GPP language. The
 current production reference post is the bundled Siemens 828D Milling 4A post,
 but Achar itself is not tied to Siemens. Siemens support lives under
-`src/posts/siemens-828d`; the core parser, program, builder, fixture runner,
+`packages/core/src/posts/siemens-828d`; the core parser, program, builder, fixture runner,
 VMID parser, and test harness are reusable for other controllers.
 
 ## Table Of Contents
@@ -106,22 +106,26 @@ program.on('ToolChange', ($, params) => {
 Important paths:
 
 ```text
-src/cli.ts                    CLI entrypoint
-src/index.ts                  Public package API
-src/lib/parser.ts             SolidCAM trace parser
-src/lib/program.ts            Event orchestration
-src/lib/event.ts              Event and metadata types
-src/lib/builder.ts            G-code/file builder
-src/lib/machine.ts            Modal machine state
-src/lib/file.ts               Per-file line buffering
-src/lib/post-test.ts          Golden-output comparison engine
-src/lib/fixture.ts            Fixture manifest loading/discovery
-src/lib/vmid.ts               VMID parser and validation
-src/lib/post-loader.ts        Built-in/custom post loading
-src/lib/builtin-posts.ts      Built-in post registry
-src/lib/default-post.ts       Compatibility re-export
-src/posts/siemens-828d        Bundled Siemens 828D post
-src/types.ts                  Trace event and command types
+packages/cli/src/index.ts                    CLI entrypoint
+packages/core/src/index.ts                  Public package API
+packages/core/src/application/achar-service.ts
+                                           Shared CLI/MCP/desktop application service
+packages/core/src/lib/parser.ts             SolidCAM trace parser
+packages/core/src/lib/program.ts            Event orchestration
+packages/core/src/lib/event.ts              Event and metadata types
+packages/core/src/lib/builder.ts            G-code/file builder
+packages/core/src/lib/machine.ts            Modal machine state
+packages/core/src/lib/file.ts               Per-file line buffering
+packages/core/src/lib/post-test.ts          Golden-output comparison engine
+packages/core/src/lib/fixture.ts            Fixture manifest loading/discovery
+packages/core/src/lib/vmid.ts               VMID parser and validation
+packages/core/src/lib/post-loader.ts        Built-in/custom post loading
+packages/core/src/lib/builtin-posts.ts      Built-in post registry
+packages/core/src/lib/default-post.ts       Compatibility re-export
+packages/core/src/posts/siemens-828d        Bundled Siemens 828D post
+packages/core/src/types.ts                  Trace event and command types
+packages/mcp/src/server.ts                  MCP stdio server
+packages/desktop/src                       Electrobun/Svelte desktop app
 fixtures/PROJECT_434_112466504665666_CAM_2_MILLING                     First real Siemens fixture
 fixtures/PROJECT_2551019_CAM_MILLING
                               Second, larger real Siemens fixture
@@ -130,9 +134,10 @@ docs/achar-zero-to-hero.md    This manual
 test/README.md                Test workflow notes
 ```
 
-The core is `src/lib/*`. Controller-specific post logic should live under
-`src/posts/*` or in an external post module. The bundled Siemens post is not
-part of the core runtime.
+The core is `packages/core/src/lib/*`. Controller-specific post logic should
+live under `packages/core/src/posts/*` for bundled posts or in an external post
+module. The bundled Siemens post stays in core for now so it can be split out
+later without changing the root `achar/posts/siemens-828d` export.
 
 ## 4. Installation And First Run
 
@@ -153,7 +158,7 @@ bun test
 Run the real full fixture:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 Expected result for the current repository:
@@ -166,7 +171,7 @@ Parity: 25 matched, 0 different, 0 missing generated, 0 missing reference
 Run every real fixture:
 
 ```bash
-bun src/cli.ts test fixtures --all
+bun run achar test fixtures --all
 ```
 
 The second fixture currently matches all 92 reference files.
@@ -181,7 +186,7 @@ matches.
 Achar is a CLI tool. The local development form is:
 
 ```bash
-bun src/cli.ts <command>
+bun run achar <command>
 ```
 
 The package also declares:
@@ -189,7 +194,7 @@ The package also declares:
 ```json
 {
   "bin": {
-    "achar": "src/cli.ts"
+    "achar": "packages/cli/src/index.ts"
   }
 }
 ```
@@ -205,7 +210,7 @@ achar <command>
 Show help:
 
 ```bash
-bun src/cli.ts --help
+bun run achar --help
 ```
 
 Current commands:
@@ -229,7 +234,7 @@ test <trace-fixture-or-root>  Run golden-output post regression tests. Fails on 
 Parse trace mode 5 into JSON:
 
 ```bash
-bun src/cli.ts parse fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF --out generated/Setup1.ir.json
+bun run achar parse fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF --out generated/Setup1.ir.json
 ```
 
 Use this when learning what SolidCAM gives you before writing post logic.
@@ -239,13 +244,13 @@ Use this when learning what SolidCAM gives you before writing post logic.
 Inspect a VMID:
 
 ```bash
-bun src/cli.ts vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid
+bun run achar vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid
 ```
 
 Print JSON:
 
 ```bash
-bun src/cli.ts vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid --json
+bun run achar vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid --json
 ```
 
 ### `posts`
@@ -253,7 +258,7 @@ bun src/cli.ts vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_8
 List bundled posts:
 
 ```bash
-bun src/cli.ts posts
+bun run achar posts
 ```
 
 Current output:
@@ -267,7 +272,7 @@ siemens-828d  Siemens 828D Milling 4A aliases: default
 Create a custom post skeleton:
 
 ```bash
-bun src/cli.ts init-post posts/my-controller \
+bun run achar init-post posts/my-controller \
   --fixture \
   --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
   --reference fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/reference \
@@ -300,19 +305,19 @@ Useful options:
 Validate a trace or fixture:
 
 ```bash
-bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 Validate with warnings treated as failures:
 
 ```bash
-bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
+bun run achar validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
 ```
 
 Validate a raw trace with explicit VMID:
 
 ```bash
-bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
+bun run achar validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
   --vmid fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid \
   --strict-vmid
 ```
@@ -322,25 +327,25 @@ bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup
 Generate output:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 Prompt for inputs interactively:
 
 ```bash
-bun src/cli.ts generate
+bun run achar generate
 ```
 
 Override output directory:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full
 ```
 
 Run from a raw trace without a fixture:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
   --out generated/full \
   --program-name Setup1 \
   --post siemens-828d \
@@ -350,13 +355,13 @@ bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup
 Run a custom post module:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --post ./posts/my-controller/index.ts
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --post ./posts/my-controller/index.ts
 ```
 
 Watch and regenerate:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full --watch
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full --watch
 ```
 
 `generate` prints how many files were written and how long the run took.
@@ -366,13 +371,13 @@ bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out
 Generate and compare:
 
 ```bash
-bun src/cli.ts parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/full-report.html
+bun run achar parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/full-report.html
 ```
 
 Compare a raw trace:
 
 ```bash
-bun src/cli.ts parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
+bun run achar parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
   --reference fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/reference \
   --out generated/full \
   --program-name Setup1 \
@@ -395,31 +400,31 @@ Useful options:
 Run golden-output regression test:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 Run all fixtures:
 
 ```bash
-bun src/cli.ts test fixtures --all
+bun run achar test fixtures --all
 ```
 
 Update golden output intentionally:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --update
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --update
 ```
 
 Write a report:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/report.html
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/report.html
 ```
 
 Watch and rerun tests:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
 ```
 
 ## 6. Trace Files And Parsing
@@ -457,7 +462,7 @@ console.log(events[0]._eventName);
 CLI parsing:
 
 ```bash
-bun src/cli.ts parse fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF --out generated/ir.json
+bun run achar parse fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF --out generated/ir.json
 ```
 
 ## 7. Events And Handlers
@@ -540,7 +545,7 @@ program.on('Line', ($, params, metadata) => {
 
 ### Important Event Names
 
-The full event type surface is in `src/types.ts`. Important events include:
+The full event type surface is in `packages/core/src/types.ts`. Important events include:
 
 ```text
 StartOfFile
@@ -577,7 +582,7 @@ ChangeRefPoint
 ```
 
 When adding support for a new trace event, first inspect the parsed JSON and
-then update `src/types.ts` if the event is not yet typed.
+then update `packages/core/src/types.ts` if the event is not yet typed.
 
 ## 8. The Builder API
 
@@ -808,7 +813,7 @@ matches the current Siemens reference behavior.
 Create a skeleton:
 
 ```bash
-bun src/cli.ts init-post posts/acme-mill \
+bun run achar init-post posts/acme-mill \
   --fixture \
   --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF \
   --reference fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/reference \
@@ -866,13 +871,13 @@ export default registerPost;
 Run it:
 
 ```bash
-bun src/cli.ts generate posts/acme-mill --out generated/acme
+bun run achar generate posts/acme-mill --out generated/acme
 ```
 
 Compare it to reference:
 
 ```bash
-bun src/cli.ts test posts/acme-mill
+bun run achar test posts/acme-mill
 ```
 
 At first it will probably differ. That is expected. Use the diff output to add
@@ -1025,7 +1030,7 @@ const all = await discoverFixtures('data');
 
 ## 14. VMID Input And Validation
 
-VMID support is in `src/lib/vmid.ts`.
+VMID support is in `packages/core/src/lib/vmid.ts`.
 
 Programmatic API:
 
@@ -1073,7 +1078,7 @@ Errors fail commands. Warnings fail only with `--strict-vmid`.
 
 ## 15. Regression Tests And Golden Output
 
-The golden-output harness is in `src/lib/post-test.ts`.
+The golden-output harness is in `packages/core/src/lib/post-test.ts`.
 
 Minimal test:
 
@@ -1135,13 +1140,13 @@ interface PostTestResult {
 CLI diff:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 HTML report:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/report.html
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --report generated/report.html
 ```
 
 Programmatic report:
@@ -1155,7 +1160,7 @@ await writeHtmlReport(results, 'generated/report.html');
 Update reference output only after reviewing the generated changes:
 
 ```bash
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --update
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --update
 ```
 
 Recommended policy:
@@ -1176,9 +1181,9 @@ Watch mode exists on:
 Examples:
 
 ```bash
-bun src/cli.ts generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full --watch
-bun src/cli.ts parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
+bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out generated/full --watch
+bun run achar parity fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
 ```
 
 Implementation detail: watch mode uses polling with `watchFile`, not `fs.watch`.
@@ -1245,7 +1250,7 @@ Inside a driver, using lower-level builder output is acceptable. The driver is
 the typed boundary that prevents post authors from scattering raw strings
 through event handlers.
 
-Built-ins are registered in `src/lib/builtin-posts.ts`.
+Built-ins are registered in `packages/core/src/lib/builtin-posts.ts`.
 
 Current built-in:
 
@@ -1262,7 +1267,7 @@ default
 List them:
 
 ```bash
-bun src/cli.ts posts
+bun run achar posts
 ```
 
 Use built-in:
@@ -1314,11 +1319,11 @@ export function registerDefaultPost(program: Program): void {}
 ```json
 {
   "exports": {
-    ".": "./src/index.ts",
-    "./posts/siemens-828d": "./src/posts/siemens-828d/index.ts"
+    ".": "./packages/core/src/index.ts",
+    "./posts/siemens-828d": "./packages/core/src/posts/siemens-828d/index.ts"
   },
   "bin": {
-    "achar": "src/cli.ts"
+    "achar": "packages/cli/src/index.ts"
   }
 }
 ```
@@ -1367,8 +1372,8 @@ Use this workflow when replacing a real GPP post:
 5. Run:
 
 ```bash
-bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
-bun src/cli.ts test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
+bun run achar validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
+bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 ```
 
 6. Implement or adjust post behavior.
@@ -1382,7 +1387,7 @@ Parity: N matched, 0 different, 0 missing generated, 0 missing reference
 8. Add the fixture to `data` and include it in:
 
 ```bash
-bun src/cli.ts test fixtures --all
+bun run achar test fixtures --all
 ```
 
 9. Commit the fixture manifest and reference output. Vitest discovers every
@@ -1408,7 +1413,7 @@ You ran a raw trace without `--vmid`, or the fixture has no `vmid` field.
 Fix:
 
 ```bash
-bun src/cli.ts validate trace.MPF --vmid machine.vmid
+bun run achar validate trace.MPF --vmid machine.vmid
 ```
 
 or add:
@@ -1480,7 +1485,7 @@ fixtures. Typed contexts, policies, controller capabilities, cycle objects,
 linting, diagnostics, test DSLs, and VMID type generation are implemented.
 Remaining practical improvements include:
 
-- Add richer generated API docs from `src/types.ts`.
+- Add richer generated API docs from `packages/core/src/types.ts`.
 - Watch custom post dependency graphs, not only the entry module.
 - Add fixture schema validation with better JSON error messages.
 - Add a compiled npm distribution for Node users if Bun should not be required.
@@ -1493,21 +1498,21 @@ Remaining practical improvements include:
 ### CLI Cheat Sheet
 
 ```bash
-bun src/cli.ts --help
-bun src/cli.ts parse trace.MPF --out ir.json
-bun src/cli.ts vmid machine.vmid
-bun src/cli.ts vmid-types machine.vmid --out vmid.generated.ts
-bun src/cli.ts posts
-bun src/cli.ts lint-post posts/my-post/index.ts --trace trace.MPF
-bun src/cli.ts explain fixture --file OP10.SPF
-bun src/cli.ts init-post posts/my-post --fixture --trace trace.MPF --reference reference --vmid machine.vmid
-bun src/cli.ts validate fixture --strict-vmid
-bun src/cli.ts generate fixture --out generated
-bun src/cli.ts parity fixture --report report.html
-bun src/cli.ts test fixture
-bun src/cli.ts test fixtures-root --all
-bun src/cli.ts test fixture --update
-bun src/cli.ts test fixture --watch
+bun run achar --help
+bun run achar parse trace.MPF --out ir.json
+bun run achar vmid machine.vmid
+bun run achar vmid-types machine.vmid --out vmid.generated.ts
+bun run achar posts
+bun run achar lint-post posts/my-post/index.ts --trace trace.MPF
+bun run achar explain fixture --file OP10.SPF
+bun run achar init-post posts/my-post --fixture --trace trace.MPF --reference reference --vmid machine.vmid
+bun run achar validate fixture --strict-vmid
+bun run achar generate fixture --out generated
+bun run achar parity fixture --report report.html
+bun run achar test fixture
+bun run achar test fixtures-root --all
+bun run achar test fixture --update
+bun run achar test fixture --watch
 ```
 
 ### Builder Cheat Sheet
@@ -1594,8 +1599,8 @@ Before trusting a post change:
 ./node_modules/.bin/biome check .
 ./node_modules/.bin/tsc --noEmit
 bun test
-bun src/cli.ts validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
-bun src/cli.ts test fixtures --all --report /tmp/achar-report.html
+bun run achar validate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --strict-vmid
+bun run achar test fixtures --all --report /tmp/achar-report.html
 ```
 
 For the current real fixtures, the expected production results are:

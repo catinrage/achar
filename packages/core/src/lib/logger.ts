@@ -4,7 +4,6 @@
  * Provides enterprise-level logging with multiple levels, formatters, and outputs
  */
 
-import chalk from 'chalk';
 import { type AcharError, isAcharError } from './errors';
 
 /**
@@ -206,12 +205,10 @@ export class DefaultFormatter implements LogFormatter {
     const component = entry.component ? ` [${entry.component}] ` : '';
     const operation = entry.operation ? `(${entry.operation})` : '';
 
-    let message = `${chalk.bgWhite(timestamp)} ${level}${component}${operation}: ${chalk.white(entry.message)}`;
+    let message = `${timestamp} ${level}${component}${operation}: ${entry.message}`;
 
     if (entry.metadata && Object.keys(entry.metadata).length > 0) {
-      message += chalk.dim(
-        `\n  Metadata: ${JSON.stringify(entry.metadata, null, 2)}`,
-      );
+      message += `\n  Metadata: ${JSON.stringify(entry.metadata, null, 2)}`;
     }
 
     if (entry.error) {

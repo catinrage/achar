@@ -1,0 +1,11 @@
+{
+  "name": "@achar/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./posts/siemens-828d": "./src/posts/siemens-828d/index.ts"
+  }
+}

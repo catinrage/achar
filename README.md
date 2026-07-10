@@ -151,13 +151,13 @@ bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 bun run achar test fixtures --all
 
 # Explain why blocks were emitted
-bun src/cli.ts explain fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --file F_contour8.SPF
+bun run achar explain fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --file F_contour8.SPF
 
 # Check post architecture and event coverage
-bun src/cli.ts lint-post src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
+bun run achar lint-post packages/core/src/posts/siemens-828d/index.ts --trace fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF
 
 # Generate typed VMID event extensions
-bun src/cli.ts vmid-types fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid --out generated/vmid.generated.ts
+bun run achar vmid-types fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Siemens_828D_Milling_4A.vmid --out generated/vmid.generated.ts
 
 # Keep rerunning while editing a post, trace, VMID, or reference output
 bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --watch
@@ -318,16 +318,15 @@ Post authors usually work with these exported APIs:
 - `loadFixture`, `discoverFixtures`, and `loadPost`: CLI-compatible fixture and post loading.
 - `parseVmidFile` and `validateTraceAgainstVmid`: VMID-aware validation helpers.
 
-Event payload types live in `src/types.ts` under `EventsType`. Command payload
+Event payload types live in `packages/core/src/types.ts` under `EventsType`. Command payload
 types live in the builder/machine APIs. The Siemens 828D built-in post in
-`src/posts/siemens-828d` is the current production-parity reference
-implementation; `src/lib/default-post.ts` remains as a compatibility re-export.
+`packages/core/src/posts/siemens-828d` is the current production-parity reference
+implementation; `packages/core/src/lib/default-post.ts` remains as a compatibility re-export.
 
 ### Basic Example
 
 ```typescript
-import { Parser } from '$src/lib/parser';
-import { Program } from '$src/lib/program';
+import { Parser, Program } from 'achar';
 
 // Read SolidCAM trace file
 const source = await Bun.file('./fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF').text();

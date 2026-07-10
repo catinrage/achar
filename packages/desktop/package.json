@@ -1,0 +1,16 @@
+{
+  "name": "@achar/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "desktop": "electrobun dev",
+    "desktop:dev": "electrobun dev --watch",
+    "desktop:build": "electrobun build --env=stable"
+  },
+  "dependencies": {
+    "@achar/core": "workspace:*",
+    "electrobun": "^1.18.1",
+    "svelte": "^5.56.4"
+  }
+}

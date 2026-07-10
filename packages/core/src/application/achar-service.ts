@@ -15,38 +15,122 @@ import {
   writeGeneratedFiles,
 } from '../lib/post-test';
 import { parseVmidFile, validateTraceAgainstVmid } from '../lib/vmid';
-import type {
-  DesktopBootstrap,
-  DesktopDiagnostic,
-  DesktopFixture,
-  DesktopInput,
-  DesktopMachineProfile,
-  GenerationResult,
-  ValidationResult,
-} from './rpc';
 
 const previewLimit = 180_000;
+
+export interface AcharFixtureSummary {
+  name: string;
+  root: string;
+  tracePath: string;
+  referencePath: string;
+  outputPath?: string;
+  programName: string;
+  postId: string;
+  vmidPath?: string;
+  machineProfilePath?: string;
+}
+
+export interface AcharMachineProfileSummary {
+  id: string;
+  name?: string;
+  controller?: string;
+  axes?: number;
+  path: string;
+}
+
+export interface AcharBootstrap {
+  workspaceRoot: string;
+  fixturesRoot?: string;
+  fixtures: AcharFixtureSummary[];
+  machineProfiles: AcharMachineProfileSummary[];
+  posts: Array<{ id: string; name: string }>;
+  mcp: {
+    command: string;
+    args: string[];
+    environment: Record<string, string>;
+  };
+}
+
+export interface AcharDiagnostic {
+  severity: 'warning' | 'error';
+  message: string;
+  event?: string;
+  key?: string;
+}
+
+export interface AcharInput {
+  tracePath: string;
+  vmidPath?: string;
+  machineProfilePath?: string;
+  referencePath?: string;
+  outputPath?: string;
+  programName: string;
+  postId: string;
+}
+
+export interface AcharValidationResult {
+  eventCount: number;
+  durationMs: number;
+  diagnostics: AcharDiagnostic[];
+}
+
+export interface AcharGeneratedFile {
+  file: string;
+  bytes: number;
+  lines: number;
+}
+
+export interface AcharGenerationResult extends AcharValidationResult {
+  outputPath: string;
+  files: AcharGeneratedFile[];
+  matched?: number;
+  different?: number;
+  missingGenerated?: number;
+  missingReference?: number;
+  preview: {
+    file: string;
+    code: string;
+    truncated: boolean;
+  };
+}
 
 export function resolveWorkspaceRoot(): string {
   const candidates = [
     Bun.env.ACHAR_WORKSPACE,
     process.cwd(),
-    path.resolve(import.meta.dir, '../..'),
+    findWorkspaceRoot(process.cwd()),
+    findWorkspaceRoot(import.meta.dir),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   return (
-    candidates.find((candidate) =>
-      existsSync(path.join(candidate, 'package.json')),
-    ) ?? process.cwd()
+    candidates.find((candidate) => isWorkspaceRoot(candidate)) ?? process.cwd()
+  );
+}
+
+function findWorkspaceRoot(start: string): string | undefined {
+  let current = path.resolve(start);
+
+  while (true) {
+    if (isWorkspaceRoot(current)) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+function isWorkspaceRoot(candidate: string): boolean {
+  return (
+    existsSync(path.join(candidate, 'package.json')) &&
+    existsSync(path.join(candidate, 'fixtures'))
   );
 }
 
 export async function bootstrapAchar(
   workspaceRoot = resolveWorkspaceRoot(),
-): Promise<DesktopBootstrap> {
+): Promise<AcharBootstrap> {
   const fixturesRoot = path.join(workspaceRoot, 'fixtures');
-  let fixtures: DesktopFixture[] = [];
-  let machineProfiles: DesktopMachineProfile[] = [];
+  let fixtures: AcharFixtureSummary[] = [];
+  let machineProfiles: AcharMachineProfileSummary[] = [];
 
   if (existsSync(fixturesRoot)) {
     fixtures = (await discoverFixtures(fixturesRoot)).map((fixture) => ({
@@ -71,7 +155,7 @@ export async function bootstrapAchar(
     posts: listBuiltinPosts().map((post) => ({ id: post.id, name: post.name })),
     mcp: {
       command: 'bun',
-      args: ['src/cli.ts', 'mcp'],
+      args: ['run', 'achar', 'mcp'],
       environment: {
         ACHAR_WORKSPACE: workspaceRoot,
       },
@@ -81,7 +165,7 @@ export async function bootstrapAchar(
 
 async function discoverMachineProfiles(
   root: string,
-): Promise<DesktopMachineProfile[]> {
+): Promise<AcharMachineProfileSummary[]> {
   const profilePaths = await findMachineProfilePaths(root);
   const profiles = await Promise.all(
     profilePaths.map(async (profilePath) => {
@@ -121,7 +205,7 @@ async function findMachineProfilePaths(root: string): Promise<string[]> {
   return found;
 }
 
-async function loadInput(input: DesktopInput) {
+async function loadInput(input: AcharInput) {
   if (!input.tracePath.trim()) throw new Error('Trace 5 file is required.');
   if (!input.programName.trim()) throw new Error('Program name is required.');
 
@@ -139,12 +223,12 @@ async function loadInput(input: DesktopInput) {
   const diagnostics = [
     ...(vmid ? validateTraceAgainstVmid(events, vmid) : []),
     ...validateMachineProfileCompatibility(machineProfile, events, vmid),
-  ] satisfies DesktopDiagnostic[];
+  ] satisfies AcharDiagnostic[];
 
   return { events, vmid, machineProfile, diagnostics };
 }
 
-function assertNoErrors(diagnostics: DesktopDiagnostic[]): void {
+function assertNoErrors(diagnostics: AcharDiagnostic[]): void {
   const errors = diagnostics.filter((issue) => issue.severity === 'error');
   if (errors.length > 0) {
     throw new Error(errors.map((issue) => issue.message).join('\n'));
@@ -152,8 +236,8 @@ function assertNoErrors(diagnostics: DesktopDiagnostic[]): void {
 }
 
 export async function validateAcharInput(
-  input: DesktopInput,
-): Promise<ValidationResult> {
+  input: AcharInput,
+): Promise<AcharValidationResult> {
   const startedAt = performance.now();
   const loaded = await loadInput(input);
   return {
@@ -163,7 +247,7 @@ export async function validateAcharInput(
   };
 }
 
-function preview(file: string, code: string): GenerationResult['preview'] {
+function preview(file: string, code: string): AcharGenerationResult['preview'] {
   return {
     file,
     code: code.slice(0, previewLimit),
@@ -172,9 +256,9 @@ function preview(file: string, code: string): GenerationResult['preview'] {
 }
 
 export async function generateAcharFiles(
-  input: DesktopInput,
+  input: AcharInput,
   workspaceRoot = resolveWorkspaceRoot(),
-): Promise<GenerationResult> {
+): Promise<AcharGenerationResult> {
   const startedAt = performance.now();
   const loaded = await loadInput(input);
   assertNoErrors(loaded.diagnostics);
@@ -229,7 +313,7 @@ export async function generateAcharFiles(
 export async function readGeneratedFile(
   outputPath: string,
   file: string,
-): Promise<GenerationResult['preview']> {
+): Promise<AcharGenerationResult['preview']> {
   const root = path.resolve(outputPath);
   const target = path.resolve(root, file);
   if (path.dirname(target) !== root)

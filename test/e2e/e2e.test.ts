@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import {
+  type CommandsType,
+  type EventListenerMetadata,
+  type EventsType,
+  FeedRateModeEnum,
+  Parser,
+  Program,
+} from '@achar/core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { FeedRateModeEnum } from '../../src/common/enums';
-import type { EventListenerMetadata } from '../../src/lib/event';
-import { Parser } from '../../src/lib/parser';
-import { Program } from '../../src/lib/program';
-import type { CommandsType, EventsType } from '../../src/types';
 
 interface ConsistencyResult {
   filename: string;
@@ -19,13 +22,13 @@ interface ConsistencyResult {
 
 const TRACE_FILES: Record<string, string> = {
   'Setup1-TR.MPF':
-    '../../fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF',
+    '../../fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/434_112466504665666_CAM_2_Milling.MPF',
   'Setup2-TR.MPF':
     '../../fixtures/PROJECT_2551019_CAM_MILLING/2551019_CAM_MILLING.MPF',
   'Setup3-TR.MPF':
     '../../fixtures/PROJECT_567_112250296390862_CAM_Milling/567_112250296390862_CAM_Milling.MPF',
   'Setup4-TR.MPF':
-    '../../fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/Setup1.MPF',
+    '../../fixtures/PROJECT_434_112466504665666_CAM_2_MILLING/434_112466504665666_CAM_2_Milling.MPF',
 };
 const traceCache = new Map<string, ReturnType<Parser['parse']>>();
 
