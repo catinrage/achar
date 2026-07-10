@@ -23,7 +23,9 @@ function resolveSvelteRuntime(specifier: string): string | undefined {
   if (!subpath) return path.join(svelteRoot, 'src', 'index-client.js');
 
   const known: Record<string, string> = {
+    easing: 'src/easing/index.js',
     events: 'src/events/index.js',
+    transition: 'src/transition/index.js',
     'internal/client': 'src/internal/client/index.js',
     'internal/disclose-version': 'src/internal/disclose-version.js',
     'internal/flags/async': 'src/internal/flags/async.js',

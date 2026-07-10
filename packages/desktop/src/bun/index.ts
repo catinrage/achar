@@ -53,7 +53,7 @@ const rpc = BrowserView.defineRPC<AcharDesktopRPC>({
 });
 
 new BrowserWindow({
-  title: 'Achar',
+  title: 'اچار',
   url: 'views://mainview/index.html',
   rpc,
   frame: {

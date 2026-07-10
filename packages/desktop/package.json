@@ -11,6 +11,7 @@
   "dependencies": {
     "@achar/core": "workspace:*",
     "electrobun": "^1.18.1",
-    "svelte": "^5.56.4"
+    "svelte": "^5.56.4",
+    "vazirmatn": "^33.0.3"
   }
 }

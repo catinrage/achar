@@ -25,6 +25,8 @@ export default {
     copy: {
       'src/mainview/index.html': 'views/mainview/index.html',
       'src/mainview/index.css': 'views/mainview/index.css',
+      'node_modules/vazirmatn/fonts/webfonts/Vazirmatn[wght].woff2':
+        'views/mainview/fonts/Vazirmatn-Variable.woff2',
     },
     mac: { bundleCEF: false },
     linux: { bundleCEF: false },
