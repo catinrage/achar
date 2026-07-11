@@ -114,7 +114,9 @@ bun test
 For a full CLI manual, see [docs/cli-guide.md](docs/cli-guide.md). For a
 zero-to-hero manual, see [docs/achar-zero-to-hero.md](docs/achar-zero-to-hero.md).
 For a shorter post-author workflow, see
-[docs/post-authoring.md](docs/post-authoring.md).
+[docs/post-authoring.md](docs/post-authoring.md). For the empirically
+established legacy GPP behavior rules that parity depends on, see
+[docs/gpp-semantics.md](docs/gpp-semantics.md).
 
 ```bash
 # Parse a SolidCAM trace into Achar IR
