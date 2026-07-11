@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   bootstrapAchar,
   generateAcharFiles,
@@ -9,6 +10,7 @@ import {
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import packageJson from '../package.json' with { type: 'json' };
 
 export interface AcharMcpServerOptions {
   workspaceRoot?: string;
@@ -16,7 +18,7 @@ export interface AcharMcpServerOptions {
 }
 
 const optionalPath = z.string().trim().min(1).optional();
-const desktopInputSchema = z.object({
+const acharInputSchema = z.object({
   tracePath: z.string().trim().min(1).describe('Path to the Trace 5 MPF file.'),
   vmidPath: optionalPath.describe('Optional VMID path.'),
   machineProfilePath: optionalPath.describe(
@@ -28,7 +30,13 @@ const desktopInputSchema = z.object({
   postId: z.string().trim().min(1).default('siemens-828d'),
 });
 
-function text(value: unknown) {
+interface ToolResult {
+  [key: string]: unknown;
+  content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+}
+
+function text(value: unknown): ToolResult {
   return {
     content: [
       {
@@ -40,10 +48,48 @@ function text(value: unknown) {
   };
 }
 
+function toolError(error: unknown): ToolResult {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    content: [{ type: 'text' as const, text: `Error: ${message}` }],
+    isError: true,
+  };
+}
+
+async function guarded(run: () => Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await run();
+  } catch (error) {
+    return toolError(error);
+  }
+}
+
+/**
+ * Resolves a model-supplied path and rejects anything that escapes the
+ * workspace root, so tool calls cannot write to or read from arbitrary
+ * locations on disk.
+ */
+function resolveInsideWorkspace(
+  workspaceRoot: string,
+  target: string,
+  label: string,
+): string {
+  const resolved = path.resolve(workspaceRoot, target);
+  if (
+    resolved !== workspaceRoot &&
+    !resolved.startsWith(workspaceRoot + path.sep)
+  ) {
+    throw new Error(
+      `${label} must stay inside the workspace root (${workspaceRoot}); received: ${target}`,
+    );
+  }
+  return resolved;
+}
+
 function createServer(workspaceRoot: string): McpServer {
   const server = new McpServer({
     name: 'achar',
-    version: '0.1.0',
+    version: packageJson.version,
   });
 
   server.registerTool(
@@ -53,8 +99,9 @@ function createServer(workspaceRoot: string): McpServer {
       description:
         'List available fixtures, built-in posts, and workspace paths.',
       inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
     },
-    async () => text(await bootstrapAchar(workspaceRoot)),
+    () => guarded(async () => text(await bootstrapAchar(workspaceRoot))),
   );
 
   server.registerTool(
@@ -63,9 +110,10 @@ function createServer(workspaceRoot: string): McpServer {
       title: 'Validate Achar inputs',
       description:
         'Parse a Trace 5 file and validate it against optional VMID and machine profile inputs.',
-      inputSchema: desktopInputSchema,
+      inputSchema: acharInputSchema,
+      annotations: { readOnlyHint: true },
     },
-    async (input) => text(await validateAcharInput(input)),
+    (input) => guarded(async () => text(await validateAcharInput(input))),
   );
 
   server.registerTool(
@@ -73,10 +121,24 @@ function createServer(workspaceRoot: string): McpServer {
     {
       title: 'Generate G-code',
       description:
-        'Generate G-code files from Trace 5, optional VMID, and optional machine profile data.',
-      inputSchema: desktopInputSchema,
+        'Generate G-code files from Trace 5, optional VMID, and optional machine profile data. Output stays inside the workspace root.',
+      inputSchema: acharInputSchema,
+      annotations: { destructiveHint: false, idempotentHint: true },
     },
-    async (input) => text(await generateAcharFiles(input, workspaceRoot)),
+    (input) =>
+      guarded(async () => {
+        const constrained = input.outputPath
+          ? {
+              ...input,
+              outputPath: resolveInsideWorkspace(
+                workspaceRoot,
+                input.outputPath,
+                'outputPath',
+              ),
+            }
+          : input;
+        return text(await generateAcharFiles(constrained, workspaceRoot));
+      }),
   );
 
   server.registerTool(
@@ -84,14 +146,23 @@ function createServer(workspaceRoot: string): McpServer {
     {
       title: 'Read generated file',
       description:
-        'Read a generated file preview from an Achar output directory.',
+        'Read a generated file preview from an Achar output directory inside the workspace root.',
       inputSchema: z.object({
         outputPath: z.string().trim().min(1),
         file: z.string().trim().min(1),
       }),
+      annotations: { readOnlyHint: true },
     },
-    async ({ outputPath, file }) =>
-      text(await readGeneratedFile(outputPath, file)),
+    ({ outputPath, file }) =>
+      guarded(async () => {
+        const resolvedOutput = resolveInsideWorkspace(
+          workspaceRoot,
+          outputPath,
+          'outputPath',
+        );
+        resolveInsideWorkspace(resolvedOutput, file, 'file');
+        return text(await readGeneratedFile(resolvedOutput, file));
+      }),
   );
 
   return server;
@@ -105,7 +176,7 @@ export async function startAcharMcpServer(
   }
 
   const workspaceRoot = options.workspaceRoot
-    ? options.workspaceRoot
+    ? path.resolve(options.workspaceRoot)
     : resolveWorkspaceRoot();
   const server = createServer(workspaceRoot);
   await server.connect(new StdioServerTransport());
