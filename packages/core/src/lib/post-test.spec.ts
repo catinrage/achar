@@ -125,8 +125,8 @@ const parityBaseline: Record<
   }
 > = {
   'siemens-828d-2541021-cam-milling': {
-    match: 1,
-    different: 37,
+    match: 38,
+    different: 0,
     missingGenerated: 0,
     missingReference: 0,
   },

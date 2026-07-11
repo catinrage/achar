@@ -271,7 +271,13 @@ export function registerSiemens828dPost(
 
   post.on('StartOfJob', ($, params, metadata) => {
     const jobFile = jobFileName(params);
-    const fileMode = state.jobFiles.has(jobFile) ? 'append' : 'replace';
+    // Rotary-pattern (4x transform) repeats accumulate in one subprogram;
+    // any other re-post of the same job replaces the earlier content while
+    // its burned line numbers stay consumed, matching legacy GPP output.
+    const fileMode =
+      state.jobFiles.has(jobFile) && params.used_in_transform_4x
+        ? 'append'
+        : 'replace';
     state.jobFiles.add(jobFile);
     $.OpenFile(jobFile, 'SPF', fileMode);
     if (fileMode === 'append') {
@@ -662,11 +668,17 @@ export function registerSiemens828dPost(
 
     const coords: CommandsType['Rapid'] = {};
     const xChanged = traceChanged(params, 'xpos');
-    if (xChanged !== false && !sameNumber(params.xpos, state.lastPosition.x)) {
+    if (
+      xChanged === true ||
+      (xChanged !== false && !sameNumber(params.xpos, state.lastPosition.x))
+    ) {
       coords.x = compactCoordinate(params.xpos);
     }
     const yChanged = traceChanged(params, 'ypos');
-    if (yChanged !== false && !sameNumber(params.ypos, state.lastPosition.y)) {
+    if (
+      yChanged === true ||
+      (yChanged !== false && !sameNumber(params.ypos, state.lastPosition.y))
+    ) {
       coords.y = compactCoordinate(params.ypos);
     }
     const zChanged = traceChanged(params, 'zpos');
@@ -739,23 +751,35 @@ export function registerSiemens828dPost(
       state.forceNextApproachXY &&
       !state.currentJobHadToolChange
     ) {
+      // Drill jobs already emitted their position in the job-start block, so
+      // the approach repeat only re-emits coordinates that actually moved.
+      // Other jobs repeat every coordinate the trace flags as changed.
+      const approachChanged = (
+        key: string,
+        current: number | undefined,
+        previous: number | undefined,
+      ): boolean =>
+        state.currentJob && !isDrillJob(state.currentJob)
+          ? changedOrDifferent(params, key, current, previous)
+          : !sameNumber(current, previous);
       const words = [
         params.xpos !== undefined &&
-        !sameNumber(params.xpos, state.lastPosition.x)
+        approachChanged('xpos', params.xpos, state.lastPosition.x)
           ? {
               letter: 'X' as const,
               value: formatCoordinate(params.xpos),
             }
           : undefined,
         params.ypos !== undefined &&
-        !sameNumber(params.ypos, state.lastPosition.y)
+        approachChanged('ypos', params.ypos, state.lastPosition.y)
           ? {
               letter: 'Y' as const,
               value: formatCoordinate(params.ypos),
             }
           : undefined,
         params.apos !== undefined &&
-        !sameNumber(params.apos, state.lastPosition.a)
+        !state.currentJob?.used_in_transform_4x &&
+        approachChanged('apos', params.apos, state.lastPosition.a)
           ? {
               letter: 'A' as const,
               value: formatRotary(
@@ -794,6 +818,26 @@ export function registerSiemens828dPost(
       return;
     }
 
+    if (
+      state.pendingPathMode &&
+      state.forceNextApproachXY &&
+      state.currentJobHadToolChange &&
+      (params.xpos !== undefined ||
+        params.ypos !== undefined ||
+        params.zpos !== undefined)
+    ) {
+      // The job-start block after a tool change already positioned XY(A);
+      // the approach move only descends to the clearance Z, like RapidMove.
+      if (params.zpos !== undefined) {
+        $.RapidResolved({ z: compactCoordinate(params.zpos) });
+      }
+      updateLastPosition(params);
+      state.forceNextApproachXY = false;
+      state.deferredJobStartZ = false;
+      state.forceFeedOutput = true;
+      return;
+    }
+
     const coords: CommandsType['Rapid'] = {};
     const xChanged = traceChanged(params, 'xpos');
     if (
@@ -818,7 +862,11 @@ export function registerSiemens828dPost(
     ) {
       coords.z = compactCoordinate(params.zpos);
     }
-    if (!sameNumber(params.apos, state.lastPosition.a)) {
+    const aChanged = traceChanged(params, 'apos');
+    if (
+      aChanged === true ||
+      (aChanged !== false && !sameNumber(params.apos, state.lastPosition.a))
+    ) {
       coords.a = compactCoordinate(params.apos);
     }
 
