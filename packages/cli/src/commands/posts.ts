@@ -1,0 +1,24 @@
+import { listBuiltinPosts } from '@achar/core';
+import chalk from 'chalk';
+import type { Command } from 'commander';
+import { runCommand } from '../runner';
+import { printData } from '../ui';
+
+export function registerPostsCommand(cli: Command): void {
+  cli
+    .command('posts')
+    .description('List built-in post modules.')
+    .action(
+      runCommand(() => {
+        for (const post of listBuiltinPosts()) {
+          const aliases =
+            post.aliases.length > 0
+              ? chalk.dim(` aliases: ${post.aliases.join(', ')}`)
+              : '';
+          printData(`${chalk.green(post.id)}  ${post.name}${aliases}`);
+        }
+
+        return 0;
+      }),
+    );
+}
