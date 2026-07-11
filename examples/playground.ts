@@ -1,7 +1,7 @@
-import { FeedRateModeEnum } from './common/enums';
-import { Logger, LogLevel } from './lib/logger';
-import { Parser } from './lib/parser';
-import { Program } from './lib/program';
+import { FeedRateModeEnum } from '../packages/core/src/common/enums';
+import { Logger, LogLevel } from '../packages/core/src/lib/logger';
+import { Parser } from '../packages/core/src/lib/parser';
+import { Program } from '../packages/core/src/lib/program';
 
 // Add similar definitions for other section-specific fields if needed
 const source = await Bun.file(

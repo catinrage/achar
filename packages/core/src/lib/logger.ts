@@ -123,24 +123,10 @@ export interface LogOutput {
  * @description Console output for logs
  */
 export class ConsoleOutput implements LogOutput {
-  write(formatted: string, entry: LogEntry): void {
-    switch (entry.level) {
-      case LogLevel.DEBUG:
-        console.debug(formatted);
-        break;
-      case LogLevel.INFO:
-        console.info(formatted);
-        break;
-      case LogLevel.WARN:
-        console.warn(formatted);
-        break;
-      case LogLevel.ERROR:
-      case LogLevel.FATAL:
-        console.error(formatted);
-        break;
-      default:
-        console.log(formatted);
-    }
+  write(formatted: string, _entry: LogEntry): void {
+    // Every level writes to stderr so stdout stays reserved for command
+    // output (CLI pipelines) and the MCP stdio protocol stream.
+    process.stderr.write(`${formatted}\n`);
   }
 }
 

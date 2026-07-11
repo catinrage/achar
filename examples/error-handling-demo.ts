@@ -5,11 +5,11 @@
  * across all components of the Achar CNC Post-Processor
  */
 
-import { Builder } from './lib/builder';
-import { Logger } from './lib/logger';
-import { Machine } from './lib/machine';
-import { Parser } from './lib/parser';
-import { Program } from './lib/program';
+import { Builder } from '../packages/core/src/lib/builder';
+import { Logger } from '../packages/core/src/lib/logger';
+import { Machine } from '../packages/core/src/lib/machine';
+import { Parser } from '../packages/core/src/lib/parser';
+import { Program } from '../packages/core/src/lib/program';
 
 // Initialize logger to capture all error handling demonstrations
 const _logger = new Logger();

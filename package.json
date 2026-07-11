@@ -32,7 +32,7 @@
     "desktop:dev": "bun run --cwd packages/desktop desktop:dev",
     "desktop:build": "bun run --cwd packages/desktop desktop:build",
     "desktop:build:windows": "bun scripts/build-windows-desktop.ts",
-    "dev": "bun run --watch packages/core/src/playground.ts",
+    "dev": "bun run --watch examples/playground.ts",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --write",
     "test": "vitest run",

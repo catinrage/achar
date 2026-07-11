@@ -50,9 +50,7 @@ describe('Machine', () => {
     });
 
     it('should preserve signed zero on linear axes', () => {
-      expect(machine.setPosition({ x: -0, y: -0, z: -0 })).toBe(
-        'X-0 Y-0 Z-0',
-      );
+      expect(machine.setPosition({ x: -0, y: -0, z: -0 })).toBe('X-0 Y-0 Z-0');
     });
   });
 
