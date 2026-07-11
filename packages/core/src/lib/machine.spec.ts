@@ -157,4 +157,145 @@ describe('Machine', () => {
     expect(machine.setFeedRateMode(95)).toBe('G95');
     expect(machine.setHomeNumber(54)).toBe('G54');
   });
+
+  describe('modal state transitions', () => {
+    it('re-emits a modal word after the value changes back', () => {
+      expect(machine.setMachinePlane(PlaneEnum.XY)).toBe('G17');
+      expect(machine.setMachinePlane(PlaneEnum.XZ)).toBe('G18');
+      expect(machine.setMachinePlane(PlaneEnum.XY)).toBe('G17');
+    });
+
+    it('tracks motion mode changes without repeating unchanged modes', () => {
+      expect(machine.setMotionMode(0)).toBe('G0');
+      expect(machine.setMotionMode(0)).toBe('');
+      expect(machine.setMotionMode(1)).toBe('G1');
+      expect(machine.setMotionMode(1)).toBe('');
+      expect(machine.setMotionMode(0)).toBe('G0');
+    });
+
+    it('deduplicates positioning mode, unit system, feed-rate mode, and home', () => {
+      expect(machine.setPositioningMode(90)).toBe('G90');
+      expect(machine.setPositioningMode(90)).toBe('');
+      expect(machine.setPositioningMode(91)).toBe('G91');
+
+      expect(machine.setUnitSystem(710)).toBe('G710');
+      expect(machine.setUnitSystem(710)).toBe('');
+      expect(machine.setUnitSystem(700)).toBe('G700');
+
+      expect(machine.setFeedRateMode(94)).toBe('G94');
+      expect(machine.setFeedRateMode(94)).toBe('');
+      expect(machine.setFeedRateMode(95)).toBe('G95');
+
+      expect(machine.setHomeNumber(54)).toBe('G54');
+      expect(machine.setHomeNumber(54)).toBe('');
+      expect(machine.setHomeNumber(55)).toBe('G55');
+    });
+
+    it('switches spindle direction and suppresses repeats', () => {
+      expect(machine.setSpindleDirection(DirectionEnum.CW)).toBe('M3');
+      expect(machine.setSpindleDirection(DirectionEnum.CW)).toBe('');
+      expect(machine.setSpindleDirection(DirectionEnum.CCW)).toBe('M4');
+      expect(machine.setSpindleDirection(DirectionEnum.CW)).toBe('M3');
+    });
+
+    it('supports forcePrint on every modal setter', () => {
+      machine.setMachinePlane(PlaneEnum.XY);
+      machine.setMotionMode(1);
+      machine.setPositioningMode(90);
+      machine.setUnitSystem(710);
+      machine.setFeedRateMode(94);
+      machine.setHomeNumber(54);
+
+      expect(machine.setMachinePlane(PlaneEnum.XY, true)).toBe('G17');
+      expect(machine.setMotionMode(1, true)).toBe('G1');
+      expect(machine.setPositioningMode(90, true)).toBe('G90');
+      expect(machine.setUnitSystem(710, true)).toBe('G710');
+      expect(machine.setFeedRateMode(94, true)).toBe('G94');
+      expect(machine.setHomeNumber(54, true)).toBe('G54');
+    });
+  });
+
+  describe('rotary axis formatting', () => {
+    it('appends a trailing dot to integer rotary values only', () => {
+      expect(machine.setPosition({ a: 90 })).toBe('A90.');
+      expect(machine.setPosition({ a: 61.915 })).toBe('A61.915');
+      expect(machine.setPosition({ b: -24 })).toBe('B-24.');
+      expect(machine.setPosition({ c: -165.25 })).toBe('C-165.25');
+    });
+
+    it('deduplicates rotary values independently of linear axes', () => {
+      machine.setPosition({ x: 10, a: 90 });
+      expect(machine.setPosition({ x: 10, a: 90 })).toBe('');
+      expect(machine.setPosition({ x: 20, a: 90 })).toBe('X20');
+      expect(machine.setPosition({ x: 20, a: 45 })).toBe('A45.');
+    });
+  });
+
+  describe('input validation', () => {
+    it('rejects non-finite and negative feed rates', () => {
+      expect(() => machine.setFeedRate(Number.NaN)).toThrow(/finite/);
+      expect(() =>
+        machine.setFeedRate(Number.POSITIVE_INFINITY),
+      ).toThrow(/finite/);
+      expect(() => machine.setFeedRate(-100)).toThrow(/negative/);
+      expect(() => machine.setFeedRate(50001)).toThrow(/maximum/);
+    });
+
+    it('rejects non-finite and negative spindle speeds', () => {
+      expect(() => machine.setSpindleSpeed(Number.NaN)).toThrow(/finite/);
+      expect(() => machine.setSpindleSpeed(-1)).toThrow(/negative/);
+      expect(() => machine.setSpindleSpeed(50001)).toThrow(/maximum/);
+    });
+
+    it('rejects invalid tool names and accepts Siemens-style names', () => {
+      expect(() => machine.selectTool('')).toThrow(/empty/);
+      expect(() => machine.selectTool('T1"; M30')).toThrow(/safe/);
+      expect(machine.selectTool('TAPG1/4')).toBe('T="TAPG1/4"');
+      expect(machine.selectTool('BN8Z2_U-1.5')).toBe('T="BN8Z2_U-1.5"');
+    });
+
+    it('rejects non-finite coordinates', () => {
+      expect(() => machine.setPosition({ x: Number.NaN })).toThrow(/finite/);
+      expect(() =>
+        machine.setPosition({ z: Number.NEGATIVE_INFINITY }),
+      ).toThrow(/finite/);
+    });
+
+    it('skips bounds validation when validateBounds is disabled', () => {
+      const permissive = new Machine(mockBuilder, { validateBounds: false });
+      expect(permissive.setFeedRate(-100)).toBe('F-100');
+      expect(permissive.setSpindleSpeed(60000)).toBe('S60000');
+    });
+  });
+});
+
+describe('Emitter', () => {
+  it('returns empty output for undefined values without touching state', () => {
+    const emitter = new Emitter<number>('F');
+    expect(emitter.render(null, 0, undefined, undefined)).toBe('');
+    expect(emitter.value).toBeNull();
+  });
+
+  it('emits only on change and tracks the current value', () => {
+    const emitter = new Emitter<number>('F');
+    expect(emitter.render(null, 0, 500, undefined)).toBe('F500');
+    expect(emitter.render(null, 0, 500, undefined)).toBe('');
+    expect(emitter.value).toBe(500);
+    expect(emitter.render(null, 0, 600, undefined)).toBe('F600');
+    expect(emitter.value).toBe(600);
+  });
+
+  it('honors forcePrint for unchanged values', () => {
+    const emitter = new Emitter<number>('S');
+    emitter.render(null, 0, 3000, undefined);
+    expect(emitter.render(null, 0, 3000, true)).toBe('S3000');
+  });
+
+  it('applies the transform when rendering', () => {
+    const emitter = new Emitter<number>('A', (value) =>
+      Number.isInteger(value) ? `${value}.` : value.toString(),
+    );
+    expect(emitter.render(null, 0, 90, undefined)).toBe('A90.');
+    expect(emitter.render(null, 0, 45.5, undefined)).toBe('A45.5');
+  });
 });
