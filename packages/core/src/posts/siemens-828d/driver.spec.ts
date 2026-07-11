@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { Builder } from '../../lib/builder';
 import { siemens828dDriver } from './driver';
 

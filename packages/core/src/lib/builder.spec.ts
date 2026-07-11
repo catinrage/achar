@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { DirectionEnum, PlaneEnum } from '../common/enums';
 import { Builder } from './builder';
 import { File } from './file';

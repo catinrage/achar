@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { EventsType } from '../types';
 import { Emitter } from './emitter';
 import type { Event } from './event';
@@ -11,7 +11,7 @@ describe('Emitter', () => {
     mockEvent = {
       name: 'TestEvent',
       data: {},
-      trigger: vi.fn(),
+      trigger: jest.fn(),
     } as unknown as Event<keyof EventsType>;
     emitter = new Emitter<number>('X');
   });

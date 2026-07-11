@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { DirectionEnum, PlaneEnum } from '../common/enums';
 import type { Builder } from './builder';
 import { Emitter } from './emitter';
@@ -15,7 +15,7 @@ describe('Machine', () => {
 
   beforeEach(() => {
     // Reset emitters before each test
-    vi.spyOn(Emitter.prototype, 'render').mockClear();
+    spyOn(Emitter.prototype, 'render').mockClear();
     machine = new Machine(mockBuilder);
   });
 
@@ -234,9 +234,9 @@ describe('Machine', () => {
   describe('input validation', () => {
     it('rejects non-finite and negative feed rates', () => {
       expect(() => machine.setFeedRate(Number.NaN)).toThrow(/finite/);
-      expect(() =>
-        machine.setFeedRate(Number.POSITIVE_INFINITY),
-      ).toThrow(/finite/);
+      expect(() => machine.setFeedRate(Number.POSITIVE_INFINITY)).toThrow(
+        /finite/,
+      );
       expect(() => machine.setFeedRate(-100)).toThrow(/negative/);
       expect(() => machine.setFeedRate(50001)).toThrow(/maximum/);
     });

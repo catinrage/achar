@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { type EventData, Parser } from './parser';
 
 describe('Parser', () => {
@@ -175,7 +175,7 @@ just_a_word
     // Based on the current regex, these lines will be ignored, which is acceptable.
     // We expect only the event name and index.
     expect(result).toHaveLength(1);
-    expect(result[0]._eventName).toBe('MalformedTest');
+    expect(String(result[0]._eventName)).toBe('MalformedTest');
     expect(Object.keys(result[0])).toHaveLength(3);
   });
 

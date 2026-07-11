@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { Builder } from './builder';
 import { defineDriver } from './driver';
 import { createPostContext } from './post-context';

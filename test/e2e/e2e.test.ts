@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -8,7 +9,6 @@ import {
   Parser,
   Program,
 } from '@achar/core';
-import { beforeEach, describe, expect, it } from 'vitest';
 
 interface ConsistencyResult {
   filename: string;

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import {
+  type AcharInput,
   bootstrapAchar,
   generateAcharFiles,
   Logger,
@@ -18,6 +19,9 @@ export interface AcharMcpServerOptions {
 }
 
 const optionalPath = z.string().trim().min(1).optional();
+// `satisfies` ties this schema to core's AcharInput: adding or changing a
+// field in core without updating the schema fails typecheck instead of
+// silently dropping the field from the MCP surface.
 const acharInputSchema = z.object({
   tracePath: z.string().trim().min(1).describe('Path to the Trace 5 MPF file.'),
   vmidPath: optionalPath.describe('Optional VMID path.'),
@@ -28,7 +32,7 @@ const acharInputSchema = z.object({
   outputPath: optionalPath.describe('Optional directory for generated files.'),
   programName: z.string().trim().min(1).describe('Generated program name.'),
   postId: z.string().trim().min(1).default('siemens-828d'),
-});
+}) satisfies z.ZodType<AcharInput, AcharInput | { postId?: string }>;
 
 interface ToolResult {
   [key: string]: unknown;

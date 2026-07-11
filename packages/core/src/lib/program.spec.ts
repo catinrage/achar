@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { EventData } from './parser';
 import { Program } from './program';
 
@@ -62,7 +62,7 @@ describe('Program', () => {
 
   describe('Event Listeners', () => {
     it('should register event listeners', () => {
-      const mockHandler = vi.fn();
+      const mockHandler = jest.fn();
       program.on('StartOfFile', mockHandler);
 
       // We can't directly test the internal state, but we can test by triggering
@@ -77,14 +77,14 @@ describe('Program', () => {
           },
           next: null,
           previous: null,
-          findLastEvent: vi.fn(),
-          findNearestEvent: vi.fn(),
-          findNthNextEvent: vi.fn(),
-          findNthPreviousEvent: vi.fn(),
-          findLastEventOrThrow: vi.fn(),
-          findNearestEventOrThrow: vi.fn(),
-          findNthNextEventOrThrow: vi.fn(),
-          findNthPreviousEventOrThrow: vi.fn(),
+          findLastEvent: jest.fn(),
+          findNearestEvent: jest.fn(),
+          findNthNextEvent: jest.fn(),
+          findNthPreviousEvent: jest.fn(),
+          findLastEventOrThrow: jest.fn(),
+          findNearestEventOrThrow: jest.fn(),
+          findNthNextEventOrThrow: jest.fn(),
+          findNthPreviousEventOrThrow: jest.fn(),
         },
       );
 
@@ -92,8 +92,8 @@ describe('Program', () => {
     });
 
     it('should register multiple listeners for the same event', () => {
-      const handler1 = vi.fn();
-      const handler2 = vi.fn();
+      const handler1 = jest.fn();
+      const handler2 = jest.fn();
 
       program.on('StartOfFile', handler1);
       program.on('StartOfFile', handler2);
@@ -109,14 +109,14 @@ describe('Program', () => {
           },
           next: null,
           previous: null,
-          findLastEvent: vi.fn(),
-          findNearestEvent: vi.fn(),
-          findNthNextEvent: vi.fn(),
-          findNthPreviousEvent: vi.fn(),
-          findLastEventOrThrow: vi.fn(),
-          findNearestEventOrThrow: vi.fn(),
-          findNthNextEventOrThrow: vi.fn(),
-          findNthPreviousEventOrThrow: vi.fn(),
+          findLastEvent: jest.fn(),
+          findNearestEvent: jest.fn(),
+          findNthNextEvent: jest.fn(),
+          findNthPreviousEvent: jest.fn(),
+          findLastEventOrThrow: jest.fn(),
+          findNearestEventOrThrow: jest.fn(),
+          findNthNextEventOrThrow: jest.fn(),
+          findNthPreviousEventOrThrow: jest.fn(),
         },
       );
 
@@ -125,7 +125,7 @@ describe('Program', () => {
     });
 
     it('should remove event listeners', () => {
-      const mockHandler = vi.fn();
+      const mockHandler = jest.fn();
       program.on('StartOfFile', mockHandler);
       program.off('StartOfFile', mockHandler);
 
@@ -140,14 +140,14 @@ describe('Program', () => {
           },
           next: null,
           previous: null,
-          findLastEvent: vi.fn(),
-          findNearestEvent: vi.fn(),
-          findNthNextEvent: vi.fn(),
-          findNthPreviousEvent: vi.fn(),
-          findLastEventOrThrow: vi.fn(),
-          findNearestEventOrThrow: vi.fn(),
-          findNthNextEventOrThrow: vi.fn(),
-          findNthPreviousEventOrThrow: vi.fn(),
+          findLastEvent: jest.fn(),
+          findNearestEvent: jest.fn(),
+          findNthNextEvent: jest.fn(),
+          findNthPreviousEvent: jest.fn(),
+          findLastEventOrThrow: jest.fn(),
+          findNearestEventOrThrow: jest.fn(),
+          findNthNextEventOrThrow: jest.fn(),
+          findNthPreviousEventOrThrow: jest.fn(),
         },
       );
 
@@ -157,7 +157,7 @@ describe('Program', () => {
 
   describe('trigger', () => {
     it('should call registered listeners with correct parameters', () => {
-      const mockHandler = vi.fn();
+      const mockHandler = jest.fn();
       program.on('ToolChange', mockHandler);
 
       const params = { tool_number: 5, tool_spin: 2000 };
@@ -169,14 +169,14 @@ describe('Program', () => {
         },
         next: null,
         previous: null,
-        findLastEvent: vi.fn(),
-        findNearestEvent: vi.fn(),
-        findNthNextEvent: vi.fn(),
-        findNthPreviousEvent: vi.fn(),
-        findLastEventOrThrow: vi.fn(),
-        findNearestEventOrThrow: vi.fn(),
-        findNthNextEventOrThrow: vi.fn(),
-        findNthPreviousEventOrThrow: vi.fn(),
+        findLastEvent: jest.fn(),
+        findNearestEvent: jest.fn(),
+        findNthNextEvent: jest.fn(),
+        findNthPreviousEvent: jest.fn(),
+        findLastEventOrThrow: jest.fn(),
+        findNearestEventOrThrow: jest.fn(),
+        findNthNextEventOrThrow: jest.fn(),
+        findNthPreviousEventOrThrow: jest.fn(),
       };
 
       program.trigger('ToolChange', params, metadata);
@@ -189,8 +189,8 @@ describe('Program', () => {
     });
 
     it('should not call listeners for other events', () => {
-      const startHandler = vi.fn();
-      const toolHandler = vi.fn();
+      const startHandler = jest.fn();
+      const toolHandler = jest.fn();
 
       program.on('StartOfFile', startHandler);
       program.on('ToolChange', toolHandler);
@@ -206,14 +206,14 @@ describe('Program', () => {
           },
           next: null,
           previous: null,
-          findLastEvent: vi.fn(),
-          findNearestEvent: vi.fn(),
-          findNthNextEvent: vi.fn(),
-          findNthPreviousEvent: vi.fn(),
-          findLastEventOrThrow: vi.fn(),
-          findNearestEventOrThrow: vi.fn(),
-          findNthNextEventOrThrow: vi.fn(),
-          findNthPreviousEventOrThrow: vi.fn(),
+          findLastEvent: jest.fn(),
+          findNearestEvent: jest.fn(),
+          findNthNextEvent: jest.fn(),
+          findNthPreviousEvent: jest.fn(),
+          findLastEventOrThrow: jest.fn(),
+          findNearestEventOrThrow: jest.fn(),
+          findNthNextEventOrThrow: jest.fn(),
+          findNthPreviousEventOrThrow: jest.fn(),
         },
       );
 
@@ -224,9 +224,9 @@ describe('Program', () => {
 
   describe('process', () => {
     it('should process all loaded events in order', () => {
-      const startHandler = vi.fn();
-      const toolHandler = vi.fn();
-      const endHandler = vi.fn();
+      const startHandler = jest.fn();
+      const toolHandler = jest.fn();
+      const endHandler = jest.fn();
 
       program.on('StartOfFile', startHandler);
       program.on('ToolChange', toolHandler);
@@ -259,7 +259,7 @@ describe('Program', () => {
     });
 
     it('should provide correct metadata to event listeners', () => {
-      const handler = vi.fn();
+      const handler = jest.fn();
       program.on('ToolChange', handler);
 
       const mockEvents: EventData[] = [
