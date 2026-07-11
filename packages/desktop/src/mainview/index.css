@@ -1138,3 +1138,95 @@ pre {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.workspace-single {
+  height: calc(100vh - 88px);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.mcp-panel {
+  display: grid;
+  max-width: 720px;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  animation: fade-up 420ms var(--ease-out) both;
+}
+
+.mcp-panel .section-heading p {
+  max-width: 56ch;
+  line-height: 1.9;
+}
+
+.mcp-command-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-subtle);
+}
+
+.mcp-command-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mcp-command-block code,
+.mcp-env code,
+.mcp-tool code {
+  overflow-x: auto;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--code-text);
+  background: var(--code-bg);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mcp-command-block .primary-button {
+  justify-self: start;
+  padding: 0 16px;
+}
+
+.mcp-env {
+  display: grid;
+  gap: 6px;
+}
+
+.mcp-tools {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-tool {
+  display: grid;
+  grid-template-columns: minmax(190px, auto) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-subtle);
+  font-size: 12px;
+}
+
+.mcp-tool span {
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+@media (max-width: 1060px) {
+  .mcp-tool {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

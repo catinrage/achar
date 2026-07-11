@@ -46,7 +46,11 @@ const rpc = BrowserView.defineRPC<AcharDesktopRPC>({
       generate: (input) => generateAcharFiles(input, workspaceRoot),
       readOutputFile: ({ outputPath, file }) =>
         readGeneratedFile(outputPath, file),
-      openPath: ({ path: target }) => Utils.openPath(target),
+      openPath: ({ path: target }) => {
+        const resolved = path.resolve(target);
+        if (!existsSync(resolved)) return false;
+        return Utils.openPath(resolved);
+      },
     },
     messages: {},
   },
