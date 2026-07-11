@@ -19,6 +19,12 @@ export interface CompareOptions {
   maxDiffsPerFile?: number;
   normalizeTimestamps?: boolean;
   strict?: boolean;
+  /**
+   * Strip `N<number>` block-number prefixes before comparing, so a single
+   * added or removed block early in a program does not report every
+   * subsequent line as different.
+   */
+  ignoreLineNumbers?: boolean;
 }
 
 export interface LineDifference {
@@ -36,6 +42,12 @@ export interface CompareResult {
   expected?: string;
   actual?: string;
   differences?: LineDifference[];
+  /**
+   * True when the file only differs in `N<number>` prefixes — the G-code
+   * content is identical and the numbering drifted because a block was
+   * added or removed earlier in the program.
+   */
+  numberingDriftOnly?: boolean;
 }
 
 export interface CompareSummary {
@@ -213,9 +225,17 @@ export async function compareAgainstReference(
       continue;
     }
 
+    const numberingDriftOnly =
+      options.ignoreLineNumbers !== true &&
+      firstDifference(expected, generatedFile.code, {
+        ...options,
+        ignoreLineNumbers: true,
+      }).firstDifference === undefined;
+
     results.push({
       file: displayComparedFile(file, generatedFile.file),
       status: 'different',
+      numberingDriftOnly,
       ...difference,
     });
   }
@@ -280,13 +300,15 @@ export function formatCompareTable(results: CompareResult[]): string {
   const rows = results.filter((result) => result.status !== 'match');
   if (rows.length === 0) return '';
 
+  const statusLabel = (row: CompareResult): string =>
+    row.numberingDriftOnly === true ? `${row.status} (numbering)` : row.status;
   const fileWidth = Math.max(
     'file'.length,
     ...rows.map((row) => row.file.length),
   );
   const statusWidth = Math.max(
     'status'.length,
-    ...rows.map((row) => row.status.length),
+    ...rows.map((row) => statusLabel(row).length),
   );
   const lines = [
     `${'file'.padEnd(fileWidth)}  ${'status'.padEnd(statusWidth)}  first diff`,
@@ -295,7 +317,7 @@ export function formatCompareTable(results: CompareResult[]): string {
 
   for (const row of rows) {
     lines.push(
-      `${row.file.padEnd(fileWidth)}  ${row.status.padEnd(statusWidth)}  ${
+      `${row.file.padEnd(fileWidth)}  ${statusLabel(row).padEnd(statusWidth)}  ${
         row.firstDifference ?? ''
       }`,
     );
@@ -345,10 +367,15 @@ function firstDifference(
   | 'actual'
   | 'differences'
 > {
-  const normalizeLine = (line: string): string =>
-    options.strict === true
-      ? line
-      : normalizeVolatileLine(line, options).trimEnd();
+  const normalizeLine = (line: string): string => {
+    const base =
+      options.strict === true
+        ? line
+        : normalizeVolatileLine(line, options).trimEnd();
+    return options.ignoreLineNumbers === true
+      ? base.replace(/^N\d+ ?/, '')
+      : base;
+  };
   const expectedLines = expected.split(/\r?\n/);
   const actualLines = actual.split(/\r?\n/);
   const maxLines = Math.max(expectedLines.length, actualLines.length);

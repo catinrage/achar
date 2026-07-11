@@ -11,6 +11,7 @@ import {
   formatCompareResults,
   testPost,
 } from './post-test';
+import type { Program } from './program';
 import { parseVmidFile } from './vmid';
 
 const tempDirs: string[] = [];
@@ -97,6 +98,75 @@ describe('post test harness', () => {
     expect(() => assertPostMatchesReference(result)).toThrow(
       /expected: N10 G1/,
     );
+  });
+
+  it('flags pure N-number drift and ignores it with ignoreLineNumbers', async () => {
+    const root = await makeTempDir();
+    const trace = path.join(root, 'trace.MPF');
+    const reference = path.join(root, 'reference');
+
+    // Same G-code content, shifted block numbers.
+    await writeFixture(root, {
+      'trace.MPF': '(0)@start_of_file\n',
+      'reference/Test.MPF': 'N20 G0\nN30 M30',
+    });
+
+    const registerPost = (program: Program) => {
+      program.on('StartOfFile', ($) => {
+        $.put('G0');
+        $.put('M30');
+      });
+    };
+
+    const drifted = await testPost({
+      trace,
+      reference,
+      programName: 'Test',
+      registerPost,
+    });
+    expect(drifted.summary.different).toBe(1);
+    expect(drifted.results[0]?.numberingDriftOnly).toBe(true);
+    expect(formatCompareResults(drifted.results)).toContain(
+      'different (numbering)',
+    );
+
+    const ignored = await testPost({
+      trace,
+      reference,
+      programName: 'Test',
+      registerPost,
+      compare: { ignoreLineNumbers: true },
+    });
+    expect(ignored.summary).toEqual({
+      match: 1,
+      different: 0,
+      missingGenerated: 0,
+      missingReference: 0,
+    });
+  });
+
+  it('does not mark real content differences as numbering drift', async () => {
+    const root = await makeTempDir();
+    const trace = path.join(root, 'trace.MPF');
+    const reference = path.join(root, 'reference');
+
+    await writeFixture(root, {
+      'trace.MPF': '(0)@start_of_file\n',
+      'reference/Test.MPF': 'N10 G1',
+    });
+
+    const result = await testPost({
+      trace,
+      reference,
+      programName: 'Test',
+      registerPost: (program) => {
+        program.on('StartOfFile', ($) => {
+          $.put('G0');
+        });
+      },
+    });
+
+    expect(result.results[0]?.numberingDriftOnly).toBe(false);
   });
 });
 

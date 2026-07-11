@@ -126,6 +126,7 @@ export function compareOptions(options: CliOptions): CompareOptions {
     normalizeTimestamps:
       options.strict === true ? false : options.normalizeTimestamps !== false,
     strict: options.strict === true,
+    ignoreLineNumbers: options.ignoreNumbering === true,
   };
 }
 

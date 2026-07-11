@@ -8,6 +8,7 @@ export interface CliOptions {
   event?: string;
   file?: string;
   force?: boolean;
+  ignoreNumbering?: boolean;
   interactive?: boolean;
   json?: boolean;
   interfaceName?: string;
@@ -74,6 +75,10 @@ export function withCompareOptions(command: Command): Command {
       'Maximum line diffs to print per file.',
       parsePositiveInteger,
       5,
+    )
+    .option(
+      '--ignore-numbering',
+      'Ignore N-number prefixes so block-number drift does not count as a difference.',
     )
     .option('--report <file>', 'Write an HTML diff report.')
     .option('--json', 'Print machine-readable JSON results on stdout.');
