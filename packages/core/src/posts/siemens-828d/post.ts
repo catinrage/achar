@@ -510,7 +510,14 @@ export function registerSiemens828dPost(
     }
 
     if (!measureTools || mainToolListComments) {
-      $.Comment(`T${params.tool_number}-${params.tool_id_string}`);
+      // The tool-list comment uses SolidCAM's short display name
+      // (tool_message), not the full tool_id_string used for T="..."
+      // selection elsewhere; the two diverge whenever the tool name
+      // carries a length/variant suffix (e.g. id 'END12Z4L' vs
+      // message 'END12Z4').
+      $.Comment(
+        `T${params.tool_number}-${params.tool_message ?? params.tool_id_string}`,
+      );
     }
 
     if (measureTools && deferToolMeasurementProgram) {

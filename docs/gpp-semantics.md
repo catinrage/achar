@@ -185,6 +185,64 @@ with no deferred-Z interaction.
 **Implementation.** `post.ts`, StartOfJob:
 `state.deferredJobStartZ = !isDrillJob(params)`.
 
+### Rule 8 — Tapping cycles do not repeat the drill-approach Z
+
+**Statement.** The `drillApproachZBeforeCoolant` repeat (rule from the
+Drill handler: re-emit Z when the trace flags it changed even if the
+prior rapid already positioned there) applies to ordinary drill cycles
+only. Tapping cycles (`drill_cycle_name === 'CYCLE84'`) never repeat that
+Z, even though the trace carries the same `zpos__changed: true` flag as
+an ordinary drill.
+
+**Evidence.** `fixtures/PROJECT_AG_BIG_SABET_CAM_Milling/reference/D_drill_4.SPF`:
+`RapidMove` positions `Z80`, the following `Drill` event (CYCLE84,
+zpos also 80, also flagged changed) does **not** repeat it — legacy goes
+straight `M3` → `M8`. The generated output duplicated `Z80` before this
+fix, cascading N-numbers through the entire file.
+
+**Implementation.** `drilling.ts`, Drill handler: added
+`params.drill_cycle_name !== 'CYCLE84'` to the approach-Z condition.
+
+### Rule 9 — Tapping cycles get an unconditional optional stop, machine-gated
+
+**Statement.** On machines with the `tapCycleOptionalStop` feature, every
+`CYCLE84` call is preceded by `M1` (optional stop), immediately after the
+feed word — unconditionally, with no corresponding trace flag. Machines
+without the feature never emit it.
+
+**Evidence.** `fixtures/PROJECT_AG_BIG_SABET_CAM_Milling/reference/D_drill_4.SPF`
+and `D_drill2_2.SPF` (both PoyaKar-machine fixtures): every `CYCLE84` is
+preceded by `M1`, always, regardless of trace fields on the `Drill` event
+(none differ between M1 and non-M1 occurrences). `fixtures/PROJECT_2541021_CAM_Milling/reference/D_drill8_1.SPF`
+(default Siemens profile, no machine profile): four `CYCLE84` calls,
+**never** preceded by `M1`, with near-identical `C84_*` job parameters to
+the PoyaKar case — ruling out a trace-driven explanation and pointing to
+a machine-level default instead.
+
+**Implementation.** New `MachineProfileFeatures.tapCycleOptionalStop`
+flag (`machine-profile.ts`); `drilling.ts` DrillPoint handler emits
+`$.OptionalStop()` before the cycle call when the feature is on and
+`drill_cycle_name === 'CYCLE84'`. Enabled on `PoyaKar_1160L_3A.machine.json`.
+
+### Rule 10 — The tool-list comment uses SolidCAM's short tool name, not the selection id
+
+**Statement.** The `; T<number>-<name>` lines in the "Tools Used In This
+Program" comment block (main-file, `mainToolListComments` feature) use
+`tool_message` — SolidCAM's short display name — not `tool_id_string`,
+which is what `T="..."` tool-selection words use elsewhere. The two
+diverge whenever the tool carries a length/variant suffix.
+
+**Evidence.** `fixtures/PROJECT_AG_BIG_SABET_CAM_Milling`: tool
+`tool_id_string:'END12Z4L'` has `tool_message:'END12Z4'`; the reference
+main-file comment reads `; T157-END12Z4` (no `L`), while the same tool's
+`T="END12Z4L" M6` selection line keeps the full id. Same pattern for
+`TAPM12X1`/`TAPM12` and `DRILL2.5`/`DRILL3` — the latter pair isn't even
+a truncation, confirming these are two genuinely different SolidCAM
+fields, not one field trimmed.
+
+**Implementation.** `post.ts`, DefTool handler: the comment line uses
+`params.tool_message ?? params.tool_id_string`.
+
 ---
 
 ## Comparison normalizations (what parity ignores)
@@ -200,6 +258,48 @@ equal unless `--strict`:
   `numberingDriftOnly`, shown as `different (numbering)` in the table —
   if you see that, hunt for one added/removed block upstream, not a
   content bug in the flagged file.
+
+---
+
+## Known open gaps
+
+### `siemens-828d-ag-big-sabet-cam-milling`: 35/37 matched
+
+Two unresolved differences, tracked in the parity baseline rather than
+hidden:
+
+- **`iRough_faces_3.SPF`, 2 lines** — a `Line` event immediately after a
+  mid-job `m_feed_spin` (spindle speed change within a running job, not
+  at job start) drops its feed word (`F753`) even though legacy repeats
+  it. Forcing feed output unconditionally after every `MFeedSpin` was
+  tried and **reverted** — it regressed 2541021, 567, and 26646, so the
+  real rule is conditional on something not yet identified (likely tied
+  to why the spindle changed mid-job — a rotary-pattern restart is the
+  suspect, unconfirmed).
+- **`Tools_Length_Measurement.MPF` missing-reference** — the trace never
+  references this filename at all, meaning the legacy posting run for
+  this specific job had tool-measurement output toggled off, while
+  Achar always emits it when `machineProfile.features.toolMeasurementProgram`
+  is on. This looks like a **post-time toggle**, not a machine-identity
+  constant — the same physical machine (PoyaKar 1160L 3A, shared with
+  the passing `567` fixture) can apparently be posted with or without
+  it. Achar's `MachineProfile` currently models this as a fixed machine
+  property; representing it correctly would need a per-run override
+  achar doesn't expose yet (`Siemens828dPostOptions.measureTools` exists
+  on the post but isn't wired through fixture manifests or the CLI).
+
+### Fixture files can ship the wrong machine data
+
+This fixture's directory originally contained `Siemens_828D_Milling_4A.vmid`
+and `.gpp` — but the trace's own `VMID_file:'PoyaKar_1160L_3A'` field said
+otherwise, and the shipped VMID's `<Machine Name="...">` confirmed it was
+actually the Siemens machine, not PoyaKar. The manifest now points
+`vmid`/`machineProfile` at the `PROJECT_567_...` fixture's PoyaKar files
+(same physical machine). **Always cross-check a new fixture's trace
+`VMID_file` against the VMID file actually shipped with it** before
+trusting parity results — a mismatched VMID produces validation errors
+and, more dangerously, silently wrong parity if the wrong machine
+profile happens to still generate valid-looking G-code.
 
 ---
 

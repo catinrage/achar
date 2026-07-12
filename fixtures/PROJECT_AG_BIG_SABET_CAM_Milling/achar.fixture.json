@@ -1,0 +1,10 @@
+{
+  "name": "siemens-828d-ag-big-sabet-cam-milling",
+  "trace": "AG_BIG_SABET_CAM_Milling.MPF",
+  "reference": "reference",
+  "programName": "AG_BIG_SABET_CAM_Milling",
+  "post": "siemens-828d",
+  "out": "../../generated/siemens-828d-ag-big-sabet-cam-milling",
+  "vmid": "../PROJECT_567_112250296390862_CAM_Milling/PoyaKar_1160L_3A.vmid",
+  "machineProfile": "../PROJECT_567_112250296390862_CAM_Milling/PoyaKar_1160L_3A.machine.json"
+}

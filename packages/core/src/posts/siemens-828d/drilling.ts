@@ -43,6 +43,7 @@ export function registerDrillingHandlers({
     }
     if (
       state.machineProfile?.features?.drillApproachZBeforeCoolant === true &&
+      params.drill_cycle_name !== 'CYCLE84' &&
       (traceChanged(params, 'zpos') === true ||
         !sameNumber(params.zpos, state.lastPosition.z))
     ) {
@@ -80,6 +81,15 @@ export function registerDrillingHandlers({
         : undefined,
     ]);
     $.SetFeedRate(state.currentDrill.feed, { forcePrint: true });
+    if (
+      state.machineProfile?.features?.tapCycleOptionalStop === true &&
+      state.currentDrill.drill_cycle_name === 'CYCLE84'
+    ) {
+      // Tapping cycles get an optional stop immediately before the cycle
+      // call on machines with this feature — no corresponding trace flag,
+      // so it is machine-profile gated rather than trace-driven.
+      $.OptionalStop();
+    }
     controller($).DrillCycle(state.currentDrill, {
       clearance: state.currentJobClearance,
       upper: state.currentJobUpper,
