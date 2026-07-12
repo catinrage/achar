@@ -5,5 +5,6 @@
   "programName": "2551019_CAM_MILLING",
   "post": "siemens-828d",
   "out": "../../generated/siemens-828d-2551019-cam-milling",
-  "vmid": "Siemens_828D_Milling_4A.vmid"
+  "vmid": "Siemens_828D_Milling_4A.vmid",
+  "ignored": true
 }
