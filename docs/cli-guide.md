@@ -723,6 +723,34 @@ Options:
 Use this when a generated line is wrong and you need to identify which handler
 or trace event produced it.
 
+### `timing`
+
+Extract machining durations from a trace: per setup (with its jobs and their
+tools) and per tool, aggregated from the `job_time` / `job_cutting_time` /
+`job_linking_time` stamps SolidCAM writes on every job start. Repeated
+pattern/re-post jobs count once per executed instance, so per-tool totals can
+exceed SolidCAM's declared `tool_work_time` (which counts each job once); the
+declared value is included as `declaredWorkTime` for comparison.
+
+```bash
+# Writes <fixture out>/timing.json
+bun run achar timing fixtures/PROJECT_26646_CAM_Milling
+
+# Explicit destination or stdout
+bun run achar timing fixtures/PROJECT_26646_CAM_Milling --out reports/timing.json
+bun run achar timing fixtures/PROJECT_26646_CAM_Milling --json
+```
+
+Options:
+
+```text
+--out <file-or-directory>  JSON destination. Defaults to <fixture out>/timing.json.
+--json                     Print the report to stdout instead of writing a file.
+```
+
+Durations are `H:MM:SS` strings with raw `seconds` fields alongside for
+machine consumption.
+
 ### `lint-post`
 
 Check a post module for maintainability issues:

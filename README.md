@@ -152,6 +152,9 @@ bun run achar test fixtures/PROJECT_434_112466504665666_CAM_2_MILLING
 # Run every fixture under a directory
 bun run achar test fixtures --all
 
+# Extract per-setup and per-tool machining durations to <out>/timing.json
+bun run achar timing fixtures/PROJECT_26646_CAM_Milling
+
 # Explain why blocks were emitted
 bun run achar explain fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --file F_contour8.SPF
 

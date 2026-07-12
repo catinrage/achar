@@ -96,6 +96,17 @@ export {
 export { expectPost, PostExpectation } from './lib/post-test-dsl';
 export { Program } from './lib/program';
 export type {
+  JobTiming,
+  SetupTiming,
+  TimingReport,
+  ToolTiming,
+} from './lib/timing';
+export {
+  extractTimingReport,
+  formatDurationSeconds,
+  parseDurationSeconds,
+} from './lib/timing';
+export type {
   VmidAxis,
   VmidDefinition,
   VmidParameter,
