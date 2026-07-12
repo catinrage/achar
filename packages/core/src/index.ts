@@ -38,7 +38,11 @@ export { registerDefaultPost } from './lib/default-post';
 export type { BuilderDriver } from './lib/driver';
 export { defineDriver } from './lib/driver';
 export type { EventListenerMetadata } from './lib/event';
-export type { FixtureManifest, ResolvedFixture } from './lib/fixture';
+export type {
+  DiscoverFixturesOptions,
+  FixtureManifest,
+  ResolvedFixture,
+} from './lib/fixture';
 export { discoverFixtures, loadFixture } from './lib/fixture';
 export { Logger } from './lib/logger';
 export type {

@@ -28,6 +28,8 @@ export interface AcharFixtureSummary {
   postId: string;
   vmidPath?: string;
   machineProfilePath?: string;
+  /** Manifest opted out of parity and other test runs. */
+  ignored: boolean;
 }
 
 export interface AcharMachineProfileSummary {
@@ -133,7 +135,11 @@ export async function bootstrapAchar(
   let machineProfiles: AcharMachineProfileSummary[] = [];
 
   if (existsSync(fixturesRoot)) {
-    fixtures = (await discoverFixtures(fixturesRoot)).map((fixture) => ({
+    // Browsing surfaces (desktop, MCP workspace tool) still list ignored
+    // fixtures; only test runs exclude them.
+    fixtures = (
+      await discoverFixtures(fixturesRoot, { includeIgnored: true })
+    ).map((fixture) => ({
       name: fixture.name,
       root: fixture.root,
       tracePath: fixture.trace,
@@ -143,6 +149,7 @@ export async function bootstrapAchar(
       postId: fixture.post ?? 'siemens-828d',
       vmidPath: fixture.vmid,
       machineProfilePath: fixture.machineProfile,
+      ignored: fixture.ignored,
     }));
     machineProfiles = await discoverMachineProfiles(fixturesRoot);
   }

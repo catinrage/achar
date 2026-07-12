@@ -149,6 +149,7 @@ Fields:
 | `out` | For `generate` and `parity` unless passed as `--out` | Directory for generated files. |
 | `vmid` | No | VMID file used for validation. |
 | `machineProfile` | No | Machine profile JSON used for machine-specific generation policy. |
+| `ignored` | No | When `true`, the fixture is skipped by fixture discovery — `achar test --all` and the parity test suite exclude it. Defaults to `false`. Targeting the fixture directory directly still runs it (with a notice). |
 
 CLI flags override fixture fields. For example, this uses the fixture trace,
 reference, program name, post, and VMID, but writes output elsewhere:

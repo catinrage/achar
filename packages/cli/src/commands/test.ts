@@ -20,7 +20,12 @@ import {
   withVmidOptions,
 } from '../options';
 import { runCommand } from '../runner';
-import { printCompareResults, printData, printVmidValidation } from '../ui';
+import {
+  printCompareResults,
+  printData,
+  printInfo,
+  printVmidValidation,
+} from '../ui';
 import { watchRun } from '../watch';
 
 interface FixtureReport {
@@ -59,6 +64,13 @@ export function registerTestCommand(cli: Command): void {
           const input = await resolveInput(target, options, {
             requireReference: true,
           });
+          if (input.fixture?.ignored) {
+            printInfo(
+              chalk.yellow(
+                `Note: fixture "${input.fixture.name}" is marked ignored; running because it was targeted directly.`,
+              ),
+            );
+          }
           const result = await testPost({
             trace: input.tracePath,
             reference: input.referenceDir ?? '',
@@ -103,7 +115,19 @@ async function runAllFixtures(
   target: string,
   options: CliOptions,
 ): Promise<number> {
-  const fixtures = await discoverFixtures(target);
+  const allFixtures = await discoverFixtures(target, { includeIgnored: true });
+  const fixtures = allFixtures.filter((fixture) => !fixture.ignored);
+  const skipped = allFixtures.length - fixtures.length;
+  if (skipped > 0) {
+    printInfo(
+      chalk.dim(
+        `Skipped ${skipped} ignored fixture(s): ${allFixtures
+          .filter((fixture) => fixture.ignored)
+          .map((fixture) => fixture.name)
+          .join(', ')}`,
+      ),
+    );
+  }
   const allResults: CompareResult[] = [];
   const reports: FixtureReport[] = [];
   let hasFailure = false;

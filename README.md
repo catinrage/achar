@@ -249,6 +249,11 @@ real post test without repeating long command-line flags:
 }
 ```
 
+Set `"ignored": true` in a manifest to exclude a fixture from `achar test
+--all` and the parity test suite — useful for work-in-progress fixtures whose
+reference output is not trustworthy yet. Targeting the fixture directly still
+runs it.
+
 `post` can be a built-in post name (`default` or `siemens-828d`) or a path to a
 TypeScript/JavaScript module. A post module can export any of these shapes:
 

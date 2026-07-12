@@ -14,6 +14,17 @@ export interface FixtureManifest {
   out?: string;
   vmid?: string;
   machineProfile?: string;
+  /**
+   * When true, the fixture is skipped by fixture discovery and therefore
+   * excluded from parity and all other test runs. Directly targeting the
+   * fixture (e.g. `achar test <dir>`) still works.
+   */
+  ignored?: boolean;
+}
+
+export interface DiscoverFixturesOptions {
+  /** Include fixtures whose manifest sets `ignored: true`. */
+  includeIgnored?: boolean;
 }
 
 export interface ResolvedFixture {
@@ -26,6 +37,7 @@ export interface ResolvedFixture {
   out?: string;
   vmid?: string;
   machineProfile?: string;
+  ignored: boolean;
 }
 
 export async function loadFixture(target: string): Promise<ResolvedFixture> {
@@ -39,6 +51,11 @@ export async function loadFixture(target: string): Promise<ResolvedFixture> {
   const manifest = JSON.parse(
     await readFile(manifestPath, 'utf-8'),
   ) as FixtureManifest;
+  if (manifest.ignored !== undefined && typeof manifest.ignored !== 'boolean') {
+    throw new Error(
+      `Invalid "ignored" value in ${manifestPath}: expected a boolean`,
+    );
+  }
   const trace = path.resolve(root, manifest.trace);
   const reference = path.resolve(root, manifest.reference);
 
@@ -54,27 +71,36 @@ export async function loadFixture(target: string): Promise<ResolvedFixture> {
     machineProfile: manifest.machineProfile
       ? path.resolve(root, manifest.machineProfile)
       : undefined,
+    ignored: manifest.ignored === true,
   };
 }
 
+/**
+ * Discovers fixtures under a directory. Fixtures whose manifest sets
+ * `ignored: true` are excluded by default so every test consumer skips
+ * them automatically; pass `includeIgnored` for browsing surfaces that
+ * should still list them.
+ */
 export async function discoverFixtures(
   root: string,
+  options: DiscoverFixturesOptions = {},
 ): Promise<ResolvedFixture[]> {
   const resolvedRoot = path.resolve(root);
-  const directManifest = path.join(resolvedRoot, FIXTURE_MANIFEST);
-  if (existsSync(directManifest)) {
-    return [await loadFixture(resolvedRoot)];
-  }
-
-  const entries = await readdir(resolvedRoot, { withFileTypes: true });
+  const includeIgnored = options.includeIgnored === true;
   const fixtures: ResolvedFixture[] = [];
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  const directManifest = path.join(resolvedRoot, FIXTURE_MANIFEST);
+  if (existsSync(directManifest)) {
+    fixtures.push(await loadFixture(resolvedRoot));
+  } else {
+    const entries = await readdir(resolvedRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
 
-    const candidate = path.join(resolvedRoot, entry.name);
-    if (existsSync(path.join(candidate, FIXTURE_MANIFEST))) {
-      fixtures.push(await loadFixture(candidate));
+      const candidate = path.join(resolvedRoot, entry.name);
+      if (existsSync(path.join(candidate, FIXTURE_MANIFEST))) {
+        fixtures.push(await loadFixture(candidate));
+      }
     }
   }
 
@@ -82,5 +108,7 @@ export async function discoverFixtures(
     throw new Error(`No ${FIXTURE_MANIFEST} files found under ${resolvedRoot}`);
   }
 
-  return fixtures.sort((left, right) => left.name.localeCompare(right.name));
+  return fixtures
+    .filter((fixture) => includeIgnored || !fixture.ignored)
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
