@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { registerDefaultPost } from './default-post';
 import { Parser } from './parser';
@@ -25,9 +25,14 @@ describe('Default post', () => {
       if (!entry.isDirectory()) continue;
 
       const fixtureDir = path.join(fixtureRoot, entry.name);
-      const manifest = JSON.parse(
-        readFileSync(path.join(fixtureDir, 'achar.fixture.json'), 'utf8'),
-      ) as { trace: string };
+      const manifestPath = path.join(fixtureDir, 'achar.fixture.json');
+      // Directories without a manifest (e.g. a fixture being prepared)
+      // must not break unrelated coverage checks.
+      if (!existsSync(manifestPath)) continue;
+
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        trace: string;
+      };
       const events = new Parser(
         readFileSync(path.join(fixtureDir, manifest.trace), 'utf8'),
       )

@@ -149,7 +149,29 @@ lines) with `Debur_target.SPF` (`X183 Y0 A61.915` inside the SPF) in
 emission before `callSubprogram`, and the `!used_in_transform_4x` guard
 on the A word in Move5x branch 1.
 
-### Rule 6 — Drill jobs do not defer the job-start Z
+### Rule 6 — A same-tool "tool change" repeats the modal spindle speed
+
+**Statement.** The job-start block after a tool change emits an S word.
+When the change loads a **different** tool, the S value is the new job's
+`spin_rate`. When it re-loads the tool that is already active (same
+`tool_number`), legacy repeats the spindle speed that is currently modal
+— typically the *previous* job's speed — and the job's real speed is set
+later by its `m_feed_spin` event.
+
+**Evidence.** `fixtures/PROJECT_26646_CAM_Milling`: `HSS_PC_CZ_faces`
+(spin_rate 3700) and `iRough_faces` (spin_rate 7836) interleave 7 times,
+both using tool `END6Z4`. The reference SPFs show the job-start S values
+**swapped** relative to each job's own spin_rate (`HSS...` line 11 is
+`S7836`, `iRough...` line 11 is `S3700`) — each carries the speed left
+active by the other. Emitting the carried speed *unconditionally* breaks
+all four other fixtures (2551019 went 0 → 48 different), which pins the
+rule to same-tool reloads only.
+
+**Implementation.** `post.ts`, StartOfJob toolchange branch
+(`sameToolReloaded` guard on `state.lastSpindleSpeed`, which is updated
+by MFeedSpin, Drill, and the job-start emission itself).
+
+### Rule 7 — Drill jobs do not defer the job-start Z
 
 **Statement.** Non-drill jobs defer their initial Z to the first motion
 event (`deferredJobStartZ`); drill jobs emit positioning through the
@@ -196,6 +218,6 @@ equal unless `--strict`:
    verify **all** fixtures still pass, then record the rule here with its
    evidence.
 
-Rules 1–4 above were found with exactly this loop (session of 2026-07-11,
+Rules 1–4 and 6 above were found with exactly this loop (session of 2026-07-11,
 commit `122be8e`), including two false starts that broke passing fixtures
 — which is why step 4 says all fixtures, not just the failing one.

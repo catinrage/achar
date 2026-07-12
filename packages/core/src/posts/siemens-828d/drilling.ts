@@ -36,6 +36,7 @@ export function registerDrillingHandlers({
     state.currentDrill = params;
     if (params.drill_cycle_name !== 'CYCLE84') {
       $.SetSpindleSpeed(Math.round(params.spin));
+      state.lastSpindleSpeed = Math.round(params.spin);
       $.SetSpindleDirection(
         params.drill_type === 3 ? DirectionEnum.CCW : DirectionEnum.CW,
       );

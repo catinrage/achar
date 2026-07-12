@@ -402,7 +402,18 @@ export function registerSiemens828dPost(
     }
     if (toolChange) {
       state.forceNextApproachXY = true;
-      $.SetSpindleSpeed(Math.round(params.spin_rate), { forcePrint: true });
+      // When the "tool change" re-loads the tool that is already active,
+      // legacy repeats the modal spindle speed; the job's own speed
+      // arrives with the following MFeedSpin event. A real tool swap
+      // emits the new job's spin rate.
+      const sameToolReloaded =
+        toolChange.tool_number === state.previousJobToolNumber &&
+        state.lastSpindleSpeed !== undefined;
+      const startSpindleSpeed = sameToolReloaded
+        ? (state.lastSpindleSpeed as number)
+        : Math.round(params.spin_rate);
+      $.SetSpindleSpeed(startSpindleSpeed, { forcePrint: true });
+      state.lastSpindleSpeed = startSpindleSpeed;
       $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
       $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
     } else {
@@ -571,6 +582,7 @@ export function registerSiemens828dPost(
 
   post.on('MFeedSpin', ($, params) => {
     $.SetSpindleSpeed(Math.round(params.spin), { forcePrint: true });
+    state.lastSpindleSpeed = Math.round(params.spin);
     $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
   });
 

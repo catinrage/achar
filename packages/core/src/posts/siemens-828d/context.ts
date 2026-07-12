@@ -41,6 +41,12 @@ export interface SiemensPostContextState {
   forceNextApproachXY: boolean;
   forceFeedOutput: boolean;
   previousLineFeed?: number;
+  /**
+   * Modal spindle speed as legacy GPP tracks it: the job-start block after
+   * a tool change repeats the speed that is already active, and the job's
+   * real speed is set later by MFeedSpin.
+   */
+  lastSpindleSpeed?: number;
   deferredJobStartZ: boolean;
   pendingCompensation: 'G40' | 'G41' | 'G42' | null;
   cutTolerance: number;
