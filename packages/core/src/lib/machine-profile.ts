@@ -11,6 +11,7 @@ export interface MachineProfileFeatures {
   dwellAfterCoolantOff?: boolean;
   drillApproachZBeforeCoolant?: boolean;
   tapCycleOptionalStop?: boolean;
+  lineFeedFromChangeFlag?: boolean;
   trackArcFeedRate?: boolean;
   retainCoolantAcrossJobs?: boolean;
   cancelAirCoolantSchedule?: boolean;
@@ -165,6 +166,11 @@ function parseFeatures(
       value.tapCycleOptionalStop,
       source,
       'features.tapCycleOptionalStop',
+    ),
+    lineFeedFromChangeFlag: optionalBoolean(
+      value.lineFeedFromChangeFlag,
+      source,
+      'features.lineFeedFromChangeFlag',
     ),
     trackArcFeedRate: optionalBoolean(
       value.trackArcFeedRate,

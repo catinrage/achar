@@ -11,6 +11,7 @@
     "dwellAfterCoolantOff": true,
     "drillApproachZBeforeCoolant": true,
     "tapCycleOptionalStop": true,
+    "lineFeedFromChangeFlag": true,
     "trackArcFeedRate": true,
     "retainCoolantAcrossJobs": true,
     "cancelAirCoolantSchedule": false,

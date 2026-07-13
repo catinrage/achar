@@ -66,6 +66,8 @@ export function registerSiemens828dPost(
     options.machineProfile?.features?.inlineFeedRateMode !== false;
   const compactCoordinates =
     options.machineProfile?.features?.compactCoordinates === true;
+  const lineFeedFromChangeFlag =
+    options.machineProfile?.features?.lineFeedFromChangeFlag === true;
 
   const controller = ($: Builder) => $.driver(siemens828dDriver);
   const measurementTools: string[] = [];
@@ -736,6 +738,13 @@ export function registerSiemens828dPost(
     const forceFeed =
       (state.pendingPathMode && !state.emittedCpmForJob) ||
       state.forceFeedOutput ||
+      // The two legacy GPPs disagree here. The PoyaKar post prints F from
+      // GPP's raw change(feed) bit (the trace's feed__changed flag), which
+      // can be true with a numerically unchanged value — e.g. after
+      // m_feed_spin touches the shared feed variable. The Siemens 4A post
+      // instead overrides that bit with its own `feed ne prevFeed`
+      // comparison, so only the numeric fallback applies there.
+      (lineFeedFromChangeFlag && traceChanged(params, 'feed') === true) ||
       !sameNumber(params.feed, state.previousLineFeed);
     emitPathMode($);
 

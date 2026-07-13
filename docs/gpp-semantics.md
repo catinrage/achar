@@ -243,6 +243,42 @@ fields, not one field trimmed.
 **Implementation.** `post.ts`, DefTool handler: the comment line uses
 `params.tool_message ?? params.tool_id_string`.
 
+### Rule 11 — Line-feed output: two GPPs, two rules (machine-gated)
+
+**Statement.** Whether a linear move re-prints an unchanged `F` word
+depends on which legacy GPP posted the job — the two posts have
+genuinely different `@usr_line` source:
+
+- **PoyaKar_1160L_3A.gpp** prints `['F'feed ' ']` from GPP's raw
+  `change(feed)` bit. Since `feed` is a single global variable shared by
+  every event that carries a `feed` parameter, an `m_feed_spin` mid-job
+  can leave the bit set even when the value is numerically unchanged —
+  and the next line prints `F` anyway. The trace's `feed__changed` flag
+  **is** that bit, so achar trusts it on these machines.
+- **Siemens_828D_Milling_4A.gpp** explicitly overrides the bit with its
+  own comparison (`if feed ne prevFeed → change(feed)=true else false`),
+  so only a numeric change against the previous *line* feed prints `F`.
+
+Both share the `bFeedoutput` one-shot: every non-synchronized rapid sets
+it, forcing the next line/arc to print `F` once regardless
+(achar's `state.forceFeedOutput`).
+
+**Evidence.** `PoyaKar_1160L_3A.gpp` `@usr_line` (~line 1616): no
+`prevFeed`, plain conditional `['F'feed ' ']`.
+`Siemens_828D_Milling_4A.gpp` `@usr_line` (~line 1764): the
+`feed ne prevFeed` override plus `prevFeed = feed` after output.
+Runtime confirmation: `fixtures/PROJECT_AG_BIG_SABET_CAM_Milling`
+`iRough_faces_3.SPF` lines 714/809 — `Line` events with `feed=753`,
+`feed__changed=true` right after an `m_feed_spin` (also `feed=753`),
+where the reference prints `F753`; enabling the flag globally regressed
+2541021/26646 (Siemens-GPP fixtures), matching the source difference
+exactly.
+
+**Implementation.** `MachineProfileFeatures.lineFeedFromChangeFlag`
+(enabled on `PoyaKar_1160L_3A.machine.json`); `post.ts` Line handler
+adds `traceChanged(params, 'feed') === true` to `forceFeed` only when
+the feature is on.
+
 ---
 
 ## Comparison normalizations (what parity ignores)
@@ -261,32 +297,26 @@ equal unless `--strict`:
 
 ---
 
-## Known open gaps
+## Resolved gaps and reference-set caveats
 
-### `siemens-828d-ag-big-sabet-cam-milling`: 35/37 matched
+### `siemens-828d-ag-big-sabet-cam-milling`: now 37/37
 
-Two unresolved differences, tracked in the parity baseline rather than
-hidden:
+Two former gaps, both closed (2026-07-13):
 
-- **`iRough_faces_3.SPF`, 2 lines** — a `Line` event immediately after a
-  mid-job `m_feed_spin` (spindle speed change within a running job, not
-  at job start) drops its feed word (`F753`) even though legacy repeats
-  it. Forcing feed output unconditionally after every `MFeedSpin` was
-  tried and **reverted** — it regressed 2541021, 567, and 26646, so the
-  real rule is conditional on something not yet identified (likely tied
-  to why the spindle changed mid-job — a rotary-pattern restart is the
-  suspect, unconfirmed).
-- **`Tools_Length_Measurement.MPF` missing-reference** — the trace never
-  references this filename at all, meaning the legacy posting run for
-  this specific job had tool-measurement output toggled off, while
-  Achar always emits it when `machineProfile.features.toolMeasurementProgram`
-  is on. This looks like a **post-time toggle**, not a machine-identity
-  constant — the same physical machine (PoyaKar 1160L 3A, shared with
-  the passing `567` fixture) can apparently be posted with or without
-  it. Achar's `MachineProfile` currently models this as a fixed machine
-  property; representing it correctly would need a per-run override
-  achar doesn't expose yet (`Siemens828dPostOptions.measureTools` exists
-  on the post but isn't wired through fixture manifests or the CLI).
+- **`iRough_faces_3.SPF` missing `F753`** — root-caused by reading both
+  GPP sources instead of guessing; see rule 11
+  (`lineFeedFromChangeFlag`). The earlier blanket "force feed after
+  every MFeedSpin" attempt failed precisely because the behavior is
+  per-GPP, not per-event.
+- **`Tools_Length_Measurement.MPF`** — the original posting run had
+  tool-measurement output toggled off (a per-run SolidCAM option, not a
+  machine property; the same PoyaKar machine's `567` fixture has the
+  file). By decision, the reference copy in this fixture is
+  **synthesized from achar's own output** rather than recorded from
+  legacy, so parity treats it as covered. Caveat: for this fixture, that
+  one file asserts self-consistency, not legacy parity — if the
+  measurement-program format ever needs re-verification, use the `567`
+  or `434` fixtures, whose copies are genuine legacy recordings.
 
 ### Fixture files can ship the wrong machine data
 

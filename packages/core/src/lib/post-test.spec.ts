@@ -230,15 +230,11 @@ const parityBaseline: Record<
     missingGenerated: 0,
     missingReference: 0,
   },
-  // Two known open gaps, not yet root-caused (see docs/gpp-semantics.md):
-  // a mid-job feed re-print after a rotary-pattern MFeedSpin restart, and
-  // a Tools_Length_Measurement.MPF the trace never references (post-time
-  // toggle achar does not yet model per fixture).
   'siemens-828d-ag-big-sabet-cam-milling': {
-    match: 35,
-    different: 1,
+    match: 37,
+    different: 0,
     missingGenerated: 0,
-    missingReference: 1,
+    missingReference: 0,
   },
 };
 
