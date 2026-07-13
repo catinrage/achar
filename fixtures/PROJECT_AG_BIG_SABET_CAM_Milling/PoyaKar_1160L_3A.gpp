@@ -51,9 +51,6 @@ endp
 
 @init_post
 
-  global integer ctr
-  ctr = 0;
-
   global string sUS_date sUS_time sUsrmsg sHomestr sHomestrbegin sHomestrtc sHomestrend sHomestrstpdiff sHomestrstpsame sHomeline
   global string sCamfilepath sSubspath cWo cPb cPe cG84 cG84p cCycs cHomep cTCcodep cTCcodes fG84spin cDr cCb cCe cDrZp cDrZs sPartname
   global string cDrCys cDrPts cG84endl cPn cHoffset
@@ -77,19 +74,7 @@ endp
   global integer iCoolantM1 iCoolantM2 iCoolantM3 iCoolantM4 iCoolantM5 iCoolantM6 iCoolantM7 iCoolantM8
   global integer iCoolantM1ON iCoolantM2ON iCoolantM3ON iCoolantM4ON iCoolantM5ON iCoolantM6ON iCoolantM7ON iCoolantM8ON
   global integer iCoolantM1OFF iCoolantM2OFF iCoolantM3OFF iCoolantM4OFF iCoolantM5OFF iCoolantM6OFF iCoolantM7OFF iCoolantM8OFF
-  global numeric nTcXnext nTcYnext nTcZnext nTcAnext nTcCnext nCorrectedpeck nRapidfeed nG187_E_gpp nHeightCompcode nG84feed nDefaultSec
-
-  global numeric mltfixxpos mltfixypos mltfixzpos
-  global numeric  nR1pos5x nR1pos nR1postmatrix nR1postransform nR1poscpos nPR1pos nR1posadj nR1postemp
-  global numeric nPtool_start_plane prevFeed iR1dir nPtool_z_level iR2dir nLlabel nb_home_position
-  global string cR1 cR2 sHomestrrot nR1pos_f bpos_f sLastToolDefName ;apos_f
-  global integer iFeedType iR1posControl i4xIndexMode i4xIndexClearanceMode i4xFeedMode Rot_Clamp Rot_Unclamp Rotclmpunclmp iTmepx
-
-  ; Determine if code is inside of @start_of_job proc
-  global logical lInSOJ
-
-  ; Increase 1 per each start of job to generate unqiue name for jobs that have transformed version (they have the same name so we need to make them unique)
-  global integer nJob_counter
+  global numeric nTcXnext nTcYnext nTcZnext nTcCnext nCorrectedpeck nRapidfeed nG187_E_gpp nHeightCompcode nG84feed nDefaultSec
 
   ; GPX Env Variable
   global logical GPX_CYCLE832 GPX_XYSUPA GPX_ZSUPA GPX_TODB GPX_FNORM GPX_PESUPA GPX_G500 GPX_SEPARATE_FILES
@@ -102,7 +87,7 @@ endp
   ; + iProgendmode
 
   ; Toggle Tool Setter Activity
-  bToolSetting = true
+  bToolSetting = false
 
   ; homes  (default <<54>>)
   global integer iHomes<<54>>
@@ -121,9 +106,6 @@ endp
   xpos_f          = '5.5(p)'
   ypos_f          = '5.5(p)'
   zpos_f          = '5.5(p)'
-  nR1pos_f        = '5.3'
-  apos_f          = '5.3'
-  bpos_f          = '5.3'
   feed_f          = '4.4(p)'
   z_feed_f        = '4.4(p)'
   blknum_f        = '5.0(p)'
@@ -250,17 +232,6 @@ endp
   bOutputUserMessages   = true       ;0.70: true = outputs user messages (message field found in Operation - Misc parameters tab)
   bSimpleformat         = false      ;0.70: true = Simple G/M code format for special controllers (WinCNC, Millpwr, etc)
 
-  ; ---- 4x
-  Rot_Clamp 						= 81
-  Rot_Unclamp 					= 80
-  iR1dir                = 1         ;1=+CCW -1=+CW
-  cR1                   = 'A'       ;Rotary 1 Axis
-  iR1posControl         = 0         ;Rotary Position Control (0=SolidCAM Direct, 1=Positive, 2=Negative, 3=Shortest Distance)
-  i4xIndexMode          = 0         ;4x-Indexing control (0=Simple Rotation, 1=New WorkOffset, 2=Trig Macro)
-  i4xIndexClearanceMode = 1         ;4x-Index Clearance control (0=Z-Homing, 1=Z-Tool_Z_Level, 2=Z-Tool_start_plane 3 = none)
-  i4xFeedMode           = 0         ;4x-Simultanious control (0=Programed feedRate, 1=Inverse Time FeedRate, 2=Deg. per Minute)
-  ; ---- 4x
-
   ;---------          Homing & Zero Returning axis             ---------
   ;--------- Instructions and explaination of definition below ---------
 
@@ -289,7 +260,7 @@ endp
   GPX_XYSUPA =true
   GPX_ZSUPA = true
   GPX_PESUPA = true
-  GPX_TRACE = 5
+  GPX_TRACE = 0
   GPX_XHOME = -465
   GPX_XHOMEND = 260
   GPX_YHOME = 190
@@ -478,7 +449,7 @@ endp
 
 @usr_init_gmstates
   ; Handle initializing G/M codes for correct modality from beginning of file
-  iMplane         = 17
+  iMplane         = 9999
   iAbsincmode     = 9999
   iWorkoffset     = 9999
   iHeightcomp     = 9999
@@ -504,73 +475,57 @@ endp
 @def_tool
   ; Handle Tool List Output at top of program
   ; Use bTlchg to use different message for tool_change
-  {nl '!! open file = Tools_Length_Measurement.MPF !!' }
-
-  ;  if !bTitlePrinted
-  ;    bTitlePrinted = true
-  ;    {nl}
-  ;    {nb, '; Tools Used In This Program : '}
-  ;  endif
-  ;  if bOutputToolList
-  ;    if tool_message == '' then
-  ;      {nb, cCb'TOOL 'tool_number, ' - DIA '(tool_offset*2),cCe }
-  ;    else
-  ;      {nb,cCb'T'tool_number,'-' tool_message,cCe}
-  ;      if msg_mill_tool1 ne ''
-  ;        {nb,cCb'---' msg_mill_tool1,cCe}
-  ;      endif
-  ;      if msg_mill_tool2 ne ''
-  ;        {nb,cCb'---' msg_mill_tool2,cCe}
-  ;      endif
-  ;      if msg_mill_tool3 ne ''
-  ;        {nb,cCb'---' msg_mill_tool3,cCe}
-  ;      endif
-  ;      if msg_mill_tool4 ne ''
-  ;        {nb,cCb'---' msg_mill_tool4,cCe}
-  ;      endif
-  ;      if msg_mill_tool5 ne ''
-  ;        {nb,cCb'---' msg_mill_tool5,cCe}
-  ;      endif
-  ;    endif
-  ;  endif
-  ;  if next_command ne '@def_tool' and bTlchg eq false
-  ;    if bTlseperation and bOutputToolList
-  ;      local integer i ii
-  ;      i = 0
-  ;      if iNumSeparationLines == 0
-  ;        ii = 1
-  ;      else
-  ;        ii = iNumSeparationLines
-  ;      endif
-  ;      while i < ii
-  ;        ; {nl}
-  ;        i = i + 1
-  ;      endw
-  ;    endif
-  ;    if bOptstpbegin
-  ;      call @usr_optionalstop
-  ;    endif
-  ;    if bNnumtc
-  ;      {nl,'N'iTcnumber' '}
-  ;    else
-  ;      ; {nb}
-  ;    endif
-  ;
-  ;  endif
-
-  if iTmepx eq 0
-    {nb, 'T="'tool_id_string'" M6'}
-  else
-    {nb, 'T="'tool_id_string'"'}
+  if !bTitlePrinted
+    bTitlePrinted = true
+    {nl}
+    {nb, '; Tools Used In This Program : '}
   endif
-
-  if iTmepx > 0
-    {nb, 'BZ9912(0,,)'}
-    {nb, 'M1'}
-    {nb, 'M6'}
+  if bOutputToolList
+    if tool_message == '' then
+      {nb, cCb'TOOL 'tool_number, ' - DIA '(tool_offset*2),cCe }
+    else
+      {nb,cCb'T'tool_number,'-' tool_message,cCe}
+      if msg_mill_tool1 ne ''
+        {nb,cCb'---' msg_mill_tool1,cCe}
+      endif
+      if msg_mill_tool2 ne ''
+        {nb,cCb'---' msg_mill_tool2,cCe}
+      endif
+      if msg_mill_tool3 ne ''
+        {nb,cCb'---' msg_mill_tool3,cCe}
+      endif
+      if msg_mill_tool4 ne ''
+        {nb,cCb'---' msg_mill_tool4,cCe}
+      endif
+      if msg_mill_tool5 ne ''
+        {nb,cCb'---' msg_mill_tool5,cCe}
+      endif
+    endif
   endif
+  if next_command ne '@def_tool' and bTlchg eq false
+    if bTlseperation and bOutputToolList
+      local integer i ii
+      i = 0
+      if iNumSeparationLines == 0
+        ii = 1
+      else
+        ii = iNumSeparationLines
+      endif
+      while i < ii
+        ; {nl}
+        i = i + 1
+      endw
+    endif
+    if bOptstpbegin
+      call @usr_optionalstop
+    endif
+    if bNnumtc
+      {nl,'N'iTcnumber' '}
+    else
+      ; {nb}
+    endif
 
-  iTmepx = iTmepx + 1
+  endif
 endp
 
 ;-------------------
@@ -597,11 +552,6 @@ endp
 ;-------------------
 
 @start_program
-  {nb, 'BZ9912(0,,)'}
-  {nb, 'M2'}
-
-  {nl '!! close file = Tools_Length_Measurement.MPF !!' }
-
   ; Handle any safety G/M codes for top of program
   call @initiate
   call @settings
@@ -786,10 +736,8 @@ endp
   nTcXnext = xnext
   nTcYnext = ynext
   nTcZnext = znext
-  nTcAnext = anext
   nTcCnext = cnext
   bTlchg = true
-
 
   if (iWBCM > 0)
     iWBCM_ = iWBCM
@@ -809,7 +757,6 @@ endp
     nTcYnext = ynext
     nTcZnext = znext
     nTcCnext = cnext
-    nTcAnext = anext
   endif
 
   if bTlchg or used_in_transform_translate then
@@ -847,11 +794,6 @@ endp
       call @Multiple_Fixtures
     endif
     bTlchg = false
-    ; Added by komeil from here
-  else
-    change(zpos) = false
-    call @usr_rapid
-    ; till here
   endif
   if bAirCoolant == true
     {nb, nb, 'R10=0'}
@@ -923,12 +865,12 @@ endp
     nTC_XSUPA = -465.000
   endif
   if hlength > 2
-    if GPX_ZSUPA
-      if iTC_SUPA_MODE ne 0 or iTC_SUPA_MODE_GLOBAL ne 0
+    if GPX_ZSUPA then
+      if iTC_SUPA_MODE ne 0
         {nb, 'G0 SUPA Z'GPX_ZHOME:zpos_f' '}
       endif
     endif
-    if GPX_XYSUPA
+    if GPX_XYSUPA then
       if iTC_SUPA_MODE ne 0
         if iTC_SUPA_MODE eq 1
           {nb, 'G0 SUPA Y'nTC_YSUPA:ypos_f}
@@ -938,18 +880,6 @@ endp
           {nb, 'G0 SUPA Y'nTC_YSUPA:ypos_f}
         else
           {nb, 'G0 SUPA X'nTC_XSUPA:xpos_f' Y'nTC_YSUPA:ypos_f}
-        endif
-      else
-        if iTC_SUPA_MODE_GLOBAL ne 0
-          if iTC_SUPA_MODE_GLOBAL eq 1
-            {nb, 'G0 SUPA Y'nTC_YSUPA_GLOBAL:ypos_f}
-            {nb, 'G0 SUPA X'nTC_XSUPA_GLOBAL:xpos_f}
-          elseif iTC_SUPA_MODE_GLOBAL eq 2
-            {nb, 'G0 SUPA X'nTC_XSUPA_GLOBAL:xpos_f}
-            {nb, 'G0 SUPA Y'nTC_YSUPA_GLOBAL:ypos_f}
-          else
-            {nb, 'G0 SUPA X'nTC_XSUPA_GLOBAL:xpos_f' Y'nTC_YSUPA_GLOBAL:ypos_f}
-          endif
         endif
       endif
     endif
@@ -1044,19 +974,19 @@ endp
     if ts_mtype == 1 then
       {nb, 'CYCLE832(0,_OFF,1)'}
       {nb, 'G0'}
-      {nb, 'BZ9912('ts_type', 'tolerance_len', 'uroffs')'}
+      ; {nb, 'BZ9912('ts_type', 'tolerance_len', 'uroffs')'}
       if ts_type == 2
         {nb, 'BZ9912('ts_type',0.4,)'}
         {nb, 'G0 X0 Y0'}
       else
-        ;{nb, 'BZ9912('ts_type',,)'}
+        {nb, 'BZ9912('ts_type',,)'}
       endif
     endif
     if ts_mtype == 2 then
       {nb, 'CYCLE832(0,_OFF,1)'}
-      {nb, 'BZ9913('ts_type', 'tolerance_len', 'tolerance_rad', 'uloffs', 'uroffs')'}
+      ; {nb, 'BZ9913('ts_type', 'tolerance_len', 'tolerance_rad', 'uloffs', 'uroffs')'}
       {nb, 'BZ9913('ts_type',0.1,0.1,,)'}
-      {nb, 'G0'}
+      ;{nb, 'G0'}
     endif
   endif
 endp
@@ -1105,14 +1035,12 @@ endp
     ; endif
     xpos = nTcXnext
     ypos = nTcYnext
-    apos = nTcAnext
     change(zpos) = false
     call @usr_rapid
     call @usr_heightcomp_on
   else
     xpos = nTcXnext
     ypos = nTcYnext
-    apos = nTcAnext
     change(zpos) = false
     call @usr_rapid
     ; skipline = false
@@ -1303,7 +1231,7 @@ endp
     ;  else
     ;  endif
     {nb,'M'iCoolantM1:mcode_f' '}
-    ;{nb,'G04F2 '}
+    {nb,'G04F2 '}
     return
   endif
   if change(iCoolantM2)
@@ -1337,13 +1265,6 @@ endp
     {nb,['M'iCoolantM8:mcode_f' ']}
     return
   endif
-endp
-
-@fourth_axis
-  if used_in_transform_4x eq 0
-    {nb, 'A'angle}
-  endif
-  ;apos = angle
 endp
 
 @usr_HSM_mode
@@ -1395,31 +1316,17 @@ endp
 ;--------------------
 
 @start_of_job
-  xpos = xnext
-  ypos = ynext
-  zpos = znext
-  apos = anext
-
-  nJob_counter = nJob_counter + 1
-
   ; Handle what happens at start of operation(job)
   ; If using Subs we do not make tool change in @start_of_job
 
-  lInSOJ = true
 
   bPreselected = false
   if GPX_SEPARATE_FILES == true
     local string parsed_name
     parsed_name = replace(job_name, '-', '_', 10)
-
     if used_in_transform_translate eq true
       {nl '!! delete file = 'parsed_name'.SPF !!' }
     endif
-
-    if bNumericFilePrefix
-      parsed_name = tostr(nJob_counter:'2.0(p)') + '_' + parsed_name
-    endif
-
     {nl '!! open file = 'parsed_name'.SPF !!' }
   endif
   {nb, 'DEF REAL _camtolerance'}
@@ -1470,8 +1377,6 @@ endp
     if bTlchg eq false
       {nb, cCb,job_name,cCe}
       if iPworkoffset ne iWorkoffset
-        ; NOT SURE
-        ;call @usr_4x_index
         {nb}
         call @usr_homenumber_output
         skipline = false
@@ -1480,10 +1385,10 @@ endp
         zpos = znext
         change(zpos) = true
         call @rapid_move
-        ; NOT SURE. seems uselss
-        ;change(xpos) = true
-        ;change(ypos) = true
-        ;change(zpos) = false
+        change(xpos) = true
+        change(ypos) = true
+        change(zpos) = false
+        call @rapid_move
         bSkipxyrapid = true
       endif
     endif
@@ -1495,23 +1400,14 @@ endp
   ;   call @usr_coolant
   ; endif
   call @usr_HSM_mode
-
-
-  lInSOJ = false
 endp
 
 ;--------------------
 
 @end_of_job
-  Rotclmpunclmp = Rot_Unclamp
-  if change(Rotclmpunclmp)
-    ;{nb, 'M'Rotclmpunclmp}
-    ;{nb, 'G4 F8'}
-    change(Rotclmpunclmp) = false
-  endif
-
   ; Handle what happens at end of operation(job)
   ; If using Subs we do not make tool change in @start_of_job
+
   if ts_type == 2 and (last_tool == true or tool_number != next_tool_number)
     call @usr_toolset
   endif
@@ -1531,25 +1427,19 @@ endp
     {nb, 'CANCEL(3)'}
     {nb, 'M9'}
   endif
-  ;local integer i
-  ;i = 0
-  ;if bPreselected
-  ;  while i < iM8_NumberOfIterations
-  ;    {nb, 'CANCEL('(4 + i * 2)')'}
-  ;    {nb, 'CANCEL('(5 + i * 2)')'}
-  ;    i = i + 1
-  ;  endw
-  ;endif
+  local integer i
+  i = 0
+  if bPreselected
+    while i < iM8_NumberOfIterations
+      {nb, 'CANCEL('(4 + i * 2)')'}
+      {nb, 'CANCEL('(5 + i * 2)')'}
+      i = i + 1
+    endw
+  endif
   if GPX_SEPARATE_FILES == true
-    ;{nb, 'M9'}
     {nb, 'RET ', nl}
     local string parsed_name
     parsed_name = replace(job_name, '-', '_', 10)
-
-    if bNumericFilePrefix
-      parsed_name = tostr(nJob_counter:'2.0(p)') + '_' + parsed_name
-    endif
-
     {nl '!! close file = 'parsed_name'.SPF !!' }
     if Adims(iHomes) > 1
       if tool_number eq next_job_tool_number
@@ -1589,13 +1479,11 @@ endp
       if bSPF_CM
         {nb, 'CALL "'parsed_name'.SPF"'}
       else
-        if used_in_transform_4x
-          {nb, 'A'anext}
-        endif
         {nb, 'EXTCALL "'parsed_name'.SPF"'}
       endif
     endif
   endif
+  ;{nb, tool_number'  KTL  'next_job_tool_number}
   if (tool_number != next_job_tool_number and iWBCM_ > 0)
     if (iWBCM_ eq 1 or iWBCM_ eq 3)
       {nb,'STOPRE'}
@@ -1651,11 +1539,6 @@ endp
 @usr_rapid
   ; Handle output for Rapid Move (G0)
   ; Note: XYZ not allowed together on a single line
-  if change(xpos) or change(ypos) or change(zpos) or change(apos) or change(bpos) or change(cpos)
-    call @usr_r1pos_calc
-  else
-    bSkipxyrapid = true
-  endif
   if !bSkipxyrapid
     if !bSyncdrapid
       if job_type eq '3-d model'
@@ -1669,38 +1552,7 @@ endp
     if (change(xpos)or change(ypos)) and change(zpos) ;!@#$% clear change
       bTest = true
     endif
-    if lInSOJ and iNumberOfAixs eq 4
-      ;change(nR1pos) = true
-    endif
-    if !bBrake_On
-      Rotclmpunclmp = Rot_Unclamp
-      if change(Rotclmpunclmp) and change(apos)
-        ;{nb, 'M'Rotclmpunclmp}
-        ;{nb, 'G4 F8'}
-        change(Rotclmpunclmp) = false
-      endif
-      ;			Rot_Clamp
-      ;			Rot_Unclamp
-    endif
-
-    if iNumberOfAixs eq 3
-      change(apos) = false
-    endif
-    if used_in_transform_4x eq 1 
-      change(apos) = false
-    endif
-
-    {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' '],['X'xpos ' '],['Y'ypos ' '],['A'apos ' ']}
-    if bBrake_On
-      Rotclmpunclmp = Rot_Clamp
-      if change(Rotclmpunclmp)
-        ;{nb, 'M'Rotclmpunclmp}
-        ;{nb, 'G4 F8'}
-        change(Rotclmpunclmp) = false
-      endif
-      ;			Rot_Clamp
-      ;			Rot_Unclamp
-    endif
+    {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' '],['X'xpos ' '],['Y'ypos ' ']}
     if change(zpos)
       ;if change(xpos) eq true or change(ypos) eq true
       if bTest  ;!@#$% clear change
@@ -1768,77 +1620,18 @@ endp
   endif
   if bCpmFlag eq true then
     bCpmFlag = false
-    ;print iCextPM
+    ;print iCPM
     call @usr_cpm
   endif
-  ; Handle output for line movement (G01)
-  ; ---- 4x
-  ;   - Set Rotary Position
-  call @usr_r1pos_calc
-  if  i4xFeedMode eq 0
-    if change(zpos)
-      feed = feed
-    else
-      ;feed = feed_rate
-    endif
-    if feed ne prevFeed
-      change(feed) = true
-    else
-      change(feed) = false
-    endif
-    iFeedType = 94
-  else
-    if i4xFeedMode eq 1 and (rot_axis_type ne axis4_none or X5_job eq 1)
-      if change(xpos) or change(ypos) or change(nr1pos)
-        iFeedType = 93  ;Inverse Feed
-        feed = inverse_feed
-        change(feed) = true
-      else
-        iFeedType = 94
-        if change(iFeedType)
-          change(feed) = true
-        endif
-      endif
-    else
-      iFeedType = 94
-      if change(iFeedType)
-        change(feed) = true
-      endif
-    endif
-  endif
-  ; ---- 4x
   ; Handle output for line movement (G01)
   if bFeedoutput
     change(feed) = true
     bFeedoutput  = false
   endif
   iMotionmode = 1
-  if iNumberOfAixs eq 3
-    change(apos) = false
-  endif
   {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],['G'iDiametercomp' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' ']}
-  {['G'iFeedType' '],['D'iDiameteroffset' '],['X'xpos ' '],['Y'ypos ' '],['Z'zpos ' '],[cR1,apos ' '],['F'feed ' ']}
-  prevFeed = feed
+  {['D'iDiameteroffset' '],['X'xpos ' '],['Y'ypos ' '],['Z'zpos ' '],['F'feed ' ']}
   change(cWo) = FALSE ;!@#$%AC Fix for ChangeBit Intermittent problem
-  if change(iMotionmode)
-    change(iMotionmode)     = false
-  endif
-  if change(iMplane)
-    change(iMplane)         = false
-  endif
-  if change(iDiametercomp)
-    change(iDiametercomp)   = false
-  endif
-  if change(iWorkoffset)
-    change(iWorkoffset)     = false
-  endif
-  if change(iAbsincmode)
-    change(iAbsincmode)     = false
-  endif
-  if change(iDiameteroffset)
-    change(iDiameteroffset) = false
-  endif
-  change(nRapidfeed)        = true
 endp
 
 ; -----------
@@ -1892,7 +1685,7 @@ endp
     iMplane = 19
   endif
   {nb,['G'iMotionmode:mcode_f ' '],['G'iMplane' '],['G'iDiametercomp' '],[cWo,iWorkoffset' '],['G'iAbsincmode ' ']}
-  {['D'iDiameteroffset' '],'X'xpos ' ','Y'ypos ' ',['Z'zpos ' ']}
+  {['D'iDiameteroffset' '],['X'xpos ' '],['Y'ypos ' '],['Z'zpos ' ']}
   if arc_plane eq XY then
     if iArcmode eq 1 or (arc_size eq 360 and iArcmode eq 3)
       {'I'xcenter ' ', 'J'ycenter ' '}
@@ -2052,9 +1845,6 @@ endp
   bStopM00difftool = true
 endp
 
-;-------------------
-
-;-------------------
 
 @rotate
   ; @rotate Not Supported in this template
@@ -2066,6 +1856,11 @@ endp
   ; @mirror Not Supported in this template
 endp
 
+;-------------------
+
+@fourth_axis
+  ; @fourth_axis Not Supported in this template
+endp
 ;-------------------
 
 @message
@@ -2095,9 +1890,7 @@ endp
     skipZpos = true
   endif
   if !skipZpos and drill_type ne CYCLE84
-    ; for 4-axis drill it kept printing the zpos, because the top if condition never succeeds `job_type eq '3-d drill'`
-    ; so i turned if into comments, it seems pointless overall
-    ;{nb,cDrZp'Z'zpos' 'cDrZs}
+    {nb,cDrZp'Z'zpos' 'cDrZs}
   endif
   if bCoolExist
     call @usr_coolant
@@ -2126,21 +1919,8 @@ endp
   ;     {nb,['X'xpos ' '], ['Y'ypos ' '], ['Z'zpos ' ']cDrPts}
   ;   endif
   ; endif
-  if iNumberOfAixs eq 3
-    change(apos) = false
-  endif
-  {nb, 'G0', [' X'xpos], [' Y'ypos], [' A'apos]}
+  {nb, 'G0', [' X'xpos], [' Y'ypos]}
   {nb, 'F'z_feed}
-  if bBrake_On
-    Rotclmpunclmp = Rot_Clamp
-    if change(Rotclmpunclmp)
-      ;{nb, 'M'Rotclmpunclmp}
-      ;{nb, 'G4 F8'}
-      change(Rotclmpunclmp) = false
-    endif
-    ;			Rot_Clamp
-    ;			Rot_Unclamp
-  endif
   if drill_type eq CYCLE81 then
     {nb, 'CYCLE81('job_clearance_plane','drill_upper_z','safety','drill_lower_z',,'C81_DTB',0,1,12)'}
   endif
@@ -2176,7 +1956,7 @@ endp
     Q_VARI   = C84_U_MT + 10 * C84_U_ISM
     Q_DMODE  = C84_U_MP + 1000 * C84_U_CM + 10000 * C84_U_RS
     Q_AMODE  = C84_U_DD + 1000 * C84_U_TD + 1000000 * C84_U_RD
-    ;{nb, 'M1'}
+    {nb, 'M1'}
     {nb, 'CYCLE84('job_clearance_plane','drill_upper_z','safety','drill_lower_z','','C84_DTB',3,'','tool_drill_lead','C84_POSS','spin','(spin * C84_SST1)','C84_AXN','C84_PITA','Q_TECHNO','Q_VARI','(tool_drill_lead * C84_DAM)','(tool_drill_lead * C84_VRT)','C84_PITM','C84_PTAB','C84_PTABA','','Q_DMODE','Q_AMODE')'}
   endif
   if drill_type eq CYCLE85 then
@@ -2190,16 +1970,6 @@ endp
   endif
   if drill_type eq CYCLE86 then
     {nb, 'CYCLE86('job_clearance_plane', 'drill_upper_z', 'safety', 'drill_lower_z', , 'C86_DTB', 'C86_SDIR', 'C86_RPA', 'C86_PRO', 'C86_RPAP', 'C86_POSS')'}
-  endif
-  if bBrake_On
-    Rotclmpunclmp = Rot_Unclamp
-    if change(Rotclmpunclmp)
-      ;{nb, 'M'Rotclmpunclmp}
-      ;{nb, 'G4 F8'}
-      change(Rotclmpunclmp) = false
-    endif
-    ;			Rot_Clamp
-    ;			Rot_Unclamp
   endif
 
 endp
@@ -2394,7 +2164,7 @@ endp
   local integer i
   ;----From tools 2 and up
   ;----Closes the sSubspath(tempfile) for the previous tool change
-  ;----Runs loop to print G5extx and copy in the tempfile
+  ;----Runs loop to print G5x and copy in the tempfile
   ;----Sets the tempfile to new name for next tool
   if bFrombeginchangetool eq True
     if !first_tool
@@ -2414,7 +2184,7 @@ endp
   endif
 
   ;----At end of tool_change
-  ;----Opens tempfile to print ouextt gcode
+  ;----Opens tempfile to print out gcode
   if bFromendchangetool eq True
     sSubspath = sCamfilepath + 'TEMPFILE' + tostr(iTcnumber:'5.0(n)')
     {nl,'!!open file=' sSubspath '!!'}
@@ -2423,7 +2193,7 @@ endp
 
   ;----At end_program
   ;----Closes the sSubspath(tempfile) for the current tool change
-  ;----Runs loop to print G5extx and copy in the tempfile
+  ;----Runs loop to print G5x and copy in the tempfile
   if bFromendprogram eq True
     {nl,'!!close file=' sSubspath '!!'}
     i = 1
@@ -2454,300 +2224,5 @@ endp
 
 ;-------------------
 
-;---- 4x
-
-@usr_4x_index
-  ; Handle 4x indexing (Rotary moves between operations)
-  ;4x-Indexing control (0=Simple Rotation, 1=New WorkOffset, 2=Trig Macro)
-  ;4x-Index Clearance control (0=Z-Homing, 1=Z-Tool_Z_Level, 2=Z-Tool_start_plane)
-
-  call @usr_r1pos_calc
-  if i4xIndexMode ne 2 ;Simple Rotation
-    if i4xIndexClearanceMode eq 0
-      if sHomestrrot ne ''
-        sHomestr = sHomestrrot
-        call @usr_prep_home_axis
-      endif
-    endif
-    if i4xIndexClearanceMode eq 1
-      if tool_z_level < tool_start_plane
-        Print 'WARNING!! Tool Z Level is below Tool Start Plane in CoordSys'
-        {nl,'WARNING!! Tool Z Level is below Tool Start Plane in CoordSys'}
-      endif
-      iMotionmode = 0
-      {nb,['G'iMotionmode:mcode_f ' '],['G'iAbsincmode ' '],'Z'nPtool_z_level ' '}
-    endif
-    if i4xIndexClearanceMode eq 2
-      iMotionmode = 0
-      {nb,['G'iMotionmode:mcode_f ' '],['G'iAbsincmode ' '],'Z'nPtool_start_plane ' '}
-    endif
-  endif
-  if i4xIndexMode eq 2 ;Trig Macro
-    if sHomestrrot ne ''
-      sHomestr = sHomestrrot
-      call @usr_prep_home_axis
-    endif
-    call @usr_trig_macro_call
-    iMotionmode = 0
-    iWorkoffset = 112
-  endif
-endp
-
-
-@usr_r1pos_calc
-  ; Calculate Rotary 1 Position (Main Spindle)
-  ; tmatrix + 4th Transform + cpos + 5xapos
-  ; Note: Angular Feed Formula fc = f*(180/(pi*r))
-  ; Note: fc=deg/min, f=linear feed
-  nR1postmatrix = (-rotate_angle_x) * iR1dir                        ;Rotary from CoordSys (tmatrix)
-  ;if rot_axis_type ne axis4_none
-  ;    nR1postransform = (-angle) * iR1dir                               ;Rotary from 4x-Transform
-  ;else
-  ;    nR1postransform = (angle) * iR1dir
-  ;endif                               ;Rotary from 4x-Transform
-  nR1poscpos = (cpos) * iR1dir                                     ;Rotary from C-axis cutting
-  nR1pos5x = (apos) * iR1dir                                       ;Rotary from 4/5x Simulatenous
-  nR1pos = nR1postmatrix + nR1postransform + nR1poscpos + nR1pos5x
-
-  ;{nb, 'rotate_angle_x' rotate_angle_x, ' cpos'cpos, ' apos'apos, ' nR1pos'nR1pos}
-
-  if iNumberOfAixs eq 3
-    change(nR1pos) = false
-  else
-    if nPR1pos ne nR1pos
-      change(nR1pos) = true
-    endif
-  endif
-
-
-  nPR1pos = nR1pos
-  ; {nb}
-  ; {nb,'apos = ' apos}
-  ; {nb,'bpos = ' bpos}
-  ; {nb,'cpos = ' cpos}
-  ; {nb,'nR1postmatrix = ' nR1postmatrix}
-  ; {nb,'nR1postransform = ' nR1postransform}
-  ; {nb,'nR1poscpos = ' nR1poscpos}
-  ; {nb,'nR1pos5x = ' nR1pos5x}
-  ; {nb,'nR1pos = ' nR1pos' changebit = '(change(nR1pos))}
-  ; {nb,'angle =' angle}
-  ; {nb}
-  ; {nb,'Updated Position =' cpos}
-  ; {nb,'Updated Position =' nR1pos}
-
-endp
-
-@move_4x ; !@#$%
-  ; Handle GPP direct call to Rapid Move (G00)
-  ; We not use this procedure to output code
-  ; We create our own procedure for this so that we may...
-  ;   Sync with @rapid_move, @move_5x, @move_4x, @move4x_polar, @move4x_cartesian
-  if change(ypos)
-    ypos = 0
-  endif
-  call @usr_rapid
-endp
-
-
-@line_4x ; !@#$%
-  ; Handle GPP direct call to Line Movement (G01)
-  ; We not use this procedure to output code
-  ; We create our own procedure for this so that we may...
-  ;   Sync with @line, @line_5x, @line_4x, @line4x_polar, @line4x_cartesian
-  if change(ypos)
-    ypos = 0
-  endif
-  call @usr_line
-endp
-
-@move_5x ; !@#$%
-  ; Handle GPP direct call to Rapid Move (G00)
-  ; We not use this procedure to output code
-  ; We create our own procedure for this so that we may...
-  ;   Sync with @rapid_move, @move_5x, @move_4x, @move4x_polar, @move4x_cartesian
-  call @usr_rapid
-endp
-
-@line_5x ; !@#$%
-  ; Handle GPP direct call to Line Movement (G01)
-  ; We not use this procedure to output code
-  ; We create our own procedure for this so that we may...
-  ;   Sync with @line, @line_5x, @line_4x, @line4x_polar, @line4x_cartesian
-  call @usr_line
-endp
-
-@drill4x_pnt
-  ; Handle output for drill positions
-  local integer i
-  call @usr_r1pos_calc
-  if change(ypos)
-    ypos = 0
-  endif
-  ;if drill_type eq G84_Peck
-  ;	iNumpecks = (drill_depth/Q_Peck)+1.
-  ;	nCorrectedpeck = drill_depth/iNumpecks
-  ;	i = 1
-  ;	while i <= iNumpecks
-  ;		{nb,'X'xpos ' ', 'Y'ypos ' ', 'Z'(drill_upper_z-(nCorrectedpeck*i))' 'cDrPts}
-  ;		i = i + 1
-  ;	end
-  ;else
-  ;if !first_drill then
-  if iNumberOfAixs eq 3
-    change(apos) = false
-  endif
-  {nb,['X'xpos ' '], ['Y'ypos ' '], ['Z'zpos ' '],[cR1,apos ' ']cDrPts}
-  ;endif
-  call @drill_point
-  ;endif
-endp
-
-@rotate_to_plane
-  ;apos = rotate_angle_x
-endp
-
-@usr_prep_home_axis
-  ; Handle parsing of homing string and preping of output for homing
-  local integer i line l mode p1 xMode
-  local string s s1 s2 l1 pstr
-  s = sHomestr                               ;Original String
-  s1 = s                                     ;Temp String
-  l = strlen(s1)                             ;Get string length of Temp String
-  s2 = substr(s1,1,1)                   ;*Check for 'x' in first character to flag separate iHomingmode for each line
-  if s2 eq 'x'
-    xMode = 1
-    s1 = substr(s1,2,l)                        ;Remove 'x' from Temp String
-    l = strlen(s1)                             ;Get string length of Temp String
-  else
-    xMode = 0
-  endif
-  if !xMode                                    ;*Pull out Homing mode (when not using xMode)
-    p1 = instr(s1,':')                         ;Find the position of first ":"
-    l1 = left(s1,p1-1)                         ;Pull out the left of first ":"
-    mode = tonum(l1)                           ;Convert string into Integer for "Mode" variable
-    s1 = substr(s1,p1+1,l)                     ;Remove Homing mode from Temp String
-    l = strlen(s1)                             ;Get string length of Temp String
-    ;*Pull out Preperation String
-    p1 = instr(s1,':')                         ;Find the position of second ":"
-    if p1 ne 0                                 ;Check if PrepStr is defined
-      pstr = left(s1,p1-1)                   ;Pull out the left of second ":"
-      s1 = substr(s1,p1+1,l)                 ;Remove PrepString from Temp String
-      l = strlen(s1)                         ;Get string length of Temp String
-    endif
-  endif                                         ;*Pull out homing lines and send to output procedure
-  i = 1
-  while i < 50
-    i = i + 1
-    if xMode                                     ;*Pull out Homing mode (when using xMode)
-      p1 = instr(s1,':')                         ;Find the position of first ":"
-      l1 = left(s1,p1-1)                         ;Pull out the left of first ":"
-      mode = tonum(l1)                           ;Convert string into Integer for "Mode" variable
-      s1 = substr(s1,p1+1,l)                     ;Remove Homing mode from Temp String
-      l = strlen(s1)                             ;Get string length of Temp String
-      ;*Pull out Preperation String
-      p1 = instr(s1,':')                         ;Find the position of second ":"
-      if p1 ne 0                                 ;Check if PrepStr is defined
-        pstr = left(s1,p1-1)                   ;Pull out the left of second ":"
-        s1 = substr(s1,p1+1,l)                 ;Remove PrepString from Temp String
-        l = strlen(s1)                         ;Get string length of Temp String
-      endif
-    endif
-    p1 = instr(s1,';')                      ;Find the position of ";"
-    if p1 ne 0
-      line = line + 1                     ;Keep track of lines. Not Used!!
-      l1 = left(s1,p1-1)                  ;Pull out the left of ";"
-      iHomingmode = mode                  ;Send Homing Mode
-      cHomep = pstr                       ;Send Preperation String
-      sHomeline = l1                      ;Send Homing Line
-      call @usr_home_axis
-    else
-      line = line + 1                     ;Keep track of lines. Not Used!!
-      iHomingmode = mode                  ;Send Homing Mode
-      cHomep = pstr                       ;Send Preperation String
-      sHomeline = s1                      ;Send Homing Line
-      call @usr_home_axis
-      i = 50                              ;Force end of While-Loop
-    endif
-    if i ne 50
-      s1 = substr(s1,p1+1,l)              ;Remove Homing mode from Temp String
-      l = strlen(s1)                      ;Get string length of Temp String
-    endif
-  endw
-endp
-
-@usr_trig_macro_call
-  ; Handle SubProgram call to Trig_Macro
-
-  if iNumberOfAixs eq 3
-    change(bpos) = false
-  endif
-
-  {nb, 'G65P777 X'shift_x ' Y'shift_y ' Z'shift_z ' C'home_number:'5.3' ' A'bpos:'5.3'  ' I0 J0 K0 '}
-  ;{nl,'G65P777 X'shift_x ' Y'shift_y ' Z'shift_z ' C'home_number '. A'nT1pos:'5.3' ' B'bpos:'5.3'  ' I0 J0 K0'}
-
-endp
-
-@usr_trig_macro_output
-  ; Handle Trig_Macro output (Subprogram)
-  {nl}
-  {nl, 'O777'}
-  ;Copies Work Offset(i.e. G54) to G112 to use for Calculations
-  {nb,'G103 P1'}
-  {nb,'#7041= [#[5201 + 20 * #3] + #24]'} ; G112 x
-  {nb,'M01'}
-  {nb,'#7042= [#[5202 + 20 * #3]+ #25]'} ; G112 y
-  {nb,'M01'}
-  {nb,'#7043= [#[5203 + 20 * #3] + #26]'} ; G112 z
-  {nb,'M01'}
-  {nb,'#7044= [#[5204 + 20 * #3]]'} ; G112 A
-  {nb,'M01'}
-  {nb,'#7045= [#[5205 + 20 * #3]]'} ; G112 B
-  {nb,'M01'} ;Stop added For HS-1RP to not read ahead
-
-  ;Variables 7xxx are G1xx additional work offsets. Puts work offsets in a variable
-  ;#7001 through #7005 = G110 X, Y, Z, A, B   (this will be the A axis Zero) X=#7001 Z=#7003
-  ;#7021 through #7025 = G111 X, Y, Z, A, B   (this will be the B axis Zero) X=#7021 Z=#7022
-
-  ;x1 = #7021
-  ;y  = #7022
-  ;Y2 = #7002  PICKED UP CENTER OF Y-AXIS  G110#
-  ;z  = #7003  PICKED UP CENTER OF Z-AXIS  G110#
-
-  ;Delta Changes In Y & Z- Leg of triangle used to calculate new Y & Z
-  {nb,'#141= [#7042 - #7002]'} ; delta y
-  {nb,'M01'}
-  {nb,'#142= [#7043 - #7003]'} ; delta z
-  {nb,'M01'}
-
-  ;Trig. Formula on how to calculate offcenter parts when they rotate around the 4th axis
-  ;z = z*cos(dev_angle) - y*sin(dev_angle)
-  ;y = z*sin(dev_angle)  + y*cos(dev_angle)
-
-  ;Actual Trig. Formula to Calulate the change in Z & Y in the machine
-  {nb,'#148 = [[#142*COS[-#1]] - [#141*SIN[-#1]]](NEW Y B)'}  ; z
-  {nb,'M01'}
-  {nb,'#149 = [[#142*SIN[-#1]] + [#141*COS[-#1]]](NEW Z B)'}  ; y
-  {nb,'M01'}
-  {nb}
-
-  ;New Calculated Home Position- Uses shifts from SolidCAM, Centers of machine, and calculated change in Z & Y
-  {nb,'#7041 = #7041 + #4'} ; X + user shift  = new X in g112
-  {nb,'M01'}
-  {nb,'#7042 = #7002 + #149 + #5'} ; center Y2 + new Y calculated point + user shift  = new Y in g112
-  {nb,'M01'}
-  {nb,'#7043 = #7003 + #148 + #6'} ; center z  + new z calculated point + user shift  = new z in g112
-  {nb,'M01'}
-  {nb,'G103'}
-  ;{nb,'G112'}
-  ;{nb,' G0 A#1'}
-  ;Used to end subprogram
-  {nb,'M99'}
-  {nl}
-endp
-
 ; TODO :
 ; Standard Cycles
-
-@transform_info
-  ;
-endp

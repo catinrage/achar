@@ -293,13 +293,16 @@ hidden:
 This fixture's directory originally contained `Siemens_828D_Milling_4A.vmid`
 and `.gpp` — but the trace's own `VMID_file:'PoyaKar_1160L_3A'` field said
 otherwise, and the shipped VMID's `<Machine Name="...">` confirmed it was
-actually the Siemens machine, not PoyaKar. The manifest now points
-`vmid`/`machineProfile` at the `PROJECT_567_...` fixture's PoyaKar files
-(same physical machine). **Always cross-check a new fixture's trace
-`VMID_file` against the VMID file actually shipped with it** before
-trusting parity results — a mismatched VMID produces validation errors
-and, more dangerously, silently wrong parity if the wrong machine
-profile happens to still generate valid-looking G-code.
+actually the Siemens machine, not PoyaKar. Confirmed (2026-07-13): the job
+really was posted on the PoyaKar 3-axis machine, so the wrong files were
+simply swapped for the correct `PoyaKar_1160L_3A.gpp`/`.vmid`/`.machine.json`
+(copied from `PROJECT_567_...`, the other fixture on the same physical
+machine) and the manifest points at its own local copies. **Always
+cross-check a new fixture's trace `VMID_file` against the VMID file
+actually shipped with it** before trusting parity results — a mismatched
+VMID produces validation errors and, more dangerously, silently wrong
+parity if the wrong machine profile happens to still generate
+valid-looking G-code.
 
 ---
 
