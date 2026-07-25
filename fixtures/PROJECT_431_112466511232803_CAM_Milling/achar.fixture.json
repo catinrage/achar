@@ -1,9 +1,0 @@
-{
-  "name": "siemens-828d-431-cam-milling",
-  "trace": "431_112466511232803_CAM_Milling.MPF",
-  "reference": "reference",
-  "programName": "431_112466511232803_CAM_Milling",
-  "post": "siemens-828d",
-  "out": "../../generated/siemens-828d-431-cam-milling",
-  "vmid": "Siemens_828D_Milling_4A.vmid"
-}

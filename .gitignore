@@ -178,5 +178,7 @@ dist
 generated/
 /build/
 /artifacts/
+/fixtures/*
+!/fixtures/.gitkeep
 /packages/*/build/
 /packages/*/artifacts/
