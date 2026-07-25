@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MachineProfile } from './machine-profile';
@@ -166,20 +165,53 @@ export async function testPost(
   };
 }
 
+/**
+ * Reads a reference directory and compares it against generated output.
+ *
+ * Thin wrapper over {@link compareGeneratedFiles}: it supplies the only piece
+ * that needs a filesystem — turning the directory into NC file contents.
+ */
 export async function compareAgainstReference(
   generatedFiles: GeneratedFile[],
   referenceDir: string,
   options: CompareOptions = {},
 ): Promise<CompareResult[]> {
+  const referenceNames = (await readdir(referenceDir)).filter((file) =>
+    /\.(MPF|SPF)$/i.test(file),
+  );
+  const reference = await Promise.all(
+    referenceNames.map(async (file) => ({
+      file,
+      code: await readFile(path.join(referenceDir, file), 'utf-8'),
+    })),
+  );
+
+  return compareGeneratedFiles(generatedFiles, reference, options);
+}
+
+/**
+ * Compares generated NC output against reference content already in memory.
+ *
+ * Pure counterpart to {@link compareAgainstReference} for callers that never
+ * have the reference on disk — an HTTP request body, a fixture built in a
+ * test. Names are matched case-insensitively with `-` and `_` treated as the
+ * same character, since controllers and CAM disagree on NC name punctuation.
+ */
+export function compareGeneratedFiles(
+  generatedFiles: GeneratedFile[],
+  referenceFiles: GeneratedFile[],
+  options: CompareOptions = {},
+): CompareResult[] {
   const generatedByName = new Map(
     generatedFiles.map((file) => [file.file, file.code]),
   );
   const generatedByNormalizedName = new Map(
     generatedFiles.map((file) => [normalizeNcName(file.file), file]),
   );
-  const referenceNames = (await readdir(referenceDir)).filter((file) =>
-    /\.(MPF|SPF)$/i.test(file),
+  const referenceByName = new Map(
+    referenceFiles.map((file) => [file.file, file.code]),
   );
+  const referenceNames = [...referenceByName.keys()];
   const relevantReferenceNames = options.allReferenceFiles
     ? referenceNames
     : referenceNames.filter((file) =>
@@ -203,19 +235,18 @@ export async function compareAgainstReference(
     const generatedFile = generatedByName.has(file)
       ? { file, code: generatedByName.get(file) ?? '' }
       : generatedByNormalizedName.get(normalizeNcName(file));
-    const referencePath = path.join(referenceDir, file);
 
     if (!generatedFile) {
       results.push({ file, status: 'missing-generated' });
       continue;
     }
 
-    if (!existsSync(referencePath)) {
+    const expected = referenceByName.get(file);
+    if (expected === undefined) {
       results.push({ file, status: 'missing-reference' });
       continue;
     }
 
-    const expected = await readFile(referencePath, 'utf-8');
     const difference = firstDifference(expected, generatedFile.code, options);
     if (difference.firstDifference === undefined) {
       results.push({

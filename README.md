@@ -116,7 +116,8 @@ zero-to-hero manual, see [docs/achar-zero-to-hero.md](docs/achar-zero-to-hero.md
 For a shorter post-author workflow, see
 [docs/post-authoring.md](docs/post-authoring.md). For the empirically
 established legacy GPP behavior rules that parity depends on, see
-[docs/gpp-semantics.md](docs/gpp-semantics.md).
+[docs/gpp-semantics.md](docs/gpp-semantics.md). To use Achar as a service from
+another application, see [docs/http-server.md](docs/http-server.md).
 
 ```bash
 # Parse a SolidCAM trace into Achar IR

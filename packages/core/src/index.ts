@@ -83,6 +83,7 @@ export type {
 export {
   assertPostMatchesReference,
   compareAgainstReference,
+  compareGeneratedFiles,
   deriveProgramName,
   formatCompareResults,
   generatePostFiles,
@@ -94,10 +95,21 @@ export {
   writeHtmlReport,
 } from './lib/post-test';
 export { expectPost, PostExpectation } from './lib/post-test-dsl';
+export type {
+  ProductDimensions,
+  ProductPart,
+  ProductProfile,
+  ProductProfileDiagnostic,
+  ProductProfileDiagnosticCode,
+  ProductSetup,
+  ProductTool,
+} from './lib/product-profile';
+export { extractProductProfile } from './lib/product-profile';
 export { Program } from './lib/program';
 export type {
   JobTiming,
   SetupTiming,
+  SetupToolTiming,
   TimingReport,
   ToolTiming,
 } from './lib/timing';
@@ -106,6 +118,8 @@ export {
   formatDurationSeconds,
   parseDurationSeconds,
 } from './lib/timing';
+export type { ToolCatalogEntry } from './lib/tool-catalog';
+export { extractToolCatalog } from './lib/tool-catalog';
 export type {
   VmidAxis,
   VmidDefinition,

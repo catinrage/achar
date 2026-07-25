@@ -110,6 +110,88 @@ describe('extractTimingReport', () => {
     expect(report.tools[1].jobInstances).toBe(2);
   });
 
+  it('rolls tools up per setup, heaviest first', () => {
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        { _eventName: 'ChangeTool', tool_id_string: 'DRILL5' },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'D-drill',
+          job_time: '0:00:30',
+        },
+        { _eventName: 'ChangeTool', tool_id_string: 'END6Z4' },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'iRough',
+          job_time: '0:02:00',
+        },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'iRough',
+          job_time: '0:02:00',
+        },
+        { _eventName: 'Setup', setup_name: 'Setup2' },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'F-contour',
+          job_time: '0:01:00',
+        },
+      ]),
+    );
+
+    const [setup1, setup2] = report.setups;
+    expect(setup1.tools).toEqual([
+      { tool: 'END6Z4', seconds: 240, duration: '0:04:00', jobInstances: 2 },
+      { tool: 'DRILL5', seconds: 30, duration: '0:00:30', jobInstances: 1 },
+    ]);
+    // Setup2 only sees its own jobs, not the whole-program roll-up.
+    expect(setup2.tools).toEqual([
+      { tool: 'END6Z4', seconds: 60, duration: '0:01:00', jobInstances: 1 },
+    ]);
+    // The global roll-up still spans both setups.
+    expect(report.tools[0]).toEqual({
+      tool: 'END6Z4',
+      seconds: 300,
+      duration: '0:05:00',
+      jobInstances: 3,
+      declaredWorkTime: undefined,
+    });
+  });
+
+  it('excludes jobs with no tool from the per-setup roll-up', () => {
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'Pre-tool',
+          job_time: '0:00:20',
+        },
+        { _eventName: 'ChangeTool', tool_id_string: 'END6Z4' },
+        {
+          _eventName: 'StartOfJob',
+          job_name: 'Rough',
+          job_time: '0:00:40',
+        },
+      ]),
+    );
+
+    expect(report.setups[0].seconds).toBe(60);
+    expect(report.setups[0].tools).toEqual([
+      { tool: 'END6Z4', seconds: 40, duration: '0:00:40', jobInstances: 1 },
+    ]);
+  });
+
+  it('reports an empty tool roll-up for a setup with no jobs', () => {
+    const report = extractTimingReport(
+      makeEvents([{ _eventName: 'Setup', setup_name: 'Empty' }]),
+    );
+
+    expect(report.setups[0].tools).toEqual([]);
+    expect(report.setups[0].jobs).toEqual([]);
+  });
+
   it('collects jobs before any setup event under a fallback setup', () => {
     const report = extractTimingReport(
       makeEvents([

@@ -22,6 +22,7 @@
       "dependencies": {
         "@achar/core": "workspace:*",
         "@achar/mcp": "workspace:*",
+        "@achar/server": "workspace:*",
         "chalk": "^5.3.0",
         "cli-spinners": "^3.2.0",
         "commander": "^14.0.2",
@@ -51,6 +52,13 @@
         "zod": "^4.4.3",
       },
     },
+    "packages/server": {
+      "name": "@achar/server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@achar/core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@achar/cli": ["@achar/cli@workspace:packages/cli"],
@@ -60,6 +68,8 @@
     "@achar/desktop": ["@achar/desktop@workspace:packages/desktop"],
 
     "@achar/mcp": ["@achar/mcp@workspace:packages/mcp"],
+
+    "@achar/server": ["@achar/server@workspace:packages/server"],
 
     "@babylonjs/core": ["@babylonjs/core@7.54.3", "", {}, "sha512-P5ncXVd8GEUJLhwloP9V0oVwQYIrvZztguVeLlvd5Rx+9aQnenKjpV8auJ6SRsUlAmNZU4pFTKzwF6o2EUfhAw=="],
 

@@ -1,0 +1,16 @@
+{
+  "name": "@achar/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/server.ts",
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "scripts": {
+    "serve": "bun src/server.ts"
+  },
+  "dependencies": {
+    "@achar/core": "workspace:*"
+  }
+}

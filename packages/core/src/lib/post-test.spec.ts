@@ -6,9 +6,13 @@ import path from 'node:path';
 import { registerDefaultPost } from './default-post';
 import { discoverFixtures } from './fixture';
 import { loadMachineProfile } from './machine-profile';
+import type { CompareOptions, CompareResult, GeneratedFile } from './post-test';
 import {
   assertPostMatchesReference,
+  compareAgainstReference,
+  compareGeneratedFiles,
   formatCompareResults,
+  summarizeCompareResults,
   testPost,
 } from './post-test';
 import type { Program } from './program';
@@ -167,6 +171,112 @@ describe('post test harness', () => {
     });
 
     expect(result.results[0]?.numberingDriftOnly).toBe(false);
+  });
+});
+
+describe('compareGeneratedFiles', () => {
+  const generated: GeneratedFile[] = [
+    { file: 'MAIN.MPF', code: 'N10 G0\nN20 M30' },
+    { file: 'SUB_1.SPF', code: 'N10 G1' },
+    { file: 'EXTRA.SPF', code: 'N10 G2' },
+  ];
+  const reference: GeneratedFile[] = [
+    { file: 'MAIN.MPF', code: 'N10 G0\nN20 M30' },
+    { file: 'SUB-1.SPF', code: 'N10 G1' },
+    { file: 'ORPHAN.SPF', code: 'N10 G3' },
+  ];
+
+  /** Runs the same comparison through both entry points. */
+  async function bothWays(
+    options?: CompareOptions,
+  ): Promise<{ inMemory: CompareResult[]; fromDisk: CompareResult[] }> {
+    const root = await makeTempDir();
+    await writeFixture(
+      root,
+      Object.fromEntries(reference.map((file) => [file.file, file.code])),
+    );
+    // A reference directory in the wild holds more than NC files.
+    await writeFixture(root, { 'notes.txt': 'ignored' });
+
+    return {
+      inMemory: compareGeneratedFiles(generated, reference, options),
+      fromDisk: await compareAgainstReference(generated, root, options),
+    };
+  }
+
+  it('matches compareAgainstReference on the default options', async () => {
+    const { inMemory, fromDisk } = await bothWays();
+
+    expect(inMemory).toEqual(fromDisk);
+    expect(inMemory).toEqual([
+      { file: 'EXTRA.SPF', status: 'missing-reference' },
+      { file: 'MAIN.MPF', status: 'match' },
+      // Punctuation-normalized name match is reported as a rename.
+      { file: 'SUB-1.SPF <- SUB_1.SPF', status: 'match' },
+    ]);
+  });
+
+  it('matches compareAgainstReference with allReferenceFiles', async () => {
+    const { inMemory, fromDisk } = await bothWays({
+      allReferenceFiles: true,
+    });
+
+    expect(inMemory).toEqual(fromDisk);
+    expect(summarizeCompareResults(inMemory)).toEqual({
+      match: 2,
+      different: 0,
+      missingGenerated: 1,
+      missingReference: 1,
+    });
+  });
+
+  it('matches compareAgainstReference on differing content', async () => {
+    const changed = [{ file: 'MAIN.MPF', code: 'N10 G0\nN20 M02' }];
+    const root = await makeTempDir();
+    await writeFixture(root, { 'MAIN.MPF': 'N10 G0\nN20 M30' });
+
+    const inMemory = compareGeneratedFiles(changed, [
+      { file: 'MAIN.MPF', code: 'N10 G0\nN20 M30' },
+    ]);
+    const fromDisk = await compareAgainstReference(changed, root);
+
+    expect(inMemory).toEqual(fromDisk);
+    expect(inMemory[0]).toMatchObject({
+      file: 'MAIN.MPF',
+      status: 'different',
+      firstDifference: 2,
+      expected: 'N20 M30',
+      actual: 'N20 M02',
+      numberingDriftOnly: false,
+    });
+  });
+
+  it('normalizes N-number drift the same way as the directory path', async () => {
+    const shifted = [{ file: 'MAIN.MPF', code: 'N10 G0\nN20 M30' }];
+    const root = await makeTempDir();
+    await writeFixture(root, { 'MAIN.MPF': 'N20 G0\nN30 M30' });
+    const referenceFiles = [{ file: 'MAIN.MPF', code: 'N20 G0\nN30 M30' }];
+
+    expect(compareGeneratedFiles(shifted, referenceFiles)[0]).toEqual(
+      (await compareAgainstReference(shifted, root))[0],
+    );
+    expect(compareGeneratedFiles(shifted, referenceFiles)[0]).toMatchObject({
+      status: 'different',
+      numberingDriftOnly: true,
+    });
+    expect(
+      compareGeneratedFiles(shifted, referenceFiles, {
+        ignoreLineNumbers: true,
+      })[0],
+    ).toEqual({ file: 'MAIN.MPF', status: 'match' });
+  });
+
+  it('reports an empty reference as all missing', () => {
+    expect(compareGeneratedFiles(generated, [])).toEqual([
+      { file: 'EXTRA.SPF', status: 'missing-reference' },
+      { file: 'MAIN.MPF', status: 'missing-reference' },
+      { file: 'SUB_1.SPF', status: 'missing-reference' },
+    ]);
   });
 });
 
