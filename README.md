@@ -109,6 +109,78 @@ bun test
 
 ## Usage
 
+### Docker HTTP Service
+
+The Docker image runs Achar's stateless HTTP API. It does not package the
+desktop UI or expose the stdio MCP server. The service needs no database,
+persistent volume, or writable application directory: every trace arrives in a
+request and every result is returned in the response.
+
+Create the local Compose environment and replace the example token with a long
+random value:
+
+```bash
+cp .env.example .env
+openssl rand -hex 32
+# Paste the generated value into ACHAR_SERVER_TOKEN in .env.
+```
+
+Build and start the service:
+
+```bash
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:7788/health
+```
+
+Compose publishes Achar only on the host loopback interface. When Oracle runs
+on the same host, configure these values in Oracle's database-backed Achar
+settings UI:
+
+```text
+URL:   http://127.0.0.1:7788
+Token: the ACHAR_SERVER_TOKEN value from .env
+```
+
+The URL belongs in Oracle's settings, not Oracle's environment. The token is
+supplied separately to the Achar container so the two applications can
+authenticate their server-to-server requests.
+
+Operational commands:
+
+```bash
+# Follow request and startup logs
+docker compose logs -f achar
+
+# Rebuild after updating Achar
+docker compose up -d --build
+
+# Stop and remove the container; Achar has no persistent container data
+docker compose down
+```
+
+The Compose service runs as the unprivileged `bun` user with a read-only root
+filesystem, all Linux capabilities dropped, a 2 GB memory limit, and the
+server's default single-parse concurrency. A 67 MB trace has measured peak RSS
+of roughly 712 MB for profiling and 842 MB for generation, so do not lower the
+limit without measuring your own largest trace. Do not publish port 7788 beyond
+a trusted host or network: bearer authentication is enabled, but the Trace 5
+parser is intentionally treated as a trusted-network service.
+
+To build and run without Compose:
+
+```bash
+docker build -t achar:local .
+docker run --rm \
+  --name achar \
+  --memory 2g \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  -p 127.0.0.1:7788:7788 \
+  -e ACHAR_SERVER_TOKEN='replace-with-a-long-random-token' \
+  achar:local
+```
+
 ### CLI
 
 For a full CLI manual, see [docs/cli-guide.md](docs/cli-guide.md). For a

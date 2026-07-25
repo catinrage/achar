@@ -1,0 +1,24 @@
+services:
+  achar:
+    image: achar:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      ACHAR_SERVER_HOST: 0.0.0.0
+      ACHAR_SERVER_PORT: "7788"
+      ACHAR_SERVER_TOKEN: ${ACHAR_SERVER_TOKEN:?Set ACHAR_SERVER_TOKEN in .env}
+    ports:
+      - "127.0.0.1:7788:7788"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 2g
+    pids_limit: 128
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
