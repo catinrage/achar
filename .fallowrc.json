@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "packages/desktop/electrobun.config.ts",
+    "packages/desktop/src/bun/index.ts",
+    "packages/desktop/src/mainview/index.html",
+    "packages/desktop/src/mainview/index.css",
+    "packages/desktop/src/mainview/index.ts",
+    "**/*.spec.ts",
+    "test/**/*.test.ts",
+    "examples/**/*.ts"
+  ],
+  "ignoreDependencies": ["vazirmatn"],
+  "publicPackages": ["@achar/core"],
+  "rules": {
+    "unused-files": "error",
+    "unused-dependencies": "error",
+    "unresolved-imports": "error",
+    "unlisted-dependencies": "error",
+    "circular-dependencies": "error",
+    "re-export-cycles": "error",
+    "boundary-violations": "error",
+    "unused-exports": "warn",
+    "unused-types": "warn",
+    "unused-enum-members": "warn",
+    "unused-class-members": "warn"
+  },
+  "duplicates": {
+    "mode": "mild",
+    "minTokens": 50,
+    "minLines": 5,
+    "threshold": 5,
+    "ignore": ["**/*.spec.ts", "test/**/*.test.ts", "examples/**/*.ts"]
+  },
+  "health": {
+    "maxCrap": 100,
+    "ignore": ["**/*.spec.ts", "test/**/*.test.ts", "examples/**/*.ts"]
+  },
+  "audit": {
+    "gate": "new-only"
+  }
+}

@@ -101,7 +101,7 @@ const POSIX_PATH = /(?:^|\s)\/(?:[\w.-]+\/)+[\w.-]*/g;
 const WINDOWS_PATH = /[A-Za-z]:\\(?:[^\\\s"']+\\)*[^\\\s"']*/g;
 
 /** Replaces anything shaped like a filesystem path with a placeholder. */
-export function scrub(message: string): string {
+function scrub(message: string): string {
   return message
     .replaceAll(POSIX_PATH, ' <path>')
     .replaceAll(WINDOWS_PATH, '<path>')

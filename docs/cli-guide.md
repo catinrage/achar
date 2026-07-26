@@ -495,7 +495,6 @@ The scaffold includes:
 
 ```text
 index.ts
-post.config.ts
 driver.ts
 policy.ts
 README.md

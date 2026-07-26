@@ -156,7 +156,7 @@ function readMachineProfile(body: RequestBody): MachineProfile | undefined {
   }
 }
 
-export function resolvePost(body: RequestBody): BuiltInPost {
+function resolvePost(body: RequestBody): BuiltInPost {
   const postId = body.option('postId') ?? DEFAULT_POST_ID;
   const post = resolveBuiltinPost(postId);
   if (!post) {
@@ -172,10 +172,7 @@ export function resolvePost(body: RequestBody): BuiltInPost {
  * derive one from, so an unset option falls back to the trace's own
  * `part_name` before the last-resort constant.
  */
-export function resolveProgramName(
-  body: RequestBody,
-  events: EventData[],
-): string {
+function resolveProgramName(body: RequestBody, events: EventData[]): string {
   const requested = body.option('programName');
   if (requested) return requested;
 

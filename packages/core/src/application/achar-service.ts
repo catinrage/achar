@@ -11,6 +11,7 @@ import {
   compareAgainstReference,
   generatePostFiles,
   parseTraceFile,
+  resolveGeneratedFilePath,
   summarizeCompareResults,
   writeGeneratedFiles,
 } from '../lib/post-test';
@@ -267,21 +268,20 @@ export async function generateAcharFiles(
   workspaceRoot = resolveWorkspaceRoot(),
 ): Promise<AcharGenerationResult> {
   const startedAt = performance.now();
+  const programName = input.programName.trim();
+  resolveGeneratedFilePath(workspaceRoot, programName);
   const loaded = await loadInput(input);
   assertNoErrors(loaded.diagnostics);
 
   const post = resolveBuiltinPost(input.postId);
   if (!post) throw new Error(`Unknown built-in post: ${input.postId}`);
 
-  const files = generatePostFiles(
-    loaded.events,
-    input.programName.trim(),
-    (program) =>
-      post.registerPost(program, { machineProfile: loaded.machineProfile }),
+  const files = generatePostFiles(loaded.events, programName, (program) =>
+    post.registerPost(program, { machineProfile: loaded.machineProfile }),
   );
   const outputPath = path.resolve(
     input.outputPath?.trim() ||
-      path.join(workspaceRoot, 'generated', input.programName.trim()),
+      path.join(workspaceRoot, 'generated', programName),
   );
   await writeGeneratedFiles(files, outputPath);
 

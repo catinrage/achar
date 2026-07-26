@@ -94,10 +94,7 @@ export class RequestBody {
 }
 
 /** Rejects an over-sized body from its declared length, before buffering it. */
-export function assertDeclaredLength(
-  request: Request,
-  maxBodyBytes: number,
-): void {
+function assertDeclaredLength(request: Request, maxBodyBytes: number): void {
   const declared = Number(request.headers.get('content-length') ?? '');
   if (Number.isFinite(declared) && declared > maxBodyBytes) {
     throw bodyTooLarge(maxBodyBytes);

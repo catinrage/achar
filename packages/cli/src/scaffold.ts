@@ -19,11 +19,6 @@ export async function initPost(
     options,
   );
   await writeScaffoldFile(
-    path.join(root, 'post.config.ts'),
-    postConfigTemplate(id, name),
-    options,
-  );
-  await writeScaffoldFile(
     path.join(root, 'driver.ts'),
     postDriverTemplate(id),
     options,
@@ -112,15 +107,6 @@ function postPolicyTemplate(name: string): string {
 export const postPolicy = definePostPolicy({
   title: '${escapeTemplateValue(name)}',
 });
-`;
-}
-
-function postConfigTemplate(id: string, name: string): string {
-  return `export default {
-  id: '${escapeTemplateValue(id)}',
-  name: '${escapeTemplateValue(name)}',
-  register: './index.ts',
-};
 `;
 }
 

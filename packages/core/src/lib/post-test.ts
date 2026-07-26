@@ -117,10 +117,35 @@ export async function writeGeneratedFiles(
   files: GeneratedFile[],
   outputDir: string,
 ): Promise<void> {
+  const targets = files.map((file) => ({
+    ...file,
+    target: resolveGeneratedFilePath(outputDir, file.file),
+  }));
   await mkdir(outputDir, { recursive: true });
-  await Promise.all(
-    files.map((file) => writeFile(path.join(outputDir, file.file), file.code)),
-  );
+  await Promise.all(targets.map((file) => writeFile(file.target, file.code)));
+}
+
+export function resolveGeneratedFilePath(
+  outputDir: string,
+  file: string,
+): string {
+  if (
+    file.length === 0 ||
+    file === '.' ||
+    file === '..' ||
+    file.includes('/') ||
+    file.includes('\\') ||
+    file.includes('\0')
+  ) {
+    throw new Error(`Generated file name must be a plain file name: ${file}`);
+  }
+
+  const root = path.resolve(outputDir);
+  const target = path.resolve(root, file);
+  if (path.dirname(target) !== root) {
+    throw new Error(`Generated file must stay inside ${root}: ${file}`);
+  }
+  return target;
 }
 
 export async function testPost(

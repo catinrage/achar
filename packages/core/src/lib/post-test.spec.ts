@@ -12,8 +12,10 @@ import {
   compareAgainstReference,
   compareGeneratedFiles,
   formatCompareResults,
+  resolveGeneratedFilePath,
   summarizeCompareResults,
   testPost,
+  writeGeneratedFiles,
 } from './post-test';
 import type { Program } from './program';
 import { parseVmidFile } from './vmid';
@@ -171,6 +173,42 @@ describe('post test harness', () => {
     });
 
     expect(result.results[0]?.numberingDriftOnly).toBe(false);
+  });
+});
+
+describe('generated file containment', () => {
+  it('writes plain generated file names into the requested directory', async () => {
+    const root = await makeTempDir();
+
+    await writeGeneratedFiles([{ file: 'MAIN.MPF', code: 'N10 M30' }], root);
+
+    expect(await Bun.file(path.join(root, 'MAIN.MPF')).text()).toBe('N10 M30');
+  });
+
+  it('rejects traversal and platform-specific separators before writing', async () => {
+    const root = await makeTempDir();
+
+    for (const file of [
+      '../escape.MPF',
+      'nested/escape.MPF',
+      String.raw`nested\escape.MPF`,
+      '..',
+    ]) {
+      expect(() => resolveGeneratedFilePath(root, file)).toThrow(
+        'must be a plain file name',
+      );
+    }
+
+    await expect(
+      writeGeneratedFiles(
+        [
+          { file: 'SAFE.MPF', code: 'safe' },
+          { file: '../escape.MPF', code: 'escape' },
+        ],
+        root,
+      ),
+    ).rejects.toThrow('must be a plain file name');
+    expect(existsSync(path.join(root, 'SAFE.MPF'))).toBe(false);
   });
 });
 

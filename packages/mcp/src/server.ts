@@ -12,6 +12,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import packageJson from '../package.json' with { type: 'json' };
+import { constrainAcharInput, resolveInsideWorkspace } from './workspace-paths';
 
 export interface AcharMcpServerOptions {
   workspaceRoot?: string;
@@ -68,28 +69,6 @@ async function guarded(run: () => Promise<ToolResult>): Promise<ToolResult> {
   }
 }
 
-/**
- * Resolves a model-supplied path and rejects anything that escapes the
- * workspace root, so tool calls cannot write to or read from arbitrary
- * locations on disk.
- */
-function resolveInsideWorkspace(
-  workspaceRoot: string,
-  target: string,
-  label: string,
-): string {
-  const resolved = path.resolve(workspaceRoot, target);
-  if (
-    resolved !== workspaceRoot &&
-    !resolved.startsWith(workspaceRoot + path.sep)
-  ) {
-    throw new Error(
-      `${label} must stay inside the workspace root (${workspaceRoot}); received: ${target}`,
-    );
-  }
-  return resolved;
-}
-
 function createServer(workspaceRoot: string): McpServer {
   const server = new McpServer({
     name: 'achar',
@@ -117,7 +96,12 @@ function createServer(workspaceRoot: string): McpServer {
       inputSchema: acharInputSchema,
       annotations: { readOnlyHint: true },
     },
-    (input) => guarded(async () => text(await validateAcharInput(input))),
+    (input) =>
+      guarded(async () =>
+        text(
+          await validateAcharInput(constrainAcharInput(workspaceRoot, input)),
+        ),
+      ),
   );
 
   server.registerTool(
@@ -131,16 +115,7 @@ function createServer(workspaceRoot: string): McpServer {
     },
     (input) =>
       guarded(async () => {
-        const constrained = input.outputPath
-          ? {
-              ...input,
-              outputPath: resolveInsideWorkspace(
-                workspaceRoot,
-                input.outputPath,
-                'outputPath',
-              ),
-            }
-          : input;
+        const constrained = constrainAcharInput(workspaceRoot, input);
         return text(await generateAcharFiles(constrained, workspaceRoot));
       }),
   );

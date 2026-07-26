@@ -283,7 +283,6 @@ Generated files:
 
 ```text
 index.ts
-post.config.ts
 README.md
 achar.fixture.json   only when --fixture is passed
 ```

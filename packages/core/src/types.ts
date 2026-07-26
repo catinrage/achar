@@ -2,6 +2,46 @@ import type { DirectionEnum, PlaneEnum, StateEnum } from './common/enums';
 
 type EmptyEvent = Record<never, never>;
 
+interface CoolantStateFields {
+  flood_coolant: StateEnum;
+  HP_flood_coolant: string;
+  LP_flood_coolant: string;
+  flood_ival_coolant: string;
+  flood_coolant_val: number;
+  mist_coolant: string;
+  HP_mist_coolant: string;
+  LP_mist_coolant: string;
+  mist_ival_coolant: string;
+  mist_coolant_val: number;
+  through_coolant: string;
+  HP_through_coolant: string;
+  LP_through_coolant: string;
+  MP_through_coolant: string;
+  through_ival_coolant: string;
+  through_coolant_val: number;
+  air_blast_coolant: string;
+  air_through_coolant: string;
+  minimum_quantity_L: string;
+  minimum_quantity_L_val: number;
+  mach_flood_coolant: string;
+  mach_HP_flood_coolant: string;
+  mach_LP_flood_coolant: string;
+  mach_flood_ival_coolant: string;
+  mach_flood_coolant_val: number;
+  mach_mist_coolant: string;
+  mach_HP_mist_coolant: string;
+  mach_LP_mist_coolant: string;
+  mach_mist_ival_coolant: string;
+  mach_mist_coolant_val: number;
+  mach_active_air_coolant: string;
+  mach_bed_rinsing_coolant: string;
+  mach_shower_coolant: string;
+  mach_HP_shower_coolant: string;
+  mach_LP_shower_coolant: string;
+  mach_shower_ival_coolant: string;
+  mach_shower_coolant_val: number;
+}
+
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object
     ? T[P] extends (...args: never[]) => unknown
@@ -608,43 +648,6 @@ export type EventsType = {
     next_job_hsm: number;
     next_rot_axis_coord: string;
     next_rot_axis_type: string;
-    flood_coolant: StateEnum;
-    HP_flood_coolant: string;
-    LP_flood_coolant: string;
-    flood_ival_coolant: string;
-    flood_coolant_val: number;
-    mist_coolant: string;
-    HP_mist_coolant: string;
-    LP_mist_coolant: string;
-    mist_ival_coolant: string;
-    mist_coolant_val: number;
-    through_coolant: string;
-    HP_through_coolant: string;
-    LP_through_coolant: string;
-    MP_through_coolant: string;
-    through_ival_coolant: string;
-    through_coolant_val: number;
-    air_blast_coolant: string;
-    air_through_coolant: string;
-    minimum_quantity_L: string;
-    minimum_quantity_L_val: number;
-    mach_flood_coolant: string;
-    mach_HP_flood_coolant: string;
-    mach_LP_flood_coolant: string;
-    mach_flood_ival_coolant: string;
-    mach_flood_coolant_val: number;
-    mach_mist_coolant: string;
-    mach_HP_mist_coolant: string;
-    mach_LP_mist_coolant: string;
-    mach_mist_ival_coolant: string;
-    mach_mist_coolant_val: number;
-    mach_active_air_coolant: string;
-    mach_bed_rinsing_coolant: string;
-    mach_shower_coolant: string;
-    mach_HP_shower_coolant: string;
-    mach_LP_shower_coolant: string;
-    mach_shower_ival_coolant: string;
-    mach_shower_coolant_val: number;
     Tool_holder_mount_x: number;
     Tool_holder_mount_y: number;
     Tool_holder_mount_z: number;
@@ -664,7 +667,7 @@ export type EventsType = {
     tool_first_feed: number;
     tool_first_spin: number;
     tool_first_direction: DirectionEnum;
-  };
+  } & CoolantStateFields;
   JobPlane: {
     job_plane: PlaneEnum;
   };
@@ -794,45 +797,7 @@ export type EventsType = {
     zhpos: number;
     next_direction: number;
   };
-  EndOfJob: {
-    flood_coolant: StateEnum;
-    HP_flood_coolant: string;
-    LP_flood_coolant: string;
-    flood_ival_coolant: string;
-    flood_coolant_val: number;
-    mist_coolant: string;
-    HP_mist_coolant: string;
-    LP_mist_coolant: string;
-    mist_ival_coolant: string;
-    mist_coolant_val: number;
-    through_coolant: string;
-    HP_through_coolant: string;
-    LP_through_coolant: string;
-    MP_through_coolant: string;
-    through_ival_coolant: string;
-    through_coolant_val: number;
-    air_blast_coolant: string;
-    air_through_coolant: string;
-    minimum_quantity_L: string;
-    minimum_quantity_L_val: number;
-    mach_flood_coolant: string;
-    mach_HP_flood_coolant: string;
-    mach_LP_flood_coolant: string;
-    mach_flood_ival_coolant: string;
-    mach_flood_coolant_val: number;
-    mach_mist_coolant: string;
-    mach_HP_mist_coolant: string;
-    mach_LP_mist_coolant: string;
-    mach_mist_ival_coolant: string;
-    mach_mist_coolant_val: number;
-    mach_active_air_coolant: string;
-    mach_bed_rinsing_coolant: string;
-    mach_shower_coolant: string;
-    mach_HP_shower_coolant: string;
-    mach_LP_shower_coolant: string;
-    mach_shower_ival_coolant: string;
-    mach_shower_coolant_val: number;
-  };
+  EndOfJob: CoolantStateFields;
   Drill: {
     drill_depth: number;
     down_step: number;

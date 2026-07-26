@@ -189,6 +189,33 @@ export function registerSiemens828dPost(
     if (params.apos !== undefined) state.lastPosition.a = params.apos;
   };
 
+  const emitToolChangeApproach = (
+    $: Builder,
+    params: EventsType['RapidMove'] | EventsType['Move5x'],
+  ): boolean => {
+    if (
+      !state.pendingPathMode ||
+      !state.forceNextApproachXY ||
+      !state.currentJobHadToolChange ||
+      (params.xpos === undefined &&
+        params.ypos === undefined &&
+        params.zpos === undefined)
+    ) {
+      return false;
+    }
+
+    // The job-start block after a tool change already positioned XY(A);
+    // the approach move only descends to the clearance Z.
+    if (params.zpos !== undefined) {
+      $.RapidResolved({ z: compactCoordinate(params.zpos) });
+    }
+    updateLastPosition(params);
+    state.forceNextApproachXY = false;
+    state.deferredJobStartZ = false;
+    state.forceFeedOutput = true;
+    return true;
+  };
+
   registerDrillingHandlers({
     post,
     state,
@@ -622,23 +649,7 @@ export function registerSiemens828dPost(
       return;
     }
 
-    if (
-      state.pendingPathMode &&
-      state.forceNextApproachXY &&
-      state.currentJobHadToolChange &&
-      (params.xpos !== undefined ||
-        params.ypos !== undefined ||
-        params.zpos !== undefined)
-    ) {
-      if (params.zpos !== undefined) {
-        $.RapidResolved({ z: compactCoordinate(params.zpos) });
-      }
-      updateLastPosition(params);
-      state.forceNextApproachXY = false;
-      state.deferredJobStartZ = false;
-      state.forceFeedOutput = true;
-      return;
-    }
+    if (emitToolChangeApproach($, params)) return;
 
     if (
       state.pendingPathMode &&
@@ -846,25 +857,7 @@ export function registerSiemens828dPost(
       return;
     }
 
-    if (
-      state.pendingPathMode &&
-      state.forceNextApproachXY &&
-      state.currentJobHadToolChange &&
-      (params.xpos !== undefined ||
-        params.ypos !== undefined ||
-        params.zpos !== undefined)
-    ) {
-      // The job-start block after a tool change already positioned XY(A);
-      // the approach move only descends to the clearance Z, like RapidMove.
-      if (params.zpos !== undefined) {
-        $.RapidResolved({ z: compactCoordinate(params.zpos) });
-      }
-      updateLastPosition(params);
-      state.forceNextApproachXY = false;
-      state.deferredJobStartZ = false;
-      state.forceFeedOutput = true;
-      return;
-    }
+    if (emitToolChangeApproach($, params)) return;
 
     const coords: CommandsType['Rapid'] = {};
     const xChanged = traceChanged(params, 'xpos');

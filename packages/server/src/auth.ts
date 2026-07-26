@@ -12,12 +12,12 @@ function digest(value: string): Buffer {
   return createHash('sha256').update(value, 'utf-8').digest();
 }
 
-export function tokenMatches(expected: string, presented: string): boolean {
+function tokenMatches(expected: string, presented: string): boolean {
   return timingSafeEqual(digest(expected), digest(presented));
 }
 
 /** Extracts the token from an `Authorization: Bearer <token>` header. */
-export function bearerToken(request: Request): string | undefined {
+function bearerToken(request: Request): string | undefined {
   const header = request.headers.get('authorization');
   if (!header) return undefined;
 
