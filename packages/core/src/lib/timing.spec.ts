@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { ValidationError } from './errors';
 import type { EventData } from './parser';
 import {
   extractTimingReport,
@@ -77,21 +78,23 @@ describe('extractTimingReport', () => {
       ]),
     );
 
-    expect(report.duration).toBe('0:05:30');
-    expect(report.seconds).toBe(330);
+    expect(report.duration).toBe('0:03:30');
+    expect(report.seconds).toBe(210);
 
     expect(report.setups).toHaveLength(2);
     const [setup1, setup2] = report.setups;
     expect(setup1.name).toBe('Setup1');
-    expect(setup1.duration).toBe('0:04:30');
+    expect(setup1.duration).toBe('0:02:30');
     expect(setup1.jobs).toHaveLength(2);
     const rough = setup1.jobs[0];
     expect(rough.name).toBe('iRough-faces');
     expect(rough.tool).toBe('END6Z4');
+    // The repeat is a transform instance: it raises the count, and the time
+    // stamped on it is the pattern total already counted on the first start.
     expect(rough.instances).toBe(2);
-    expect(rough.seconds).toBe(240);
-    expect(rough.cuttingSeconds).toBe(180);
-    expect(rough.linkingSeconds).toBe(20);
+    expect(rough.seconds).toBe(120);
+    expect(rough.cuttingSeconds).toBe(90);
+    expect(rough.linkingSeconds).toBe(10);
 
     expect(setup2.name).toBe('Setup2');
     // F-contour runs with the tool still loaded from setup 1.
@@ -100,14 +103,18 @@ describe('extractTimingReport', () => {
     expect(report.tools).toHaveLength(2);
     expect(report.tools[0]).toEqual({
       tool: 'END6Z4',
-      seconds: 240,
-      duration: '0:04:00',
+      seconds: 120,
+      duration: '0:02:00',
       jobInstances: 2,
       declaredWorkTime: '0:17:17',
     });
-    expect(report.tools[1].tool).toBe('DRILL5');
-    expect(report.tools[1].seconds).toBe(90);
-    expect(report.tools[1].jobInstances).toBe(2);
+    expect(report.tools[1]).toEqual({
+      tool: 'DRILL5',
+      seconds: 90,
+      duration: '0:01:30',
+      jobInstances: 2,
+      declaredWorkTime: undefined,
+    });
   });
 
   it('rolls tools up per setup, heaviest first', () => {
@@ -142,7 +149,7 @@ describe('extractTimingReport', () => {
 
     const [setup1, setup2] = report.setups;
     expect(setup1.tools).toEqual([
-      { tool: 'END6Z4', seconds: 240, duration: '0:04:00', jobInstances: 2 },
+      { tool: 'END6Z4', seconds: 120, duration: '0:02:00', jobInstances: 2 },
       { tool: 'DRILL5', seconds: 30, duration: '0:00:30', jobInstances: 1 },
     ]);
     // Setup2 only sees its own jobs, not the whole-program roll-up.
@@ -152,8 +159,8 @@ describe('extractTimingReport', () => {
     // The global roll-up still spans both setups.
     expect(report.tools[0]).toEqual({
       tool: 'END6Z4',
-      seconds: 300,
-      duration: '0:05:00',
+      seconds: 180,
+      duration: '0:03:00',
       jobInstances: 3,
       declaredWorkTime: undefined,
     });
@@ -190,6 +197,137 @@ describe('extractTimingReport', () => {
 
     expect(report.setups[0].tools).toEqual([]);
     expect(report.setups[0].jobs).toEqual([]);
+  });
+
+  it('counts a transform pattern total once, however many times it repeats', () => {
+    // Arrange: a 6-position translate pattern. SolidCAM stamps the whole
+    // pattern's 100s on every repeat, and declares the same 100s as the
+    // tool's work time.
+    const repeat = {
+      _eventName: 'StartOfJob',
+      job_name: 'DRILL6D',
+      job_time: '  0:01:40',
+      job_cutting_time: '  0:01:20',
+      job_linking_time: '  0:00:12',
+    };
+
+    // Act
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        {
+          _eventName: 'DefTool',
+          tool_id_string: 'DRILL6',
+          tool_work_time: '  0:01:40',
+        },
+        { _eventName: 'ChangeTool', tool_id_string: 'DRILL6' },
+        ...Array.from({ length: 6 }, () => ({ ...repeat })),
+      ]),
+    );
+
+    // Assert
+    const [job] = report.setups[0].jobs;
+    expect(job.instances).toBe(6);
+    expect(job.seconds).toBe(100);
+    expect(job.cuttingSeconds).toBe(80);
+    expect(job.linkingSeconds).toBe(12);
+    expect(job.duration).toBe('0:01:40');
+    expect(report.seconds).toBe(100);
+    // The roll-up now agrees with SolidCAM's own tool_work_time.
+    expect(report.tools[0]).toEqual({
+      tool: 'DRILL6',
+      seconds: 100,
+      duration: '0:01:40',
+      jobInstances: 6,
+      declaredWorkTime: '0:01:40',
+    });
+  });
+
+  it('counts a repeated job once even when it spans setups or tools', () => {
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        { _eventName: 'ChangeTool', tool_id_string: 'END6Z4' },
+        { _eventName: 'StartOfJob', job_name: 'Pocket', job_time: '0:01:00' },
+        { _eventName: 'Setup', setup_name: 'Setup2' },
+        { _eventName: 'ChangeTool', tool_id_string: 'DRILL5' },
+        { _eventName: 'StartOfJob', job_name: 'Pocket', job_time: '0:01:00' },
+      ]),
+    );
+
+    expect(report.seconds).toBe(60);
+    expect(report.setups[0].seconds).toBe(60);
+    expect(report.setups[1].seconds).toBe(0);
+    expect(report.setups[1].jobs[0].instances).toBe(1);
+  });
+
+  it('still sums distinct jobs that happen to share a duration', () => {
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        { _eventName: 'ChangeTool', tool_id_string: 'END6Z4' },
+        { _eventName: 'StartOfJob', job_name: 'Pocket1', job_time: '0:01:00' },
+        { _eventName: 'StartOfJob', job_name: 'Pocket2', job_time: '0:01:00' },
+      ]),
+    );
+
+    expect(report.seconds).toBe(120);
+    expect(report.tools[0].jobInstances).toBe(2);
+  });
+
+  it('throws when repeats of one job name disagree on job_time', () => {
+    expect(() =>
+      extractTimingReport(
+        makeEvents([
+          { _eventName: 'Setup', setup_name: 'Setup1' },
+          {
+            _eventName: 'StartOfJob',
+            job_name: 'DRILL6D',
+            job_time: '0:01:40',
+          },
+          {
+            _eventName: 'StartOfJob',
+            job_name: 'DRILL6D',
+            job_time: '0:02:00',
+          },
+        ]),
+      ),
+    ).toThrow(/DRILL6D.*different time data/s);
+  });
+
+  it('throws when repeats disagree on cutting or linking time alone', () => {
+    expect(() =>
+      extractTimingReport(
+        makeEvents([
+          { _eventName: 'Setup', setup_name: 'Setup1' },
+          {
+            _eventName: 'StartOfJob',
+            job_name: 'DRILL6D',
+            job_time: '0:01:40',
+            job_cutting_time: '0:01:20',
+          },
+          {
+            _eventName: 'StartOfJob',
+            job_name: 'DRILL6D',
+            job_time: '0:01:40',
+            job_cutting_time: '0:01:25',
+          },
+        ]),
+      ),
+    ).toThrow(ValidationError);
+  });
+
+  it('accepts repeats of an untimed job', () => {
+    const report = extractTimingReport(
+      makeEvents([
+        { _eventName: 'Setup', setup_name: 'Setup1' },
+        { _eventName: 'StartOfJob', job_name: 'DRILL6D' },
+        { _eventName: 'StartOfJob', job_name: 'DRILL6D' },
+      ]),
+    );
+
+    expect(report.setups[0].jobs[0].instances).toBe(2);
+    expect(report.seconds).toBe(0);
   });
 
   it('collects jobs before any setup event under a fallback setup', () => {

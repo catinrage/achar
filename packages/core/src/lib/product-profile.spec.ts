@@ -46,7 +46,7 @@ function timedProgram(): Record<string, unknown>[] {
     },
     { _eventName: 'ChangeTool', tool_id_string: 'END12Z3AL' },
     { _eventName: 'StartOfJob', job_name: 'iRough', job_time: '0:02:00' },
-    { _eventName: 'StartOfJob', job_name: 'iRough', job_time: '0:01:44' },
+    { _eventName: 'StartOfJob', job_name: 'iRough-walls', job_time: '0:01:44' },
     {
       _eventName: 'Setup',
       setup_name: 'Setup2',

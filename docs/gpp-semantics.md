@@ -44,6 +44,11 @@ trace, for two different reasons with opposite file semantics:
 
 Rule 4 covers what legacy GPP does with the output file in each case.
 
+In both cases the `job_time` / `job_cutting_time` / `job_linking_time` stamps
+carry the total for the whole pattern, repeated verbatim on every instance —
+not the time of one instance. `lib/timing.ts` therefore counts a repeated job
+name once; see the `timing` command in [cli-guide.md](cli-guide.md).
+
 ---
 
 ## Rules

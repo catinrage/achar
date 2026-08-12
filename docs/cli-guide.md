@@ -726,10 +726,16 @@ or trace event produced it.
 
 Extract machining durations from a trace: per setup (with its jobs and their
 tools) and per tool, aggregated from the `job_time` / `job_cutting_time` /
-`job_linking_time` stamps SolidCAM writes on every job start. Repeated
-pattern/re-post jobs count once per executed instance, so per-tool totals can
-exceed SolidCAM's declared `tool_work_time` (which counts each job once); the
-declared value is included as `declaredWorkTime` for comparison.
+`job_linking_time` stamps SolidCAM writes on every job start.
+
+A transform (translate, rotary pattern, mirror) re-emits the same job once per
+position, and SolidCAM stamps every repeat with the time for the *whole*
+pattern rather than for one position. Since SolidCAM operation names are
+unique, a repeated `job_name` is always such a pattern: its time is counted
+once while `instances` records how many times it ran, so per-tool totals line
+up with SolidCAM's declared `tool_work_time` (included as `declaredWorkTime`
+for comparison). If two starts of one job name ever disagree on their stamped
+times, the command fails rather than guess which one is the real total.
 
 ```bash
 # Writes <fixture out>/timing.json
