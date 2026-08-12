@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { TIMED_TRACE, UNTIMED_TRACE } from './fixtures.spec-helper';
+import {
+  CONTRADICTORY_REPEAT_TRACE,
+  TIMED_TRACE,
+  UNTIMED_TRACE,
+} from './fixtures.spec-helper';
 import type { AcharServer } from './server';
 import { startAcharServer } from './server';
 
@@ -97,6 +101,17 @@ describe('POST /v1/trace/profile', () => {
       expect.objectContaining({ severity: 'error', code: 'no-timing-data' }),
     );
   });
+
+  it('returns 422 when the trace contradicts itself on job time', async () => {
+    const response = await postTrace(
+      '/v1/trace/profile',
+      CONTRADICTORY_REPEAT_TRACE,
+    );
+
+    expect(response.status).toBe(422);
+    const { error } = await response.json();
+    expect(error.code).toBe('unprocessable');
+  });
 });
 
 describe('POST /v1/trace/timing', () => {
@@ -107,6 +122,19 @@ describe('POST /v1/trace/timing', () => {
     const report = await response.json();
     expect(report.duration).toBe('0:02:00');
     expect(report.setups[0].jobs[0].name).toBe('iRough');
+  });
+
+  it('returns 422 when repeats of one job disagree on their time', async () => {
+    const response = await postTrace(
+      '/v1/trace/timing',
+      CONTRADICTORY_REPEAT_TRACE,
+    );
+
+    expect(response.status).toBe(422);
+    const { error } = await response.json();
+    expect(error.code).toBe('unprocessable');
+    // The caller gets the real reason, not a generic 500.
+    expect(error.message).toContain('DRILL6D');
   });
 });
 

@@ -8,8 +8,9 @@ import {
   listBuiltinPosts,
   parseVmid,
   summarizeCompareResults,
+  ValidationError,
 } from '@achar/core';
-import { badRequest } from './errors';
+import { badRequest, unprocessableTrace } from './errors';
 import type { RouteResponse } from './http';
 import { json, plainText } from './http';
 import type { TraceInputs } from './inputs';
@@ -74,7 +75,9 @@ export const routes: Route[] = [
     path: '/v1/trace/profile',
     gated: true,
     handle: ({ body }) => {
-      const profile = extractProductProfile(parseTrace(body.document('trace')));
+      const profile = analyzeTrace(() =>
+        extractProductProfile(parseTrace(body.document('trace'))),
+      );
       return json(
         profile,
         hasErrorDiagnostics(profile.diagnostics) ? 422 : 200,
@@ -86,7 +89,11 @@ export const routes: Route[] = [
     path: '/v1/trace/timing',
     gated: true,
     handle: ({ body }) =>
-      json(extractTimingReport(parseTrace(body.document('trace')))),
+      json(
+        analyzeTrace(() =>
+          extractTimingReport(parseTrace(body.document('trace'))),
+        ),
+      ),
   },
   {
     method: 'POST',
@@ -230,6 +237,23 @@ export const routes: Route[] = [
       }),
   },
 ];
+
+/**
+ * Runs a core extraction that can reject the trace on its own content.
+ *
+ * Only `ValidationError` is translated: it is core's way of saying the input
+ * failed a stated rule, which for these routes can only be the posted trace.
+ * Every other failure stays unhandled and becomes a logged 500, so a genuine
+ * server bug is never dressed up as the caller's fault.
+ */
+function analyzeTrace<T>(analyze: () => T): T {
+  try {
+    return analyze();
+  } catch (error) {
+    if (error instanceof ValidationError) throw unprocessableTrace(error);
+    throw error;
+  }
+}
 
 /**
  * Applies `achar-service`'s rule that error-severity diagnostics stop

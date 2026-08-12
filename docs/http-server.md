@@ -297,13 +297,18 @@ Messages never carry filesystem paths or stack traces.
 | 404 | `not-found` | Unknown route |
 | 405 | `method-not-allowed` | Known route, wrong method; carries `Allow` |
 | 413 | `body-too-large` | Over `maxBodyBytes` |
-| 422 | `unprocessable` | Valid input with error-severity diagnostics |
+| 422 | *(no envelope)* | Valid input with error-severity diagnostics; the body is the full result, not an error |
+| 422 | `unprocessable` | The trace parsed, but its content contradicts itself and no result could be produced |
 | 503 | `busy` | Concurrency gate saturated; carries `Retry-After` |
 | 500 | `internal` | Anything unexpected; message is deliberately generic |
 
-`422` responses always return the full result body anyway — the profile, or
-`eventCount`/`durationMs`/`diagnostics` — so a caller can show an operator what
-was extracted before the failure.
+The two `422`s differ in shape, so check for an `error` key before reading a
+result. The diagnostics form returns the full result body anyway — the profile,
+or `eventCount`/`durationMs`/`diagnostics` — so a caller can show an operator
+what was extracted before the failure. The `unprocessable` form has no result
+to return: something in the trace is self-contradictory, such as repeated
+starts of one job name carrying different `job_time` stamps when they must
+share one pattern total. Its message names the job.
 
 **One caveat on 413.** Bun enforces its own transport-level body cap and answers
 past it with an empty 413 before Achar sees the request. The server sets that

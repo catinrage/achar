@@ -68,6 +68,29 @@ feed : 500
 `;
 
 /**
+ * Parses cleanly, but contradicts itself: one job name starts twice with two
+ * different `job_time` stamps. Repeats of a name are transform instances of a
+ * single operation, which must share one total — so core refuses to guess
+ * which stamp is real.
+ */
+export const CONTRADICTORY_REPEAT_TRACE = `
+(0)@start_of_file
+part_name : 'REPEAT_PART'
+program_number : 3000
+(1)@setup
+setup_name : 'Setup1'
+(2)@change_tool
+tool_id_string : 'DRILL6'
+(3)@start_of_job
+job_name : 'DRILL6D'
+job_time : '  0:01:40'
+(4)@start_of_job
+job_name : 'DRILL6D'
+job_time : '  0:02:00'
+(5)@end_of_file
+`;
+
+/**
  * The PROJECT_2551019 shape: posted without SolidCAM time estimation, so it
  * is structurally valid but every duration is blank or zero.
  */

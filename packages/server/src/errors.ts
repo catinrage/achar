@@ -93,6 +93,20 @@ export const parseFailed = (error: unknown): HttpError =>
     `The trace could not be parsed: ${scrub(messageOf(error))}`,
   );
 
+/**
+ * Wraps a core `ValidationError` raised while analyzing an otherwise
+ * well-formed trace — the syntax parsed, but its content contradicts itself
+ * (see `extractTimingReport` on repeated job names). That is the caller's
+ * document, not a server fault, so the real message goes back scrubbed rather
+ * than collapsing into a generic 500.
+ */
+export const unprocessableTrace = (error: unknown): HttpError =>
+  new HttpError(
+    422,
+    'unprocessable',
+    `The trace could not be analyzed: ${scrub(messageOf(error))}`,
+  );
+
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

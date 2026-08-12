@@ -37,6 +37,7 @@ export {
 export { registerDefaultPost } from './lib/default-post';
 export type { BuilderDriver } from './lib/driver';
 export { defineDriver } from './lib/driver';
+export { ValidationError } from './lib/errors';
 export type { EventListenerMetadata } from './lib/event';
 export type {
   DiscoverFixturesOptions,
