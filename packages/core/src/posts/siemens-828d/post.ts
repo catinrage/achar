@@ -1,14 +1,16 @@
 import { FeedRateModeEnum, PlaneEnum } from '../../common/enums';
-import type { Builder, GCodeWord } from '../../lib/builder';
+import type { Builder } from '../../lib/builder';
 import type { MachineProfile } from '../../lib/machine-profile';
 import { definePost } from '../../lib/post-definition';
 import type { Program } from '../../lib/program';
-import type { CommandsType, EventsType } from '../../types';
+import type { CommandsType } from '../../types';
 import { createSiemensPostContext } from './context';
 import { registerDrillingHandlers } from './drilling';
-import { siemens828dDriver } from './driver';
+import { registerJobLifecycleHandlers } from './job-lifecycle';
 import { registerIgnoredLifecycleEvents } from './lifecycle';
 import { siemens828dPolicy } from './policy';
+import { registerRapidMotionHandlers } from './rapid-motion';
+import { createSiemensPostRuntime, lineCoordinates } from './runtime';
 
 export interface Siemens828dPostOptions {
   callMode?: 'call' | 'extcall';
@@ -69,72 +71,22 @@ export function registerSiemens828dPost(
   const lineFeedFromChangeFlag =
     options.machineProfile?.features?.lineFeedFromChangeFlag === true;
 
-  const controller = ($: Builder) => $.driver(siemens828dDriver);
   const measurementTools: string[] = [];
 
+  const { formatNumber, sameNumber, traceChanged } = siemens828dPolicy;
+  const runtime = createSiemensPostRuntime(state, {
+    callMode,
+    compactCoordinates,
+    dwellAfterCoolantOn,
+  });
   const {
-    cycle832Mode,
-    formatNumber,
-    formatRotary,
-    isDrillJob,
-    jobFileName,
-    sameNumber,
-    sameRapidNumber,
-    traceChanged,
-  } = siemens828dPolicy;
-
-  const changedOrDifferent = (
-    params: object,
-    key: string,
-    current: number | undefined,
-    previous: number | undefined,
-  ): boolean => traceChanged(params, key) ?? !sameNumber(current, previous);
-
-  const updateCycleTolerance = (params: EventsType['StartOfJob']): number => {
-    state.cutTolerance = siemens828dPolicy.cycleTolerance(
-      params,
-      state.cutTolerance,
-    );
-    return state.cutTolerance;
-  };
-
-  const compactCoordinate = (value: number | undefined): number | undefined => {
-    if (value === undefined || !compactCoordinates) return value;
-    return Number(formatNumber(value));
-  };
-
-  const formatCoordinate = (value: number): string => {
-    return formatNumber(compactCoordinate(value) ?? value);
-  };
-
-  const callSubprogram = ($: Builder, file: string): void => {
-    if (callMode === 'extcall') {
-      $.ExtCall(file);
-    } else {
-      $.Call(file);
-    }
-  };
-
-  const emitPathMode = ($: Builder): void => {
-    if (!state.pendingPathMode) return;
-
-    if (!state.emittedCpmForJob) {
-      if (state.currentJobFloodCoolant === 'on' && !state.coolantActive) {
-        emitCoolantOn($);
-        state.coolantActive = true;
-      }
-      controller($).PathMode(state.currentPathMode, state.currentSoftMode);
-      state.emittedCpmForJob = true;
-    }
-    state.pendingPathMode = false;
-  };
-
-  const emitCoolantOn = ($: Builder): void => {
-    controller($).CoolantOn();
-    if (dwellAfterCoolantOn) {
-      controller($).Dwell(2);
-    }
-  };
+    changedOrDifferent,
+    compactCoordinate,
+    controller,
+    emitCoolantOn,
+    emitPathMode,
+    updateLastPosition,
+  } = runtime;
 
   const emitToolMeasurementProgram = ($: Builder): void => {
     $.OpenFile('Tools_Length_Measurement', 'MPF', 'append');
@@ -154,78 +106,15 @@ export function registerSiemens828dPost(
     $.CloseFile();
   };
 
-  const lineCoords = (
-    params: EventsType['Line'] | EventsType['Line5x'],
-  ): CommandsType['Line'] => {
-    const coords: CommandsType['Line'] = {};
-    if (changedOrDifferent(params, 'xpos', params.xpos, state.lastPosition.x)) {
-      coords.x = compactCoordinate(params.xpos);
-    }
-    if (changedOrDifferent(params, 'ypos', params.ypos, state.lastPosition.y)) {
-      coords.y = compactCoordinate(params.ypos);
-    }
-    if (changedOrDifferent(params, 'zpos', params.zpos, state.lastPosition.z)) {
-      coords.z = compactCoordinate(params.zpos);
-    }
-    if (
-      'apos' in params &&
-      params.apos !== undefined &&
-      changedOrDifferent(params, 'apos', params.apos, state.lastPosition.a)
-    ) {
-      coords.a = compactCoordinate(params.apos);
-    }
-    return coords;
-  };
-
-  const updateLastPosition = (params: {
-    xpos?: number;
-    ypos?: number;
-    zpos?: number;
-    apos?: number;
-  }): void => {
-    if (params.xpos !== undefined) state.lastPosition.x = params.xpos;
-    if (params.ypos !== undefined) state.lastPosition.y = params.ypos;
-    if (params.zpos !== undefined) state.lastPosition.z = params.zpos;
-    if (params.apos !== undefined) state.lastPosition.a = params.apos;
-  };
-
-  const emitToolChangeApproach = (
-    $: Builder,
-    params: EventsType['RapidMove'] | EventsType['Move5x'],
-  ): boolean => {
-    if (
-      !state.pendingPathMode ||
-      !state.forceNextApproachXY ||
-      !state.currentJobHadToolChange ||
-      (params.xpos === undefined &&
-        params.ypos === undefined &&
-        params.zpos === undefined)
-    ) {
-      return false;
-    }
-
-    // The job-start block after a tool change already positioned XY(A);
-    // the approach move only descends to the clearance Z.
-    if (params.zpos !== undefined) {
-      $.RapidResolved({ z: compactCoordinate(params.zpos) });
-    }
-    updateLastPosition(params);
-    state.forceNextApproachXY = false;
-    state.deferredJobStartZ = false;
-    state.forceFeedOutput = true;
-    return true;
-  };
-
-  registerDrillingHandlers({
-    post,
-    state,
-    controller,
-    coolantOn: emitCoolantOn,
-    formatCoordinate,
-    formatRotary,
-    sameNumber,
-    traceChanged,
-    updateLastPosition,
+  registerDrillingHandlers(post, runtime);
+  registerJobLifecycleHandlers(post, runtime, {
+    home,
+    returnHome,
+    cancelAirCoolantSchedule,
+    machineProfileConfigured: options.machineProfile !== undefined,
+  });
+  registerRapidMotionHandlers(post, runtime, {
+    forceInitialApproachPosition,
   });
 
   post.on('StartOfFile', ($, params) => {
@@ -296,233 +185,6 @@ export function registerSiemens828dPost(
         : params.angle;
     $.Word('A', formatNumber(angle));
     state.lastPosition.a = angle;
-  });
-
-  post.on('StartOfJob', ($, params, metadata) => {
-    const jobFile = jobFileName(params);
-    // Rotary-pattern (4x transform) repeats accumulate in one subprogram;
-    // any other re-post of the same job replaces the earlier content while
-    // its burned line numbers stay consumed, matching legacy GPP output.
-    const fileMode =
-      state.jobFiles.has(jobFile) && params.used_in_transform_4x
-        ? 'append'
-        : 'replace';
-    state.jobFiles.add(jobFile);
-    $.OpenFile(jobFile, 'SPF', fileMode);
-    if (fileMode === 'append') {
-      $.RemoveTrailingBlankLine();
-    }
-
-    const explicitToolChange = state.pendingToolChange;
-    const toolChange =
-      explicitToolChange ??
-      (params.used_in_transform_translate ? state.lastToolChange : null);
-    state.currentJobHadToolChange = toolChange !== null;
-    state.pendingToolChange = null;
-    state.emittedCpmForJob = false;
-    state.currentJobFloodCoolant = (
-      params as EventsType['StartOfJob'] & { flood_coolant?: string }
-    ).flood_coolant;
-    state.currentJobCycle81Dtb = params.C81_DTB ?? 0;
-    state.currentJobCycle85Dtb = params.C85_DTB ?? 0;
-    state.currentJobCycle85RetractFactor = params.C85_RFF;
-    state.currentJob = params;
-    state.currentJobClearance = params.job_clearance_plane;
-    state.currentJobUpper = params.job_upper_plane;
-    state.currentJobSafety = params.safety ?? 0;
-    state.currentJobStartZ = params.znext;
-    state.currentJobAirCoolant = params.bAirCoolant === 1;
-    state.currentPathMode = params.iCPM ?? 645;
-    state.currentSoftMode = params.bSoft !== 0;
-    const jobTolerance = updateCycleTolerance(params);
-    state.deferredJobStartZ = !isDrillJob(params);
-
-    controller($).DeclareReal('_camtolerance');
-    if (state.currentJobAirCoolant) {
-      controller($).DeclareInt('DELAY', 'DURATION');
-    }
-    $.BlankLine();
-    controller($).Message(
-      `${params.job_name} , Tool : ${toolChange?.tool_id_string ?? metadata.findLastEvent('ChangeTool')?.data.tool_id_string ?? 'UNKNOWN'}`,
-    );
-    $.BlankLine();
-    controller($).SetVariable('_camtolerance', jobTolerance);
-
-    if (toolChange && state.startedJob) {
-      $.BlankLine();
-      controller($).InitialMillModes();
-      state.jobFeedModeEstablished = true;
-    }
-
-    if (toolChange) {
-      const toolChangePositionMode = params.iTC_SUPA_MODE ?? 0;
-      if (toolChangePositionMode !== 0) {
-        controller($).ToolChangePosition(toolChangePositionMode, {
-          x: params.nTC_XSUPA ?? home.x,
-          y: params.nTC_YSUPA ?? home.y,
-          z: returnHome.z,
-        });
-      }
-      $.SelectTool(toolChange.tool_id_string, {
-        forcePrint: true,
-        skipNewLine: true,
-      })
-        .ChangeTool()
-        .Word('D', 1);
-      if (params.iM1 === 1 || params.iM1 === 2) {
-        controller($).ToolChangePrompt(params.iM1, params.sM1_MSG ?? '', {
-          x: params.nTC_XSUPA === 0 ? home.x : params.nTC_XSUPA,
-          y: params.nTC_YSUPA === 0 ? home.y : params.nTC_YSUPA,
-          z: returnHome.z,
-        });
-      }
-      if (
-        explicitToolChange &&
-        !toolChange.last_tool &&
-        params.next_job_tool_number !== state.previousJobToolNumber &&
-        toolChange.next_tool_id_string !== state.lastPreselectedToolId
-      ) {
-        $.SelectTool(toolChange.next_tool_id_string);
-        state.lastPreselectedToolId = toolChange.next_tool_id_string;
-      }
-    }
-
-    const toolDefinition = toolChange
-      ? toolDefinitions.get(toolChange.tool_id_string)
-      : undefined;
-    state.currentToolDiameter =
-      toolDefinition?.diameter ??
-      toolChange?.tool_diameter ??
-      state.currentToolDiameter;
-    if (toolDefinition && params.ts_mtype === 1) {
-      controller($).ToolSettingLength(
-        params.ts_type ?? 0,
-        toolDefinition.lengthTolerance,
-        toolDefinition.diameter / 2 - toolDefinition.cornerRadius,
-      );
-    } else if (toolDefinition && params.ts_mtype === 2) {
-      controller($).ToolSettingRadius(
-        params.ts_type ?? 0,
-        toolDefinition.lengthTolerance,
-        toolDefinition.radiusTolerance,
-        toolDefinition.cornerRadius,
-        toolDefinition.diameter / 2 - toolDefinition.cornerRadius,
-      );
-    }
-
-    const emitStartPosition =
-      toolChange !== null || options.machineProfile === undefined;
-    if (emitStartPosition) {
-      $.Block([
-        toolChange ? `G0 G${state.currentHomeNumber} G90` : undefined,
-        { letter: 'X', value: formatCoordinate(params.xnext) },
-        { letter: 'Y', value: formatCoordinate(params.ynext) },
-        state.numberOfAxes !== 3 &&
-        !params.used_in_transform_4x &&
-        params.anext !== undefined
-          ? { letter: 'A', value: formatRotary(params.anext) }
-          : undefined,
-      ]);
-      state.lastPosition = {
-        x: params.xnext,
-        y: params.ynext,
-        a: params.used_in_transform_4x ? state.lastPosition.a : params.anext,
-      };
-    }
-    if (toolChange) {
-      state.forceNextApproachXY = true;
-      // When the "tool change" re-loads the tool that is already active,
-      // legacy repeats the modal spindle speed; the job's own speed
-      // arrives with the following MFeedSpin event. A real tool swap
-      // emits the new job's spin rate.
-      const sameToolReloaded =
-        toolChange.tool_number === state.previousJobToolNumber &&
-        state.lastSpindleSpeed !== undefined;
-      const startSpindleSpeed = sameToolReloaded
-        ? (state.lastSpindleSpeed as number)
-        : Math.round(params.spin_rate);
-      $.SetSpindleSpeed(startSpindleSpeed, { forcePrint: true });
-      state.lastSpindleSpeed = startSpindleSpeed;
-      $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
-      $.SetSpindleDirection(params.spin_direction, { forcePrint: true });
-    } else {
-      state.forceNextApproachXY = true;
-    }
-    state.previousJobToolNumber =
-      toolChange?.tool_number ?? state.lastToolChange?.tool_number;
-
-    if (state.currentJobAirCoolant) {
-      controller($).AirCoolantSchedule(
-        params.nAirCoolantDelay ?? 0,
-        params.nAirCoolantDuration ?? 0,
-      );
-    }
-
-    if (params.b832type === 0) {
-      controller($).Cycle832({ tolerance: 0, mode: '_OFF' });
-      $.Rapid({}, { forcePrint: true });
-    } else if (!isDrillJob(params)) {
-      controller($).Cycle832({
-        tolerance: '_camtolerance',
-        mode: cycle832Mode(jobTolerance),
-      });
-      $.Rapid({}, { forcePrint: true });
-    }
-    $.Comment(params.job_name);
-    state.pendingPathMode = true;
-    state.startedJob = true;
-  });
-
-  post.on('EndOfJob', ($, _params, metadata) => {
-    const startOfJob = metadata.findLastEventOrThrow('StartOfJob').data;
-
-    if (state.currentJobAirCoolant) {
-      if (cancelAirCoolantSchedule) {
-        controller($).Cancel(1).Cancel(2).Cancel(3).CoolantOff();
-      } else {
-        controller($).CoolantOff();
-      }
-      state.coolantActive = false;
-    }
-    controller($).Return();
-    $.BlankLine();
-    $.BlankLine();
-    $.CloseFile();
-
-    if (
-      startOfJob.used_in_transform_4x &&
-      startOfJob.anext !== undefined &&
-      !sameNumber(startOfJob.anext, state.lastPosition.a)
-    ) {
-      $.Word('A', formatNumber(startOfJob.anext));
-      state.lastPosition.a = startOfJob.anext;
-    }
-    callSubprogram($, `${jobFileName(startOfJob)}.SPF`);
-
-    if (
-      state.lastToolChange &&
-      state.lastToolChange.tool_number !== startOfJob.next_job_tool_number &&
-      state.pendingWearMode > 0
-    ) {
-      if (state.pendingWearMode === 2 || state.pendingWearMode === 3) {
-        controller($).ToolBreakageCheck(
-          state.pendingWearTool,
-          state.pendingWearMessage,
-        );
-      }
-      if (state.pendingWearMode === 1 || state.pendingWearMode === 3) {
-        controller($).ToolWearCheck(
-          state.pendingWearTool,
-          state.pendingWearMessage,
-          {
-            x: startOfJob.nTC_XSUPA,
-            y: startOfJob.nTC_YSUPA,
-            z: returnHome.z,
-          },
-        );
-      }
-      state.pendingWearMode = 0;
-    }
   });
 
   post.on('DefTool', ($, params) => {
@@ -626,121 +288,6 @@ export function registerSiemens828dPost(
     $.Comment(params.message);
   });
 
-  post.on('RapidMove', ($, params) => {
-    if (
-      (state.deferredJobStartZ || state.lastPosition.z === undefined) &&
-      params.xpos === undefined &&
-      params.ypos === undefined &&
-      params.zpos === undefined
-    ) {
-      $.Word('Z', formatNumber(state.currentJobStartZ));
-      state.lastPosition.z = state.currentJobStartZ;
-      if (forceInitialApproachPosition && state.currentJob) {
-        $.Block([
-          { letter: 'X', value: formatCoordinate(state.currentJob.xnext) },
-          { letter: 'Y', value: formatCoordinate(state.currentJob.ynext) },
-        ]);
-        state.lastPosition.x = state.currentJob.xnext;
-        state.lastPosition.y = state.currentJob.ynext;
-        state.forceNextApproachXY = state.currentJobHadToolChange;
-      }
-      state.deferredJobStartZ = false;
-      state.forceFeedOutput = true;
-      return;
-    }
-
-    if (emitToolChangeApproach($, params)) return;
-
-    if (
-      state.pendingPathMode &&
-      state.forceNextApproachXY &&
-      !state.currentJobHadToolChange
-    ) {
-      const words = [
-        params.xpos !== undefined
-          ? {
-              letter: 'X' as const,
-              value: formatCoordinate(params.xpos),
-            }
-          : undefined,
-        params.ypos !== undefined
-          ? {
-              letter: 'Y' as const,
-              value: formatCoordinate(params.ypos),
-            }
-          : undefined,
-      ].filter((word) => word !== undefined) as GCodeWord[];
-
-      if (words.length > 0) {
-        $.Block(words);
-      }
-      if (params.zpos !== undefined) {
-        $.Word('Z', formatCoordinate(params.zpos));
-      }
-      if (
-        words.length === 0 &&
-        forceInitialApproachPosition &&
-        params.zpos !== undefined &&
-        state.currentJob
-      ) {
-        $.Block([
-          { letter: 'X', value: formatCoordinate(state.currentJob.xnext) },
-          { letter: 'Y', value: formatCoordinate(state.currentJob.ynext) },
-        ]);
-      }
-
-      updateLastPosition(params);
-      if (words.length > 0 || forceInitialApproachPosition) {
-        state.forceNextApproachXY = false;
-      }
-      state.deferredJobStartZ = false;
-      state.forceFeedOutput = true;
-      return;
-    }
-
-    const coords: CommandsType['Rapid'] = {};
-    const xChanged = traceChanged(params, 'xpos');
-    if (
-      xChanged === true ||
-      (xChanged !== false && !sameNumber(params.xpos, state.lastPosition.x))
-    ) {
-      coords.x = compactCoordinate(params.xpos);
-    }
-    const yChanged = traceChanged(params, 'ypos');
-    if (
-      yChanged === true ||
-      (yChanged !== false && !sameNumber(params.ypos, state.lastPosition.y))
-    ) {
-      coords.y = compactCoordinate(params.ypos);
-    }
-    const zChanged = traceChanged(params, 'zpos');
-    if (
-      zChanged === true ||
-      (zChanged !== false && !sameNumber(params.zpos, state.lastPosition.z))
-    ) {
-      coords.z = compactCoordinate(params.zpos);
-    }
-
-    if (
-      state.pendingPathMode &&
-      coords.x === undefined &&
-      coords.y === undefined &&
-      (coords.z === undefined || state.deferredJobStartZ) &&
-      params.zpos !== undefined
-    ) {
-      $.Word('Z', formatNumber(params.zpos));
-      updateLastPosition(params);
-      state.deferredJobStartZ = false;
-      state.forceFeedOutput = true;
-      return;
-    }
-
-    $.RapidResolved(coords);
-    updateLastPosition(params);
-    state.deferredJobStartZ = false;
-    state.forceFeedOutput = true;
-  });
-
   post.on('Line', ($, params) => {
     const forceFeedMode =
       inlineFeedRateMode &&
@@ -759,7 +306,7 @@ export function registerSiemens828dPost(
       !sameNumber(params.feed, state.previousLineFeed);
     emitPathMode($);
 
-    const coords = lineCoords(params);
+    const coords = lineCoordinates(runtime, params);
     if (forceFeedMode) {
       $.LineWithFeedRateMode(coords, FeedRateModeEnum.UNITS_PER_MINUTE, {
         skipNewLine: true,
@@ -784,140 +331,6 @@ export function registerSiemens828dPost(
     updateLastPosition(params);
   });
 
-  post.on('Move5x', ($, params) => {
-    if (
-      state.pendingPathMode &&
-      state.forceNextApproachXY &&
-      !state.currentJobHadToolChange
-    ) {
-      // Drill jobs already emitted their position in the job-start block, so
-      // the approach repeat only re-emits coordinates that actually moved.
-      // Other jobs repeat every coordinate the trace flags as changed.
-      const approachChanged = (
-        key: string,
-        current: number | undefined,
-        previous: number | undefined,
-      ): boolean =>
-        state.currentJob && !isDrillJob(state.currentJob)
-          ? changedOrDifferent(params, key, current, previous)
-          : !sameNumber(current, previous);
-      const words = [
-        params.xpos !== undefined &&
-        approachChanged('xpos', params.xpos, state.lastPosition.x)
-          ? {
-              letter: 'X' as const,
-              value: formatCoordinate(params.xpos),
-            }
-          : undefined,
-        params.ypos !== undefined &&
-        approachChanged('ypos', params.ypos, state.lastPosition.y)
-          ? {
-              letter: 'Y' as const,
-              value: formatCoordinate(params.ypos),
-            }
-          : undefined,
-        params.apos !== undefined &&
-        !state.currentJob?.used_in_transform_4x &&
-        approachChanged('apos', params.apos, state.lastPosition.a)
-          ? {
-              letter: 'A' as const,
-              value: formatRotary(
-                compactCoordinate(params.apos) ?? params.apos,
-              ),
-            }
-          : undefined,
-      ].filter((word) => word !== undefined) as GCodeWord[];
-
-      const hasPlanarPosition =
-        params.xpos !== undefined || params.ypos !== undefined;
-      if (
-        params.zpos !== undefined &&
-        params.apos !== undefined &&
-        !hasPlanarPosition
-      ) {
-        words.push({
-          letter: 'Z',
-          value: formatCoordinate(params.zpos),
-        });
-      }
-
-      if (words.length > 0) {
-        $.Block(words);
-      }
-      if (
-        params.zpos !== undefined &&
-        (hasPlanarPosition || params.apos === undefined)
-      ) {
-        $.Word('Z', formatCoordinate(params.zpos));
-      }
-
-      updateLastPosition(params);
-      state.forceNextApproachXY = false;
-      state.forceFeedOutput = true;
-      return;
-    }
-
-    if (emitToolChangeApproach($, params)) return;
-
-    const coords: CommandsType['Rapid'] = {};
-    const xChanged = traceChanged(params, 'xpos');
-    if (
-      xChanged === true ||
-      (xChanged !== false &&
-        !sameRapidNumber(params.xpos, state.lastPosition.x))
-    ) {
-      coords.x = compactCoordinate(params.xpos);
-    }
-    const yChanged = traceChanged(params, 'ypos');
-    if (
-      yChanged === true ||
-      (yChanged !== false &&
-        !sameRapidNumber(params.ypos, state.lastPosition.y))
-    ) {
-      coords.y = compactCoordinate(params.ypos);
-    }
-    const zChanged = traceChanged(params, 'zpos');
-    if (
-      zChanged === true ||
-      (zChanged !== false && !sameNumber(params.zpos, state.lastPosition.z))
-    ) {
-      coords.z = compactCoordinate(params.zpos);
-    }
-    const aChanged = traceChanged(params, 'apos');
-    if (
-      aChanged === true ||
-      (aChanged !== false && !sameNumber(params.apos, state.lastPosition.a))
-    ) {
-      coords.a = compactCoordinate(params.apos);
-    }
-
-    if (state.deferredJobStartZ && coords.z !== undefined) {
-      $.Word('Z', formatNumber(coords.z));
-      state.deferredJobStartZ = false;
-    } else if (
-      coords.z !== undefined &&
-      coords.a !== undefined &&
-      coords.x === undefined &&
-      coords.y === undefined
-    ) {
-      $.Rapid({}, { skipNewLine: true });
-      $.Word('A', formatRotary(coords.a), { skipNewLine: true });
-      $.Word('Z', formatCoordinate(coords.z));
-    } else if (
-      coords.z !== undefined &&
-      (coords.x !== undefined ||
-        coords.y !== undefined ||
-        coords.a !== undefined)
-    ) {
-      $.RapidResolved({ ...coords, z: undefined });
-      $.Word('Z', formatCoordinate(coords.z));
-    } else {
-      $.RapidResolved(coords);
-    }
-    updateLastPosition(params);
-    state.forceFeedOutput = true;
-  });
-
   post.on('Line5x', ($, params) => {
     const forceFeed =
       (state.pendingPathMode && !state.emittedCpmForJob) ||
@@ -925,7 +338,7 @@ export function registerSiemens828dPost(
       !sameNumber(params.feed, state.previousLineFeed);
     emitPathMode($);
 
-    const coords = lineCoords(params);
+    const coords = lineCoordinates(runtime, params);
     $.LineResolved(coords, { skipNewLine: true });
     if (forceFeed) {
       $.SetFeedRate(params.feed, { forcePrint: true });

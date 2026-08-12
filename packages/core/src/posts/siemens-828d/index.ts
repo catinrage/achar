@@ -16,6 +16,10 @@ export {
   siemens828dDriver,
   type TransParams,
 } from './driver';
+export {
+  registerJobLifecycleHandlers,
+  type SiemensJobLifecycleSettings,
+} from './job-lifecycle';
 export { registerIgnoredLifecycleEvents } from './lifecycle';
 export { siemens828dPolicy } from './policy';
 export {
@@ -23,3 +27,14 @@ export {
   registerSiemens828dPost,
   registerSiemens828dPost as registerPost,
 } from './post';
+export {
+  registerRapidMotionHandlers,
+  type SiemensRapidMotionSettings,
+} from './rapid-motion';
+export {
+  createSiemensPostRuntime,
+  lineCoordinates,
+  type SiemensPosition,
+  type SiemensPostRuntime,
+  type SiemensPostRuntimeOptions,
+} from './runtime';

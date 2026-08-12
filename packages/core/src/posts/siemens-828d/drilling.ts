@@ -1,37 +1,22 @@
 import { DirectionEnum } from '../../common/enums';
-import type { Builder } from '../../lib/builder';
 import type { PostDefinitionApi } from '../../lib/post-definition';
 import type { SiemensPostContextState } from './context';
-import type { Siemens828dDriver } from './driver';
+import { siemens828dPolicy } from './policy';
+import type { SiemensPostRuntime } from './runtime';
 
-export interface SiemensDrillingDependencies {
-  post: PostDefinitionApi<SiemensPostContextState>;
-  state: SiemensPostContextState;
-  controller: (builder: Builder) => Siemens828dDriver;
-  coolantOn: (builder: Builder) => void;
-  formatCoordinate: (value: number) => string;
-  formatRotary: (value: number) => string;
-  sameNumber: (left: number | undefined, right: number | undefined) => boolean;
-  traceChanged: (params: object, key: string) => boolean | undefined;
-  updateLastPosition: (params: {
-    xpos?: number;
-    ypos?: number;
-    zpos?: number;
-    apos?: number;
-  }) => void;
-}
+export function registerDrillingHandlers(
+  post: PostDefinitionApi<SiemensPostContextState>,
+  runtime: SiemensPostRuntime,
+): void {
+  const {
+    state,
+    controller,
+    emitCoolantOn,
+    formatCoordinate,
+    updateLastPosition,
+  } = runtime;
+  const { formatRotary, sameNumber, traceChanged } = siemens828dPolicy;
 
-export function registerDrillingHandlers({
-  post,
-  state,
-  controller,
-  coolantOn,
-  formatCoordinate,
-  formatRotary,
-  sameNumber,
-  traceChanged,
-  updateLastPosition,
-}: SiemensDrillingDependencies): void {
   post.on('Drill', ($, params) => {
     state.currentDrill = params;
     if (params.drill_cycle_name !== 'CYCLE84') {
@@ -54,7 +39,7 @@ export function registerDrillingHandlers({
       state.machineProfile?.features?.retainCoolantAcrossJobs !== true ||
       !state.coolantActive
     ) {
-      coolantOn($);
+      emitCoolantOn($);
       state.coolantActive = true;
     }
     if (params.drill_cycle_name === 'CYCLE84') {
