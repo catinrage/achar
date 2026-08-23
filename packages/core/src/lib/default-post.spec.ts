@@ -33,11 +33,12 @@ describe('Default post', () => {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
         trace: string;
       };
+      // This check only needs the set of event names, so it scans for them
+      // instead of parsing hundreds of megabytes of fixture traces into event
+      // objects it would immediately discard.
       const events = new Parser(
         readFileSync(path.join(fixtureDir, manifest.trace), 'utf8'),
-      )
-        .parse()
-        .map((event) => String(event._eventName));
+      ).scanEventNames();
 
       for (const eventName of events) {
         if (

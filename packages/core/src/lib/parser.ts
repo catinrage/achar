@@ -39,6 +39,28 @@ export interface EventData<T extends keyof EventsType = keyof EventsType> {
 
 const traceChangeSuffix = /[TF]$/;
 
+/** Matches an event declaration such as `(0)@start_of_file` on a single line. */
+const eventSectionPattern = /^\s*\((\d+)\)@(\w+)/;
+
+/**
+ * Multi-line variant of {@link eventSectionPattern} used to scan a whole trace
+ * without splitting it into lines. `[^\S\n]*` is the leading-whitespace class
+ * minus the newline, so `^` stays anchored to real line starts.
+ */
+const eventSectionScanPattern = /^[^\S\n]*\(\d+\)@(\w+)/gm;
+
+/**
+ * @function toPascalCase
+ * @description Converts a snake_case trace token to the PascalCase event name
+ * used throughout Achar (e.g. 'start_of_file' becomes 'StartOfFile').
+ */
+function toPascalCase(str: string): string {
+  return str
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('');
+}
+
 /**
  * @interface ParseOptions
  * @description Configuration options for parsing
@@ -161,21 +183,6 @@ export class Parser {
   }
 
   /**
-   * @private
-   * @method _toPascalCase
-   * @description Helper function to convert a snake_case string to PascalCase.
-   * For instance, 'example_event_name' would become 'ExampleEventName'.
-   * @param {string} str - The snake_case string to be converted.
-   * @returns {string} The string converted to PascalCase.
-   */
-  private _toPascalCase(str: string): string {
-    return str
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join('');
-  }
-
-  /**
    * @public
    * @method parse
    * @description Parses the input string (provided in the constructor) line by line.
@@ -209,6 +216,35 @@ export class Parser {
       this._logger.logError(wrappedError, 'parse');
       throw wrappedError;
     }
+  }
+
+  /**
+   * @public
+   * @method scanEventNames
+   * @description Returns the distinct PascalCase event names present in the
+   * input without building event objects, parsing values, or validating them.
+   * This exists for callers that only need an event-name inventory (coverage
+   * checks, tooling); on a multi-hundred-megabyte trace it is roughly two
+   * orders of magnitude cheaper than {@link Parser.parse}, which allocates one
+   * object per event and every parameter on it.
+   *
+   * It reads the same event-declaration syntax as `parse`, so the result is
+   * always a subset of the `_eventName` values `parse` would report.
+   * @returns {Set<string>} Distinct event names, in first-seen order.
+   */
+  public scanEventNames(): Set<string> {
+    const names = new Set<string>();
+
+    // A single sticky/global regex over the whole input avoids materializing
+    // an array of millions of line strings.
+    eventSectionScanPattern.lastIndex = 0;
+    let match = eventSectionScanPattern.exec(this._input);
+    while (match !== null) {
+      names.add(toPascalCase(match[1]));
+      match = eventSectionScanPattern.exec(this._input);
+    }
+
+    return names;
   }
 
   /**
@@ -521,7 +557,7 @@ export class Parser {
             }
 
             // Check for event section
-            const sectionMatch = line.match(/^\s*\((\d+)\)@(\w+)/);
+            const sectionMatch = line.match(eventSectionPattern);
             if (sectionMatch) {
               // Save previous event if exists
               if (currentEvent) {
@@ -532,7 +568,7 @@ export class Parser {
               }
 
               // Start new event
-              const eventName = this._toPascalCase(
+              const eventName = toPascalCase(
                 sectionMatch[2],
               ) as keyof EventsType;
               currentEvent = {
