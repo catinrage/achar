@@ -1,0 +1,15 @@
+{
+  "name": "@achar/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "dev": "bun build.ts --watch"
+  },
+  "dependencies": {
+    "lucide-svelte": "^1.0.1",
+    "svelte": "^5.56.4",
+    "vazirmatn": "^33.0.3"
+  }
+}

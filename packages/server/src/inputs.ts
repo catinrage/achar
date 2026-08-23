@@ -24,6 +24,11 @@ import type { RequestBody } from './request';
  * Everything here is content in, values out — nothing touches the filesystem,
  * and no error carries a server-side path. The `source` labels handed to core
  * parsers ('machineProfile') are deliberately generic for the same reason.
+ *
+ * Each entry point comes in two shapes: one reading a {@link RequestBody},
+ * used by the `/v1` routes, and one taking plain values, used by the parse
+ * worker — which receives its inputs over a thread boundary and has no
+ * request to read.
  */
 
 const DEFAULT_POST_ID = 'siemens-828d';
@@ -50,6 +55,19 @@ export interface TraceInputs {
   /** VMID and machine-profile findings, in `AcharDiagnostic` shape. */
   diagnostics: AcharDiagnostic[];
   durationMs: number;
+}
+
+/** The documents a trace operation needs, already read into memory. */
+export interface TraceDocuments {
+  trace: string;
+  vmid?: string;
+  machineProfile?: string;
+}
+
+/** The non-document options that shape generated output. */
+export interface ProgramOptions {
+  postId?: string;
+  programName?: string;
 }
 
 export function parseTrace(source: string): EventData[] {
@@ -108,10 +126,19 @@ function countLines(source: string, upTo: number): number {
 
 /** Parses the trace plus whichever optional companions were supplied. */
 export function loadTraceInputs(body: RequestBody): TraceInputs {
+  return loadTraceInputsFrom({
+    trace: body.document('trace'),
+    vmid: body.part('vmid'),
+    machineProfile: body.part('machineProfile'),
+  });
+}
+
+/** {@link loadTraceInputs} for a caller that already holds the documents. */
+export function loadTraceInputsFrom(documents: TraceDocuments): TraceInputs {
   const startedAt = performance.now();
-  const events = parseTrace(body.document('trace'));
-  const vmid = readVmid(body);
-  const machineProfile = readMachineProfile(body);
+  const events = parseTrace(documents.trace);
+  const vmid = readVmid(documents.vmid);
+  const machineProfile = readMachineProfile(documents.machineProfile);
 
   return {
     events,
@@ -125,8 +152,7 @@ export function loadTraceInputs(body: RequestBody): TraceInputs {
   };
 }
 
-function readVmid(body: RequestBody): VmidDefinition | undefined {
-  const source = body.part('vmid');
+function readVmid(source: string | undefined): VmidDefinition | undefined {
   if (source === undefined) return undefined;
 
   try {
@@ -138,8 +164,9 @@ function readVmid(body: RequestBody): VmidDefinition | undefined {
   }
 }
 
-function readMachineProfile(body: RequestBody): MachineProfile | undefined {
-  const source = body.part('machineProfile');
+function readMachineProfile(
+  source: string | undefined,
+): MachineProfile | undefined {
   if (source === undefined) return undefined;
 
   let parsed: unknown;
@@ -156,12 +183,12 @@ function readMachineProfile(body: RequestBody): MachineProfile | undefined {
   }
 }
 
-function resolvePost(body: RequestBody): BuiltInPost {
-  const postId = body.option('postId') ?? DEFAULT_POST_ID;
-  const post = resolveBuiltinPost(postId);
+function resolvePost(postId: string | undefined): BuiltInPost {
+  const requested = postId ?? DEFAULT_POST_ID;
+  const post = resolveBuiltinPost(requested);
   if (!post) {
     throw badRequest(
-      `Unknown post '${postId}'. Call GET /v1/posts for the available ids.`,
+      `Unknown post '${requested}'. Call GET /v1/posts for the available ids.`,
     );
   }
   return post;
@@ -172,8 +199,10 @@ function resolvePost(body: RequestBody): BuiltInPost {
  * derive one from, so an unset option falls back to the trace's own
  * `part_name` before the last-resort constant.
  */
-function resolveProgramName(body: RequestBody, events: EventData[]): string {
-  const requested = body.option('programName');
+function resolveProgramName(
+  requested: string | undefined,
+  events: EventData[],
+): string {
   if (requested) return requested;
 
   const startOfFile = events.find(
@@ -190,8 +219,19 @@ export function buildProgram(
   body: RequestBody,
   inputs: TraceInputs,
 ): { program: Program; programName: string } {
-  const post = resolvePost(body);
-  const programName = resolveProgramName(body, inputs.events);
+  return buildProgramFrom(
+    { postId: body.option('postId'), programName: body.option('programName') },
+    inputs,
+  );
+}
+
+/** {@link buildProgram} for a caller that already holds the options. */
+export function buildProgramFrom(
+  options: ProgramOptions,
+  inputs: TraceInputs,
+): { program: Program; programName: string } {
+  const post = resolvePost(options.postId);
+  const programName = resolveProgramName(options.programName, inputs.events);
   const program = generatePostProgram(inputs.events, programName, (target) =>
     post.registerPost(target, { machineProfile: inputs.machineProfile }),
   );

@@ -109,12 +109,17 @@ bun test
 
 ## Usage
 
-### Docker HTTP Service
+### Docker Service
 
-The Docker image runs Achar's stateless HTTP API. It does not package the
-desktop UI or expose the stdio MCP server. The service needs no database,
-persistent volume, or writable application directory: every trace arrives in a
-request and every result is returned in the response.
+The Docker image runs two surfaces on one port: the **workshop web UI**, where
+anyone in the shop uploads a Trace 5 file and gets G-code back, and the
+**stateless `/v1` HTTP API** another application consumes. It does not package
+the desktop app or expose the stdio MCP server.
+
+`/v1` needs nothing persistent — every trace arrives in a request and every
+result is returned in the response. The web UI does: it keeps a job queue,
+machine definitions and generated output on a volume. See
+[docs/workshop-ui.md](docs/workshop-ui.md).
 
 Create the local Compose environment and replace the example token with a long
 random value:
@@ -133,9 +138,16 @@ docker compose ps
 curl --fail http://127.0.0.1:7788/health
 ```
 
-Compose publishes Achar only on the host loopback interface. When Oracle runs
-on the same host, configure these values in Oracle's database-backed Achar
-settings UI:
+Open `http://<host>:7788/` for the workshop UI. Add your machines under the
+**ماشین‌ها** tab before the first job: a machine is what carries the post, VMID
+and machine profile, and it is the reason two people posting the same trace get
+the same G-code.
+
+Compose publishes port 7788 on all interfaces so the shop floor can reach it.
+**The UI has no login** — anyone who can reach the port can submit work and read
+every job's output — so keep this on the workshop LAN. When Oracle runs on the
+same host, configure these values in Oracle's database-backed Achar settings
+UI:
 
 ```text
 URL:   http://127.0.0.1:7788
@@ -155,27 +167,36 @@ docker compose logs -f achar
 # Rebuild after updating Achar
 docker compose up -d --build
 
-# Stop and remove the container; Achar has no persistent container data
+# Stop and remove the container; the achar-data volume survives
 docker compose down
+
+# Remove the volume too — this deletes machine definitions and job history
+docker compose down -v
 ```
 
 The Compose service runs as the unprivileged `bun` user with a read-only root
-filesystem, all Linux capabilities dropped, a 2 GB memory limit, and the
-server's default single-parse concurrency. A 67 MB trace has measured peak RSS
-of roughly 712 MB for profiling and 842 MB for generation, so do not lower the
-limit without measuring your own largest trace. Do not publish port 7788 beyond
-a trusted host or network: bearer authentication is enabled, but the Trace 5
-parser is intentionally treated as a trusted-network service.
+filesystem, all Linux capabilities dropped, a 4 GB memory limit, and the
+server's default single-parse concurrency. Parsing runs in a worker process
+that exits when its job finishes, so the ceiling is one trace's peak rather than
+a running total: a 311 MB trace climbs to about 3.2 GB and drops back to 150 MB
+the moment it completes. Do not lower the limit without measuring your own
+largest trace.
+
+Do not publish port 7788 beyond a trusted host or network. Bearer
+authentication protects `/v1`, but the UI is deliberately unauthenticated and
+the Trace 5 parser is intentionally treated as a trusted-network service.
 
 To build and run without Compose:
 
 ```bash
 docker build -t achar:local .
+docker volume create achar-data
 docker run --rm \
   --name achar \
-  --memory 2g \
+  --memory 4g \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  -v achar-data:/var/lib/achar \
   -p 127.0.0.1:7788:7788 \
   -e ACHAR_SERVER_TOKEN='replace-with-a-long-random-token' \
   achar:local

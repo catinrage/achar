@@ -3,6 +3,7 @@ import type { Command } from 'commander';
 export interface CliOptions {
   all?: boolean;
   allReferenceFiles?: boolean;
+  dataDir?: string;
   fixture?: boolean;
   driver?: boolean;
   event?: string;
@@ -25,6 +26,7 @@ export interface CliOptions {
   programName?: string;
   reference?: string;
   report?: string;
+  retentionDays?: number;
   strict?: boolean;
   strictVmid?: boolean;
   token?: string;
@@ -32,6 +34,7 @@ export interface CliOptions {
   update?: boolean;
   vmid?: string;
   watch?: boolean;
+  webRoot?: string;
   workspace?: string;
   logs?: boolean;
 }

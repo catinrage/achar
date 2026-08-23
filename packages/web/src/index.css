@@ -1,0 +1,192 @@
+@font-face {
+  font-family: Vazirmatn;
+  src:
+    url("/fonts/Vazirmatn-Variable.woff2") format("woff2 supports variations"),
+    url("/fonts/Vazirmatn-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * Tokens are shared with the desktop app so the two read as one product.
+ * The layout is not: this page is used standing at a machine, often on a
+ * tablet, so targets are large, the control count per screen is small, and
+ * nothing depends on hover.
+ */
+:root {
+  font-family:
+    Vazirmatn, ui-sans-serif, -apple-system, "Segoe UI", Tahoma, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+
+  /*
+   * Red and black. The accent is used for what the operator acts on — the
+   * submit button, the active tab, the download — and black carries structure.
+   * Because the accent is also the colour of alarm, `--danger` is deliberately
+   * a deeper, desaturated red so a destructive action never reads as just
+   * another button.
+   */
+  --accent: #eb4d4b;
+  --accent-strong: #c0392b;
+  --accent-soft: #ff7675;
+  --ink: #16161a;
+  --danger: #a72820;
+  --danger-soft: #fbe7e5;
+  --warning: #9a6700;
+  --warning-soft: #fbf1da;
+
+  --bg: #f1efee;
+  --panel: #ffffff;
+  --panel-subtle: #f7f5f4;
+  --panel-strong: #e9e5e3;
+  --text: #16161a;
+  --muted: #6c6a70;
+  --faint: #8f8c92;
+  --border: #e0dbd9;
+  --border-strong: #c9c3c0;
+  --code-bg: #16161a;
+  --code-text: #ececf1;
+  --shadow: 0 16px 50px rgb(22 22 26 / 12%);
+  --shadow-sm: 0 2px 8px rgb(22 22 26 / 7%);
+  --scrollbar-thumb: #c9c3c0;
+  --scrollbar-thumb-hover: var(--accent);
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 160ms;
+  --duration-normal: 280ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #ff5c5a;
+    --accent-strong: #eb4d4b;
+    --accent-soft: #ff8a89;
+    --ink: #0b0b0d;
+    --danger: #ff7a72;
+    --danger-soft: #2c1614;
+    --warning: #d9a441;
+    --warning-soft: #2a2110;
+
+    --bg: #0b0b0d;
+    --panel: #141417;
+    --panel-subtle: #101013;
+    --panel-strong: #1e1e23;
+    --text: #f2f2f5;
+    --muted: #9b99a3;
+    --faint: #75737c;
+    --border: #26262c;
+    --border-strong: #3a3a43;
+    --code-bg: #060608;
+    --code-text: #ececf1;
+    --shadow: 0 18px 60px rgb(0 0 0 / 45%);
+    --shadow-sm: 0 2px 8px rgb(0 0 0 / 30%);
+    --scrollbar-thumb: #3a3a43;
+    --scrollbar-thumb-hover: var(--accent);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+/*
+ * Scrollbars.
+ *
+ * The platform default is a wide grey slab that reads as chrome from another
+ * application. These are slim, rounded and drawn from the same tokens as
+ * everything else, and they pick up the accent on hover so the thing under the
+ * cursor is the thing that is highlighted.
+ *
+ * Firefox gets the two standard properties; the `::-webkit-` rules cover
+ * Chromium, which is what the shop floor will be running.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  /* An inset border leaves breathing room around the thumb without needing a
+     separate track colour, so it works on any surface it scrolls over. */
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * Latin identifiers — filenames, tool ids, G-code — inside RTL prose.
+ *
+ * Isolation only: deliberately no `display`. This helper is applied to table
+ * cells among other things, and `inline-block` takes a `<td>` out of table
+ * layout, which silently breaks the row's borders into disconnected segments.
+ * Anything needing block behaviour sets it in its own component.
+ */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}

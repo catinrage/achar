@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import {
   CONTRADICTORY_REPEAT_TRACE,
   TIMED_TRACE,
@@ -11,21 +13,45 @@ const TOKEN = 'test-token';
 
 let server: AcharServer;
 let base: string;
+/** The queue's volume. Given explicitly so a test run leaves no repo state. */
+let dataDir: string;
 
 beforeAll(async () => {
+  dataDir = path.join('/tmp', `achar-server-spec-${Bun.randomUUIDv7()}`);
   server = await startAcharServer({
     port: 0,
     host: '127.0.0.1',
     token: TOKEN,
     // Small enough to exercise the 413 path without allocating a real trace.
     maxBodyBytes: 64 * 1024,
+    dataDir,
   });
   base = `http://127.0.0.1:${server.port}`;
 });
 
 afterAll(async () => {
   await server.stop();
+  for (const directory of [dataDir, ...extraDataDirs]) {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
+
+/**
+ * A throwaway volume for a server started inside one test.
+ *
+ * Every `startAcharServer` needs one: without it the queue's volume defaults
+ * to `.achar-data` beside the repo, and a test run leaves state behind.
+ */
+function temporaryDataDir(): string {
+  const directory = path.join(
+    '/tmp',
+    `achar-server-spec-${Bun.randomUUIDv7()}`,
+  );
+  extraDataDirs.push(directory);
+  return directory;
+}
+
+const extraDataDirs: string[] = [];
 
 /** POSTs a raw trace body with the configured bearer token. */
 function postTrace(
@@ -428,7 +454,11 @@ describe('errors', () => {
 
 describe('without a token', () => {
   it('serves /v1 routes unauthenticated', async () => {
-    const open = await startAcharServer({ port: 0, host: '127.0.0.1' });
+    const open = await startAcharServer({
+      port: 0,
+      host: '127.0.0.1',
+      dataDir: temporaryDataDir(),
+    });
 
     try {
       const response = await fetch(`http://127.0.0.1:${open.port}/v1/posts`);
@@ -445,6 +475,7 @@ describe('concurrency gate', () => {
       port: 0,
       host: '127.0.0.1',
       maxConcurrentParses: 1,
+      dataDir: temporaryDataDir(),
     });
 
     try {

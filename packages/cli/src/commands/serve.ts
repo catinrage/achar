@@ -7,11 +7,16 @@ import { runCommand } from '../runner';
 const DEFAULT_PORT = 7788;
 const DEFAULT_HOST = '127.0.0.1';
 const BYTES_PER_MB = 1024 * 1024;
+/** Mirrors the server's own defaults, for help text only. */
+const DEFAULT_MAX_BODY_MB = 384;
+const DEFAULT_RETENTION_DAYS = 14;
 
 export function registerServeCommand(cli: Command): void {
   cli
     .command('serve')
-    .description('Run the stateless Achar HTTP server.')
+    .description(
+      'Run the Achar server: the workshop web UI plus the /v1 HTTP API.',
+    )
     .option(
       '--port <number>',
       `Port to listen on. Defaults to ACHAR_SERVER_PORT or ${DEFAULT_PORT}.`,
@@ -27,12 +32,25 @@ export function registerServeCommand(cli: Command): void {
     )
     .option(
       '--max-body <mb>',
-      'Maximum request body size in megabytes.',
+      `Maximum trace upload size in megabytes. Defaults to ${DEFAULT_MAX_BODY_MB}, which is sized from what a worker can actually parse rather than from what the network can carry.`,
       parsePositiveInteger,
     )
     .option(
       '--max-parses <n>',
-      'Concurrent trace parses before returning 503.',
+      'Concurrent trace parses. Bounded by memory, not CPU: one 311MB trace peaks around 2GB.',
+      parsePositiveInteger,
+    )
+    .option(
+      '--data-dir <path>',
+      'Volume for the job queue, uploads and generated output. Defaults to ACHAR_DATA_DIR.',
+    )
+    .option(
+      '--web-root <path>',
+      'Directory holding the built web UI. Defaults to ACHAR_WEB_ROOT, then the bundled build.',
+    )
+    .option(
+      '--retention-days <n>',
+      `Days an uploaded trace is kept before it is deleted. Generated output and job history are kept regardless. Defaults to ${DEFAULT_RETENTION_DAYS}.`,
       parsePositiveInteger,
     )
     .option('--logs', 'Allow parser/backend logs.')
@@ -48,11 +66,14 @@ export function registerServeCommand(cli: Command): void {
               ? undefined
               : options.maxBody * BYTES_PER_MB,
           maxConcurrentParses: options.maxParses,
+          dataDir: options.dataDir ?? Bun.env.ACHAR_DATA_DIR,
+          webRoot: options.webRoot ?? Bun.env.ACHAR_WEB_ROOT,
+          retentionDays: options.retentionDays,
           logs: options.logs,
         });
 
         console.log(
-          `Achar HTTP server listening on http://${host}:${server.port}`,
+          `Achar listening on http://${host}:${server.port}  (UI at /, API at /v1)`,
         );
         if (!options.token && !Bun.env.ACHAR_SERVER_TOKEN) {
           console.log(

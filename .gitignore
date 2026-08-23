@@ -182,3 +182,13 @@ generated/
 !/fixtures/.gitkeep
 /packages/*/build/
 /packages/*/artifacts/
+
+# Development default for the job queue's volume, created by `achar serve`
+# when ACHAR_DATA_DIR is unset. Uploaded traces land here.
+/.achar-data/
+
+# Stray SolidCAM traces dropped at the repo root for a one-off run. Real
+# fixtures live under /fixtures (already ignored); nothing at the root is
+# meant to be committed, and these files run to hundreds of megabytes.
+/*.MPF
+/*.SPF

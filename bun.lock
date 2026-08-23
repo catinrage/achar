@@ -59,6 +59,15 @@
         "@achar/core": "workspace:*",
       },
     },
+    "packages/web": {
+      "name": "@achar/web",
+      "version": "0.1.0",
+      "dependencies": {
+        "lucide-svelte": "^1.0.1",
+        "svelte": "^5.56.4",
+        "vazirmatn": "^33.0.3",
+      },
+    },
   },
   "packages": {
     "@achar/cli": ["@achar/cli@workspace:packages/cli"],
@@ -70,6 +79,8 @@
     "@achar/mcp": ["@achar/mcp@workspace:packages/mcp"],
 
     "@achar/server": ["@achar/server@workspace:packages/server"],
+
+    "@achar/web": ["@achar/web@workspace:packages/web"],
 
     "@babylonjs/core": ["@babylonjs/core@7.54.3", "", {}, "sha512-P5ncXVd8GEUJLhwloP9V0oVwQYIrvZztguVeLlvd5Rx+9aQnenKjpV8auJ6SRsUlAmNZU4pFTKzwF6o2EUfhAw=="],
 
@@ -326,6 +337,8 @@
     "locate-character": ["locate-character@3.0.0", "", {}, "sha512-SW13ws7BjaeJ6p7Q6CO2nchbYEc3X3J6WrmTTDto7yMPqVSZTUyY5Tjbid+Ab8gLnATtygYtiDIJGQRRn2ZOiA=="],
 
     "lru-cache": ["lru-cache@7.18.3", "", {}, "sha512-jumlc0BIUrS3qJGgIkWZsyfAM7NCWiBcCDhnd+3NNM5KbBmLTgHVfWBcg6W+rLUsIpzpERPsvwUP7CckAQSOoA=="],
+
+    "lucide-svelte": ["lucide-svelte@1.0.1", "", { "peerDependencies": { "svelte": "^3 || ^4 || ^5.0.0-next.42" } }, "sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 

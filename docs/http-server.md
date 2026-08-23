@@ -1,16 +1,26 @@
 # Achar HTTP server
 
-A stateless HTTP front end for `@achar/core`. Every request carries its own
-inputs and receives its results in the response body: no workspace root, no
-server-side file paths, no writes to disk, nothing retained between requests.
+One process serves two surfaces:
 
-This is the difference from the MCP server, which runs locally over stdio and
-is therefore path-based. Use the HTTP server when another application needs
-Achar as a service.
+- **`/v1/*` — the stateless API.** Every request carries its own inputs and
+  receives its results in the response body: no workspace root, no server-side
+  file paths, no writes to disk, nothing retained between requests. This is
+  what another application consumes, and what the rest of this document covers.
+- **`/` and `/api/*` — the workshop UI.** A browser front end where several
+  people share one job queue. It is stateful by necessity; see
+  [workshop-ui.md](workshop-ui.md).
+
+Both are the difference from the MCP server, which runs locally over stdio and
+is therefore path-based.
 
 Achar returns raw machining facts and G-code. It knows nothing about any
 consumer: material and fixture names come back as the verbatim SolidCAM
 strings, and mapping them onto your own vocabulary is your job.
+
+**No trace is parsed on the HTTP thread.** `Parser.parse()` is synchronous and
+holds the loop for ten to fifteen seconds on a 311 MB file, so every
+trace-reading route dispatches to a worker thread. `/health` answers in under a
+millisecond while a parse is in flight.
 
 ## Starting it
 
@@ -27,14 +37,18 @@ bun run achar serve --port 7788 --host 127.0.0.1 --token "$ACHAR_SERVER_TOKEN"
 | `--port <number>` | `ACHAR_SERVER_PORT` | `7788` | Port to listen on |
 | `--host <host>` | `ACHAR_SERVER_HOST` | `127.0.0.1` | Interface to bind |
 | `--token <token>` | `ACHAR_SERVER_TOKEN` | none | Bearer token for `/v1/*` |
-| `--max-body <mb>` | — | `128` | Maximum request body, megabytes |
+| `--max-body <mb>` | — | `384` | Maximum trace upload, megabytes |
 | `--max-parses <n>` | — | `1` | Concurrent trace parses |
+| `--data-dir <path>` | `ACHAR_DATA_DIR` | `./.achar-data` | Volume for the job queue |
+| `--web-root <path>` | `ACHAR_WEB_ROOT` | bundled build | Built web UI to serve |
+| `--retention-days <n>` | — | `14` | Days an uploaded trace is kept |
 | `--logs` | — | off | Allow the parser's own logging |
 
 Flags win over environment variables.
 
 The host defaults to loopback deliberately — binding publicly must be a
-conscious act. There is no CORS: this is a server-to-server API.
+conscious act. There is no CORS: `/v1` is a server-to-server API, and the UI is
+served from the same origin as the `/api` routes it calls.
 
 ### Authentication
 
@@ -45,6 +59,11 @@ probe a protected server.
 
 **With no token configured, every `/v1` route is open.** In that mode the port
 must not be reachable from an untrusted network.
+
+The token guards `/v1` only. The workshop UI and its `/api` routes are
+deliberately unauthenticated — there is no login for a browser to present — so
+a deployment that exposes this port is trusting everyone who can reach it. See
+[workshop-ui.md](workshop-ui.md#trust-boundary).
 
 ## Request shapes
 
@@ -80,8 +99,18 @@ curl -s localhost:7788/health
 ```
 
 ```json
-{ "status": "ok", "version": "0.1.0", "uptimeSeconds": 7 }
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "uptimeSeconds": 7,
+  "parsing": 1,
+  "queued": 3
+}
 ```
+
+`parsing` and `queued` report the worker pool. They let a supervisor tell
+"healthy but saturated" from "healthy and idle" without reading the access log,
+and both stay answerable during a parse, because no parse runs on this thread.
 
 ### `GET /v1/posts`
 
@@ -338,26 +367,35 @@ machine-profile findings, which use `severity` but not `code`.
 
 ## Limits, and the measurements behind them
 
-Measured on this machine (Bun 1.3.14, WSL2) against
-`fixtures/PROJECT_2551019_CAM_MILLING/2551019_CAM_MILLING.MPF` — 69,944,280
-bytes, 228,406 events. Peak RSS is `VmHWM` from `/proc/<pid>/status`, read on a
-freshly started server so the figure covers exactly one request. Baseline RSS
-before the request is ~90 MB.
+Measured on this machine (Bun 1.3.14, WSL2, 20 cores) against a real
+326,300,855-byte trace — 4,560,399 lines, 1,599,469 events — posted the way a
+caller does, against the production image under `--memory=4g`.
 
-| Endpoint | Wall clock | Peak RSS | Response |
-|---|---|---|---|
-| `POST /v1/trace/profile` | 2.39 s | 712 MB | 1.4 KB |
-| `POST /v1/trace/generate` | 5.81 s | 842 MB | 1.85 MB, 92 files |
+| Stage | Wall clock | Container memory |
+|---|---|---|
+| Upload (streamed to disk) | 0.94 s | flat |
+| Parse + generate + timing + profile | 22.4 s | 1.2 GB climbing to 3.2 GB |
+| Immediately after the job finishes | — | **152 MB** |
 
-**Body size — default 128 MB.** Real traces here range 8.7 MB to 67 MB, so 128 MB
-leaves near-2× headroom over the largest. `Content-Length` is checked and
-rejected *before* the body is buffered.
+That last row is the point of running parses in a worker process that exits
+when it finishes. In a long-lived process the heap keeps its high-water mark:
+six identical parses of this file took peak RSS from 1.5 GB to 5.2 GB with
+nothing leaking, because JSC has no reason to shrink. A process per task hands
+the memory back every time, and an out-of-memory kill takes the worker rather
+than the server.
 
-**Concurrency — default 1 parse.** At ~842 MB peak for one 67 MB generate, two
-concurrent large requests would exhaust a modest host. The gate refuses rather
-than queues: a caller that gets `503` plus `Retry-After` can retry, whereas one
-stuck behind an unbounded queue just times out while the server slides into
-swap. Raise `--max-parses` only against measured headroom on your own hardware.
+**Body size — default 384 MB.** Sized from what a worker can actually finish,
+not from what the network can carry. The largest real trace seen is 311 MB and
+peaks around 2 GB while parsing; a cap far above that would be a promise the
+service cannot keep, since the request would be received in full and then die.
+`Content-Length` is checked before the body is read, and a chunked upload that
+declares no length is cut off at the same limit as it streams.
+
+**Concurrency — default 1 parse.** Bounded by memory, not CPU. `/v1` routes
+refuse with `503` plus `Retry-After` rather than queueing, which is what a
+stateless API client is built to handle. Browser uploads queue instead, because
+an operator who has already uploaded a file should be told they are third in
+line. Raise `--max-parses` only against measured headroom on your own hardware.
 
 **Line length — 8 KB, fixed.** The parser's key-value regex backtracks
 quadratically on a long run of word characters containing no `:`:
@@ -369,9 +407,10 @@ quadratically on a long run of word characters containing no `:`:
 | 32 KB | 1.66 s |
 | 64 KB | 6.59 s |
 
-The longest line in any of this repo's seven fixtures is 877 bytes, so 8 KB
-leaves ~9× headroom over genuine SolidCAM output while bounding one pathological
-line to ~100 ms. Traces with a longer line are rejected `400 bad-request`.
+The longest line in any of this repo's seven fixtures is 877 bytes, and the
+longest in the 311 MB trace above is 834 bytes, so 8 KB leaves ~9x headroom over
+genuine SolidCAM output while bounding one pathological line to ~100 ms. Traces
+with a longer line are rejected `400 bad-request`.
 
 > This guard bounds the worst case; it does not remove it. The quadratic parse
 > is a defect in the core parser, and a body full of maximum-length lines is
@@ -399,16 +438,19 @@ Environment=ACHAR_SERVER_PORT=7788
 # Prefer a credential file over an inline secret.
 EnvironmentFile=/etc/achar/server.env
 
-# The server holds a whole trace plus its parsed events in memory.
-# Keep this above the peak RSS measured for your largest trace.
-MemoryMax=2G
+# A worker holds a whole trace plus its parsed events while it runs, then
+# exits. Size this for one trace's peak — roughly 2 GB for a 311 MB file —
+# not for the running total of everything parsed since boot.
+MemoryMax=4G
 
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Stateless: it never writes anything.
+# The code is read-only; the job queue's volume is the only writable path.
 ReadOnlyPaths=/opt/achar
+ReadWritePaths=/var/lib/achar
+Environment=ACHAR_DATA_DIR=/var/lib/achar
 
 StandardOutput=journal
 StandardError=journal

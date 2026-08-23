@@ -1,61 +1,99 @@
 import type { CompareOptions } from '@achar/core';
 import {
-  compareGeneratedFiles,
-  extractProductProfile,
-  extractTimingReport,
   formatVmidSummary,
   lintPostSource,
   listBuiltinPosts,
   parseVmid,
-  summarizeCompareResults,
-  ValidationError,
 } from '@achar/core';
-import { badRequest, unprocessableTrace } from './errors';
+import type { RouteContext } from './context';
+import { badRequest } from './errors';
 import type { RouteResponse } from './http';
 import { json, plainText } from './http';
-import type { TraceInputs } from './inputs';
-import {
-  buildProgram,
-  hasErrorDiagnostics,
-  loadTraceInputs,
-  parseTrace,
-} from './inputs';
 import type { RequestBody } from './request';
+import { workshopRoutes } from './workshop';
 
 /**
  * The route table and its handlers.
  *
- * Handlers stay thin on purpose: decode, call `@achar/core`, shape the
- * response. Anything that looks like machining logic belongs in core, where
- * the CLI, MCP server, and desktop app can reach it too.
+ * Handlers stay thin on purpose: decode, call a service, shape the response.
+ * Anything that looks like machining logic belongs in core, where the CLI, MCP
+ * server, and desktop app can reach it too.
  *
- * Routes marked `gated` parse a trace and must hold a concurrency slot.
+ * Routes marked `gated` read a trace. Their body is spooled to the volume by
+ * the router and the work is dispatched to a worker thread — nothing on this
+ * table parses on the HTTP thread, because a 311 MB trace holds it for fifteen
+ * seconds and every other caller waits, `/health` included.
  */
 
-export interface RouteContext {
-  body: RequestBody;
-  version: string;
-  uptimeSeconds: number;
-}
-
 export interface Route {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  /** May contain `:name` segments, captured into `context.params`. */
   path: string;
   gated: boolean;
-  handle: (context: RouteContext) => RouteResponse;
+  /**
+   * The handler reads `context.request` itself. The router leaves the body
+   * untouched so an upload can be streamed to disk instead of buffered.
+   */
+  streaming?: boolean;
+  handle: (context: RouteContext) => Promise<RouteResponse> | RouteResponse;
 }
 
 /** Hard ceiling on `/v1/trace/parse` page size. */
 const MAX_PARSE_LIMIT = 5000;
 const DEFAULT_PARSE_LIMIT = 500;
 
-export const routes: Route[] = [
+/** What the worker returns in place of output when diagnostics stopped it. */
+interface Refusal {
+  __refused: true;
+  eventCount: number;
+  durationMs: number;
+  diagnostics: unknown;
+}
+
+function isRefusal(value: unknown): value is Refusal {
+  return typeof value === 'object' && value !== null && '__refused' in value;
+}
+
+/**
+ * Applies the rule that error-severity diagnostics stop generation. The caller
+ * still gets everything extracted so far, so a bad machine profile is
+ * diagnosable without a second round trip.
+ */
+function respond(value: unknown, okStatus = 200): RouteResponse {
+  if (isRefusal(value)) {
+    const { __refused, ...body } = value;
+    return json(body, 422);
+  }
+  return json(value, okStatus);
+}
+
+/** The documents and options a gated route hands to a worker. */
+function traceTask(context: RouteContext) {
+  const { body } = context;
+  return {
+    tracePath: context.trace?.path ?? '',
+    vmid: body.part('vmid'),
+    machineProfile: body.part('machineProfile'),
+    postId: body.option('postId'),
+    programName: body.option('programName'),
+  };
+}
+
+export const v1Routes: Route[] = [
   {
     method: 'GET',
     path: '/health',
     gated: false,
-    handle: ({ version, uptimeSeconds }) =>
-      json({ status: 'ok', version, uptimeSeconds }),
+    handle: ({ version, uptimeSeconds, services }) =>
+      json({
+        status: 'ok',
+        version,
+        uptimeSeconds,
+        // Surfaced so a supervisor can tell "healthy but saturated" from
+        // "healthy and idle" without reading the access log.
+        parsing: services.pool.inFlight,
+        queued: services.pool.queued,
+      }),
   },
   {
     method: 'GET',
@@ -74,13 +112,15 @@ export const routes: Route[] = [
     method: 'POST',
     path: '/v1/trace/profile',
     gated: true,
-    handle: ({ body }) => {
-      const profile = analyzeTrace(() =>
-        extractProductProfile(parseTrace(body.document('trace'))),
-      );
+    handle: async (context) => {
+      const profile = await context.services.pool.tryRun<{
+        diagnostics: Array<{ severity: string }>;
+      }>({ op: 'profile', ...traceTask(context) });
       return json(
         profile,
-        hasErrorDiagnostics(profile.diagnostics) ? 422 : 200,
+        profile.diagnostics.some((entry) => entry.severity === 'error')
+          ? 422
+          : 200,
       );
     },
   },
@@ -88,26 +128,27 @@ export const routes: Route[] = [
     method: 'POST',
     path: '/v1/trace/timing',
     gated: true,
-    handle: ({ body }) =>
+    handle: async (context) =>
       json(
-        analyzeTrace(() =>
-          extractTimingReport(parseTrace(body.document('trace'))),
-        ),
+        await context.services.pool.tryRun({
+          op: 'timing',
+          ...traceTask(context),
+        }),
       ),
   },
   {
     method: 'POST',
     path: '/v1/trace/validate',
     gated: true,
-    handle: ({ body }) => {
-      const inputs = loadTraceInputs(body);
+    handle: async (context) => {
+      const result = await context.services.pool.tryRun<{
+        diagnostics: Array<{ severity: string }>;
+      }>({ op: 'validate', ...traceTask(context) });
       return json(
-        {
-          eventCount: inputs.events.length,
-          durationMs: inputs.durationMs,
-          diagnostics: inputs.diagnostics,
-        },
-        hasErrorDiagnostics(inputs.diagnostics) ? 422 : 200,
+        result,
+        result.diagnostics.some((entry) => entry.severity === 'error')
+          ? 422
+          : 200,
       );
     },
   },
@@ -115,97 +156,79 @@ export const routes: Route[] = [
     method: 'POST',
     path: '/v1/trace/generate',
     gated: true,
-    handle: ({ body }) => {
-      const inputs = loadTraceInputs(body);
-      const blocked = refuseOnErrors(inputs);
-      if (blocked) return blocked;
-
-      const files = buildProgram(body, inputs).program.generate();
-      return json({
-        files: files.map((file) => ({
-          file: file.file,
-          code: file.code,
-          bytes: Buffer.byteLength(file.code, 'utf-8'),
-          lines: file.code.split(/\r?\n/).length,
-        })),
-        eventCount: inputs.events.length,
-        durationMs: inputs.durationMs,
-        diagnostics: inputs.diagnostics,
-      });
-    },
+    handle: async (context) =>
+      respond(
+        await context.services.pool.tryRun({
+          op: 'generate',
+          ...traceTask(context),
+        }),
+      ),
   },
   {
     method: 'POST',
     path: '/v1/trace/explain',
     gated: true,
-    handle: ({ body }) => {
-      const inputs = loadTraceInputs(body);
-      const blocked = refuseOnErrors(inputs);
-      if (blocked) return blocked;
-
-      const { program } = buildProgram(body, inputs);
-      return plainText(
-        program.explain({
-          file: body.option('file'),
-          event: body.option('event'),
-        }),
-      );
+    handle: async (context) => {
+      const result = await context.services.pool.tryRun<
+        Refusal | { text: string }
+      >({
+        op: 'explain',
+        ...traceTask(context),
+        file: context.body.option('file'),
+        event: context.body.option('event'),
+      });
+      return isRefusal(result) ? respond(result) : plainText(result.text);
     },
   },
   {
     method: 'POST',
     path: '/v1/trace/parity',
     gated: true,
-    handle: ({ body }) => {
-      const reference = body.fileList('reference');
+    handle: async (context) => {
+      const reference = context.body.fileList('reference');
       if (reference.length === 0) {
         throw badRequest(
           "At least one 'reference' file part is required to compare against.",
         );
       }
 
-      const inputs = loadTraceInputs(body);
-      const blocked = refuseOnErrors(inputs);
-      if (blocked) return blocked;
-
-      const generated = buildProgram(body, inputs).program.generate();
-      const results = compareGeneratedFiles(
-        generated,
-        reference,
-        compareOptions(body),
+      return respond(
+        await context.services.pool.tryRun({
+          op: 'parity',
+          ...traceTask(context),
+          reference,
+          compare: compareOptions(context.body),
+        }),
       );
-      return json({ results, summary: summarizeCompareResults(results) });
     },
   },
   {
     method: 'POST',
     path: '/v1/trace/parse',
     gated: true,
-    handle: ({ body }) => {
-      // A single trace can hold 228k events. Paging is mandatory: serializing
+    handle: async (context) => {
+      // A single trace can hold 1.6M events. Paging is mandatory: serializing
       // the whole array would bury both this process and the caller.
-      const events = parseTrace(body.document('trace'));
-      const name = body.option('event');
-      const selected = name
-        ? events.filter((event) => event._eventName === name)
-        : events;
-      const offset = body.integerOption('offset', {
+      const offset = context.body.integerOption('offset', {
         fallback: 0,
         min: 0,
         max: Number.MAX_SAFE_INTEGER,
       });
-      const limit = body.integerOption('limit', {
+      const limit = context.body.integerOption('limit', {
         fallback: DEFAULT_PARSE_LIMIT,
         min: 1,
         max: MAX_PARSE_LIMIT,
       });
 
-      return json({
-        events: selected.slice(offset, offset + limit),
-        total: selected.length,
-        offset,
-        limit,
-      });
+      return json(
+        await context.services.pool.tryRun({
+          op: 'parse',
+          ...traceTask(context),
+          event: context.body.option('event'),
+          offset,
+          limit,
+        }),
+      );
     },
   },
   {
@@ -238,40 +261,7 @@ export const routes: Route[] = [
   },
 ];
 
-/**
- * Runs a core extraction that can reject the trace on its own content.
- *
- * Only `ValidationError` is translated: it is core's way of saying the input
- * failed a stated rule, which for these routes can only be the posted trace.
- * Every other failure stays unhandled and becomes a logged 500, so a genuine
- * server bug is never dressed up as the caller's fault.
- */
-function analyzeTrace<T>(analyze: () => T): T {
-  try {
-    return analyze();
-  } catch (error) {
-    if (error instanceof ValidationError) throw unprocessableTrace(error);
-    throw error;
-  }
-}
-
-/**
- * Applies `achar-service`'s rule that error-severity diagnostics stop
- * generation. The caller still gets everything extracted so far, so a bad
- * machine profile is diagnosable without a second round trip.
- */
-function refuseOnErrors(inputs: TraceInputs): RouteResponse | undefined {
-  if (!hasErrorDiagnostics(inputs.diagnostics)) return undefined;
-
-  return json(
-    {
-      eventCount: inputs.events.length,
-      durationMs: inputs.durationMs,
-      diagnostics: inputs.diagnostics,
-    },
-    422,
-  );
-}
+export const routes: Route[] = [...v1Routes, ...workshopRoutes];
 
 function compareOptions(body: RequestBody): CompareOptions {
   return {

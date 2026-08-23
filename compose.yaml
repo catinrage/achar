@@ -6,33 +6,43 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
-    # `--max-body` is the only way to move the cap: unlike host, port and token it
-    # has no environment fallback. 1024MB replaces the 128MB default because real
-    # SolidCAM traces from Oracle run to a few hundred megabytes.
+    # `--max-body` is the only way to move the upload cap: unlike host, port and
+    # token it has no environment fallback.
     #
-    # The server hands Bun twice this figure as `maxRequestBodySize`, and that outer
-    # bound is enforced by the runtime before any route runs — it aborts the
-    # connection instead of answering, so the caller sees a reset rather than the
-    # `body-too-large` JSON. Keeping our own cap well above real traces keeps
-    # rejections on the side that can still explain itself.
+    # 384MB is sized from what a worker can actually finish, not from what the
+    # network can carry. A 311MB trace — the largest real one seen — peaks around
+    # 2GB while parsing, so this leaves headroom above real traces and keeps the
+    # peak inside `mem_limit`. A cap far above that would be a promise the
+    # service cannot keep: the request would be received in full and then die.
     command:
-      ["bun", "packages/cli/src/index.ts", "serve", "--max-body", "1024"]
+      ["bun", "packages/cli/src/index.ts", "serve", "--max-body", "384"]
     environment:
       ACHAR_SERVER_HOST: 0.0.0.0
       ACHAR_SERVER_PORT: "7788"
+      ACHAR_DATA_DIR: /var/lib/achar
+      # Protects the /v1 API, which Oracle calls server-to-server. The browser
+      # UI and its /api routes are deliberately open: this is a trusted-network
+      # deployment with no login, which is why the port below must stay on the
+      # workshop LAN and off any public interface.
       ACHAR_SERVER_TOKEN: ${ACHAR_SERVER_TOKEN:?Set ACHAR_SERVER_TOKEN in .env}
     ports:
-      - "127.0.0.1:7788:7788"
+      # Reachable from the shop floor, unlike the previous loopback-only bind.
+      # Everyone on this network can submit work and read every job's output.
+      - "7788:7788"
+    volumes:
+      # Queued uploads, generated G-code, machine presets and the job database.
+      # Losing it loses the machine definitions, which is the one piece of state
+      # here that is not reproducible from a trace.
+      - achar-data:/var/lib/achar
+    # The image's own filesystem stays read-only; the named volume above and the
+    # tmpfs below are the only writable paths, and traces are spooled to the
+    # volume rather than to tmpfs, which is RAM and counts against mem_limit.
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
-    # A trace costs roughly its own size buffered, again as a decoded string, and
-    # again in parsed structures, so 2g was already marginal for the few-hundred-MB
-    # traces this now accepts. Note this ceiling is deliberately not sized for a body
-    # at the full 1024MB cap: the cap is a guard against absurd uploads, not a promise
-    # that everything under it parses. An OOM-killed container looks exactly like a
-    # size rejection from the caller's side — a dropped connection — so if traces grow
-    # past this, raise it here rather than lowering the cap.
+    # Parsing runs in a worker process that is spawned per job and exits when it
+    # finishes, so the ceiling is one trace's peak (~2GB for 311MB) plus the
+    # server itself — not the running total of everything parsed since boot.
     mem_limit: 4g
     pids_limit: 128
     cap_drop:
@@ -40,3 +50,6 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+
+volumes:
+  achar-data:
