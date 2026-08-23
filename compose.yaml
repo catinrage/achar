@@ -6,6 +6,17 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
+    # `--max-body` is the only way to move the cap: unlike host, port and token it
+    # has no environment fallback. 1024MB replaces the 128MB default because real
+    # SolidCAM traces from Oracle run to a few hundred megabytes.
+    #
+    # The server hands Bun twice this figure as `maxRequestBodySize`, and that outer
+    # bound is enforced by the runtime before any route runs — it aborts the
+    # connection instead of answering, so the caller sees a reset rather than the
+    # `body-too-large` JSON. Keeping our own cap well above real traces keeps
+    # rejections on the side that can still explain itself.
+    command:
+      ["bun", "packages/cli/src/index.ts", "serve", "--max-body", "1024"]
     environment:
       ACHAR_SERVER_HOST: 0.0.0.0
       ACHAR_SERVER_PORT: "7788"
@@ -15,7 +26,14 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
-    mem_limit: 2g
+    # A trace costs roughly its own size buffered, again as a decoded string, and
+    # again in parsed structures, so 2g was already marginal for the few-hundred-MB
+    # traces this now accepts. Note this ceiling is deliberately not sized for a body
+    # at the full 1024MB cap: the cap is a guard against absurd uploads, not a promise
+    # that everything under it parses. An OOM-killed container looks exactly like a
+    # size rejection from the caller's side — a dropped connection — so if traces grow
+    # past this, raise it here rather than lowering the cap.
+    mem_limit: 4g
     pids_limit: 128
     cap_drop:
       - ALL
