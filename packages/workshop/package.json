@@ -1,0 +1,14 @@
+{
+  "name": "@achar/workshop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/workshop.ts",
+  "exports": {
+    ".": "./src/workshop.ts"
+  },
+  "dependencies": {
+    "@achar/core": "workspace:*",
+    "@achar/server": "workspace:*"
+  }
+}

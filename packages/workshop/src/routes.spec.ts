@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { TIMED_TRACE, UNTIMED_TRACE } from './fixtures.spec-helper';
-import type { AcharServer } from './server';
-import { startAcharServer } from './server';
+import { TIMED_TRACE, UNTIMED_TRACE } from '@achar/server/fixtures.spec-helper';
+import type { WorkshopServer } from './workshop';
+import { startWorkshopServer } from './workshop';
 
 /**
  * End-to-end coverage of the browser-facing service: upload, queue, results,
@@ -14,14 +14,14 @@ import { startAcharServer } from './server';
  * dispatching to a worker, serving a file back — only exist at that boundary.
  */
 
-let server: AcharServer;
+let server: WorkshopServer;
 let base: string;
 let dataDir: string;
 let machineId: string;
 
 beforeAll(async () => {
   dataDir = path.join('/tmp', `achar-workshop-spec-${Bun.randomUUIDv7()}`);
-  server = await startAcharServer({
+  server = await startWorkshopServer({
     port: 0,
     host: '127.0.0.1',
     dataDir,

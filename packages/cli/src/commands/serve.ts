@@ -1,4 +1,4 @@
-import { startAcharServer } from '@achar/server';
+import { startWorkshopServer } from '@achar/workshop';
 import type { Command } from 'commander';
 import type { CliOptions } from '../options';
 import { parsePositiveInteger } from '../options';
@@ -57,7 +57,7 @@ export function registerServeCommand(cli: Command): void {
     .action(
       runCommand(async (options: CliOptions) => {
         const host = options.host ?? Bun.env.ACHAR_SERVER_HOST ?? DEFAULT_HOST;
-        const server = await startAcharServer({
+        const server = await startWorkshopServer({
           port: options.port ?? envPort() ?? DEFAULT_PORT,
           host,
           token: options.token ?? Bun.env.ACHAR_SERVER_TOKEN,

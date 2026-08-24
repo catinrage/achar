@@ -23,6 +23,7 @@
         "@achar/core": "workspace:*",
         "@achar/mcp": "workspace:*",
         "@achar/server": "workspace:*",
+        "@achar/workshop": "workspace:*",
         "chalk": "^5.3.0",
         "cli-spinners": "^3.2.0",
         "commander": "^14.0.2",
@@ -68,6 +69,14 @@
         "vazirmatn": "^33.0.3",
       },
     },
+    "packages/workshop": {
+      "name": "@achar/workshop",
+      "version": "0.1.0",
+      "dependencies": {
+        "@achar/core": "workspace:*",
+        "@achar/server": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@achar/cli": ["@achar/cli@workspace:packages/cli"],
@@ -81,6 +90,8 @@
     "@achar/server": ["@achar/server@workspace:packages/server"],
 
     "@achar/web": ["@achar/web@workspace:packages/web"],
+
+    "@achar/workshop": ["@achar/workshop@workspace:packages/workshop"],
 
     "@babylonjs/core": ["@babylonjs/core@7.54.3", "", {}, "sha512-P5ncXVd8GEUJLhwloP9V0oVwQYIrvZztguVeLlvd5Rx+9aQnenKjpV8auJ6SRsUlAmNZU4pFTKzwF6o2EUfhAw=="],
 

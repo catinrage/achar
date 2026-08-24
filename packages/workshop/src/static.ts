@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { RouteResponse } from './http';
+import type { RouteResponse } from '@achar/server';
 
 /**
  * Serves the built web UI.

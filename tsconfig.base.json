@@ -24,6 +24,8 @@
       "@achar/mcp/*": ["./packages/mcp/src/*"],
       "@achar/server": ["./packages/server/src/server.ts"],
       "@achar/server/*": ["./packages/server/src/*"],
+      "@achar/workshop": ["./packages/workshop/src/workshop.ts"],
+      "@achar/workshop/*": ["./packages/workshop/src/*"],
       "$src/*": ["./packages/core/src/*"],
       "$common/*": ["./packages/core/src/common/*"],
       "$types": ["./packages/core/src/types.ts"]

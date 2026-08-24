@@ -1,34 +1,39 @@
 import path from 'node:path';
 import { listBuiltinPosts } from '@achar/core';
-import type { RouteContext } from './context';
+import type { Route, RouteContext } from '@achar/server';
+import {
+  attachment,
+  badRequest,
+  bytes,
+  json,
+  notFound,
+  spoolToFile,
+} from '@achar/server';
+import type { WorkshopServices } from './context';
 import { jobOutputDirectory, jobTracePath } from './data/paths';
-import { badRequest, notFound } from './errors';
-import { attachment, bytes, json } from './http';
 import { describeJob } from './jobs/runner';
-import { spoolToFile } from './jobs/upload';
 import {
   createMachine,
   deleteMachine,
   summarizeMachine,
   updateMachine,
 } from './machines';
-import type { Route } from './routes';
 import { createZip } from './zip';
 
 /**
  * The browser-facing API behind the workshop UI.
  *
- * Separate from `/v1` on purpose. `/v1` is a stable contract another
- * application depends on — Oracle parses its responses through a schema — and
- * it is stateless by design. These routes are the opposite on both counts:
- * they are free to change with the UI they serve, and they are all about state
- * that outlives a request.
+ * Separate from `/v1` on purpose, and now in a separate package. `/v1` is a
+ * stable contract another application depends on — Oracle parses its responses
+ * through a schema — and it is stateless by design. These routes are the
+ * opposite on both counts: they are free to change with the UI they serve, and
+ * they are all about state that outlives a request.
  */
 
 const MAX_RECENT_JOBS = 100;
 const DEFAULT_RECENT_JOBS = 25;
 
-export const workshopRoutes: Route[] = [
+export const workshopRoutes: Array<Route<WorkshopServices>> = [
   {
     method: 'GET',
     path: '/api/posts',
@@ -224,7 +229,7 @@ export const workshopRoutes: Route[] = [
  * deterministic, so the cached answer is not merely equivalent — it is the
  * same bytes, which is the guarantee the whole service exists to provide.
  */
-async function submitJob(context: RouteContext) {
+async function submitJob(context: RouteContext<WorkshopServices>) {
   const { services, url } = context;
   const machineId = url.searchParams.get('machineId')?.trim();
   if (!machineId) {
@@ -272,10 +277,7 @@ async function submitJob(context: RouteContext) {
   return json({ job: describeJob(services.store, job), cached: false }, 202);
 }
 
-function requireJob(
-  services: RouteContext['services'],
-  id: string | undefined,
-) {
+function requireJob(services: WorkshopServices, id: string | undefined) {
   const job = id ? services.store.findJob(id) : undefined;
   if (!job) throw notFound();
   return job;
@@ -289,7 +291,7 @@ function requireJob(
  * impossible without a separate check for it.
  */
 function requireFile(
-  services: RouteContext['services'],
+  services: WorkshopServices,
   jobId: string,
   requested: string | undefined,
 ): string {

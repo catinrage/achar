@@ -1,11 +1,11 @@
-import { rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+import type { BundleOutcome, WorkerPool } from '@achar/server';
+import { messageOf } from '@achar/server';
 import type { DataPaths } from '../data/paths';
 import { jobOutputDirectory, jobTracePath } from '../data/paths';
-import type { JobRecord, JobStore } from '../data/store';
-import { messageOf } from '../errors';
+import type { JobFileRecord, JobRecord, JobStore } from '../data/store';
 import { loadMachineDocuments } from '../machines';
-import type { WorkerPool } from './pool';
-import type { JobOutcome } from './protocol';
 
 /**
  * Drives a submitted job from `queued` through to `done` or `failed`.
@@ -75,11 +75,10 @@ export class JobRunner {
         job.machineId,
       );
 
-      const outcome = await this.pool.run<JobOutcome>(
+      const outcome = await this.pool.run<BundleOutcome>(
         {
-          op: 'job',
+          op: 'bundle',
           tracePath: jobTracePath(this.paths, jobId),
-          outDir: jobOutputDirectory(this.paths, jobId),
           postId: machine.postId,
           vmid: machine.vmid,
           machineProfile: machine.machineProfile,
@@ -88,11 +87,15 @@ export class JobRunner {
         { onStart: () => this.store.markRunning(jobId) },
       );
 
+      // Where output lives is this package's business, not the parser's: the
+      // worker hands back the generated files and they are written here.
+      const files = await this.writeOutput(jobId, outcome.files);
+
       // A blocked trace is a finished job, not a failed one: the operator gets
       // diagnostics, cycle time and a tool list, just no G-code. Recording it
       // as `done` keeps it in history where they can see why it was refused.
       this.store.markDone(jobId, {
-        files: outcome.files,
+        files,
         diagnostics: outcome.diagnostics,
         timing: outcome.timing,
         profile: outcome.profile,
@@ -107,6 +110,28 @@ export class JobRunner {
         message: messageOf(error),
       });
     }
+  }
+
+  /** Writes a finished job's output to its directory on the volume. */
+  private async writeOutput(
+    jobId: string,
+    files: BundleOutcome['files'],
+  ): Promise<JobFileRecord[]> {
+    if (files.length === 0) return [];
+
+    const directory = jobOutputDirectory(this.paths, jobId);
+    await mkdir(directory, { recursive: true });
+
+    const written: JobFileRecord[] = [];
+    for (const file of files) {
+      await Bun.write(path.join(directory, file.name), file.code);
+      written.push({
+        name: file.name,
+        bytes: file.bytes,
+        lines: file.lines,
+      });
+    }
+    return written;
   }
 
   // ---- retention --------------------------------------------------------

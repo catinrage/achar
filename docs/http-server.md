@@ -7,8 +7,10 @@ One process serves two surfaces:
   file paths, no writes to disk, nothing retained between requests. This is
   what another application consumes, and what the rest of this document covers.
 - **`/` and `/api/*` — the workshop UI.** A browser front end where several
-  people share one job queue. It is stateful by necessity; see
-  [workshop-ui.md](workshop-ui.md).
+  people share one job queue, served by `@achar/workshop`, a separate package
+  that mounts its routes on this one's kernel. It is stateful by necessity; see
+  [workshop-ui.md](workshop-ui.md). Nothing it does reaches `/v1`: this package
+  has no database and no volume of its own.
 
 Both are the difference from the MCP server, which runs locally over stdio and
 is therefore path-based.
@@ -39,7 +41,7 @@ bun run achar serve --port 7788 --host 127.0.0.1 --token "$ACHAR_SERVER_TOKEN"
 | `--token <token>` | `ACHAR_SERVER_TOKEN` | none | Bearer token for `/v1/*` |
 | `--max-body <mb>` | — | `384` | Maximum trace upload, megabytes |
 | `--max-parses <n>` | — | `1` | Concurrent trace parses |
-| `--data-dir <path>` | `ACHAR_DATA_DIR` | `./.achar-data` | Volume for the job queue |
+| `--data-dir <path>` | `ACHAR_DATA_DIR` | `./.achar-data` | Volume for the job queue (workshop only) |
 | `--web-root <path>` | `ACHAR_WEB_ROOT` | bundled build | Built web UI to serve |
 | `--retention-days <n>` | — | `14` | Days an uploaded trace is kept |
 | `--logs` | — | off | Allow the parser's own logging |

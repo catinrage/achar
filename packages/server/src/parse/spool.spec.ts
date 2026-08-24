@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { HttpError } from '../errors';
-import { spoolToFile } from './upload';
+import { spoolToFile } from './spool';
 
 /**
  * The upload path is where a 311 MB body either stays out of memory or does

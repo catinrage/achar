@@ -1,8 +1,4 @@
-import type { GeneratedFile } from '@achar/core';
-import type { DataPaths } from './data/paths';
-import type { JobStore } from './data/store';
-import type { WorkerPool } from './jobs/pool';
-import type { JobRunner } from './jobs/runner';
+import type { WorkerPool } from './parse/pool';
 import type { RequestBody } from './request';
 
 /**
@@ -10,21 +6,28 @@ import type { RequestBody } from './request';
  *
  * Handlers stay thin: decode, call a service, shape the response. Anything
  * that looks like machining logic belongs in `@achar/core`, and anything that
- * reads a trace belongs in a worker — see {@link AppServices.pool}.
+ * reads a trace belongs on a worker — see {@link ServerServices.pool}.
+ *
+ * `Services` is a type parameter so a package built on this kernel can add its
+ * own dependencies without this one having to know about them. `@achar/server`
+ * itself needs only {@link ServerServices}; `@achar/workshop` widens it.
  */
 
-export interface AppServices {
-  store: JobStore;
-  paths: DataPaths;
+export interface ServerServices {
   /** Every trace parse goes through here, never on the HTTP thread. */
   pool: WorkerPool;
-  runner: JobRunner;
   maxBodyBytes: number;
-  /** Directory holding the built web UI, when one is present. */
-  webRoot: string | undefined;
+  /**
+   * Where a request body is spooled so a worker can read it by path.
+   *
+   * Scratch only. Files here are written for the life of one request and
+   * deleted in a `finally`, which is what keeps this package's promise that
+   * nothing is retained between requests.
+   */
+  scratchDir: string;
 }
 
-/** A trace already written to the volume, ready to hand to a worker. */
+/** A trace already written to disk, ready to hand to a worker. */
 export interface SpooledTrace {
   path: string;
   bytes: number;
@@ -35,7 +38,9 @@ export interface SpooledTrace {
   ephemeral: boolean;
 }
 
-export interface RouteContext {
+export interface RouteContext<
+  Services extends ServerServices = ServerServices,
+> {
   request: Request;
   url: URL;
   /** Values captured from `:name` segments in the route path. */
@@ -43,17 +48,7 @@ export interface RouteContext {
   body: RequestBody;
   /** Present on gated routes, which spool their trace before dispatching. */
   trace?: SpooledTrace;
-  services: AppServices;
+  services: Services;
   version: string;
   uptimeSeconds: number;
 }
-
-export interface RouteResponseInit {
-  status: number;
-  body: string;
-  contentType: string;
-  headers?: Record<string, string>;
-}
-
-/** Reference NC files uploaded for a parity comparison. */
-export type ReferenceFiles = GeneratedFile[];

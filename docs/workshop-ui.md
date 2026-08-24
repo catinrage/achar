@@ -8,6 +8,11 @@ It is served by the same process as the [`/v1` API](http-server.md) — one
 container, one port, no separate web server. Open `http://<host>:7788/`.
 
 ```
+packages/server      packages/workshop            packages/web
+  /v1 · kernel   <—    /api · queue · SQLite   <—   the UI
+  parse workers        machines · retention        (static build)
+  stateless            stateful
+
 achar container
 ├── GET  /                     web UI (static Svelte 5, Farsi/RTL)
 ├──      /api/*                the UI's own API — queue, jobs, machines
@@ -15,6 +20,12 @@ achar container
         ↑
    both dispatch every parse to the same worker pool
 ```
+
+The split is deliberate. `@achar/server` owns the HTTP kernel, the `/v1` table
+and the worker pool, and keeps its promise that nothing survives a request — no
+database, no volume. `@achar/workshop` builds this service on that kernel and
+is stateful by necessity. Everything below belongs to the second package; `/v1`
+is unaffected by any of it.
 
 ## Why it exists
 

@@ -37,11 +37,13 @@ export type WorkerTask =
     } & BaseTask)
   | ({ op: 'parse'; event?: string; offset: number; limit: number } & BaseTask)
   /**
-   * The browser-facing job: everything the results page needs, from one parse.
-   * Output is written to `outDir` by the worker rather than returned, so a
-   * multi-megabyte G-code set never crosses the thread boundary.
+   * Generate, timing and product profile from a single parse.
+   *
+   * The parse is ~97% of the cost, so the two extra extractions add well under
+   * a second to a job measured in tens. Callers that need all three — the
+   * workshop's results page does — would otherwise pay for three parses.
    */
-  | ({ op: 'job'; outDir: string } & BaseTask);
+  | ({ op: 'bundle' } & BaseTask);
 
 /**
  * A failure the caller is responsible for, carried across the boundary.
@@ -59,9 +61,23 @@ export type WorkerResponse =
   | { ok: true; value: unknown; durationMs: number }
   | { ok: false; failure: TaskFailure };
 
-/** What the `job` op reports back once output is on disk. */
-export interface JobOutcome {
-  files: Array<{ name: string; bytes: number; lines: number }>;
+/** A generated file, returned rather than written. */
+export interface BundledFile {
+  name: string;
+  code: string;
+  bytes: number;
+  lines: number;
+}
+
+/**
+ * What the `bundle` op reports back.
+ *
+ * Files come back as data so the worker touches nothing but the trace it was
+ * given to read. Deciding where output belongs — and whether it is kept at all
+ * — is the caller's business, not the parser's.
+ */
+export interface BundleOutcome {
+  files: BundledFile[];
   diagnostics: unknown;
   timing: unknown;
   profile: unknown;

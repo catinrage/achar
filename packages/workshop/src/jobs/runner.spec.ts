@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { WorkerPool } from '@achar/server';
 import type { DataPaths } from '../data/paths';
 import {
   jobOutputDirectory,
@@ -9,7 +10,6 @@ import {
   prepareDataPaths,
 } from '../data/paths';
 import { JobStore } from '../data/store';
-import { WorkerPool } from './pool';
 import { describeJob, JobRunner } from './runner';
 
 /**

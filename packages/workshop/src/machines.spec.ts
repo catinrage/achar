@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { HttpError } from '@achar/server';
 import type { DataPaths } from './data/paths';
 import { prepareDataPaths } from './data/paths';
 import { JobStore } from './data/store';
-import { HttpError } from './errors';
 import { createMachine, deleteMachine, loadMachineDocuments } from './machines';
 
 const FIXTURES = path.resolve(

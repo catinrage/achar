@@ -13,45 +13,40 @@ const TOKEN = 'test-token';
 
 let server: AcharServer;
 let base: string;
-/** The queue's volume. Given explicitly so a test run leaves no repo state. */
-let dataDir: string;
+/** Scratch space. Given explicitly so a test run leaves nothing behind. */
+let scratchDir: string;
 
 beforeAll(async () => {
-  dataDir = path.join('/tmp', `achar-server-spec-${Bun.randomUUIDv7()}`);
+  scratchDir = path.join('/tmp', `achar-server-spec-${Bun.randomUUIDv7()}`);
   server = await startAcharServer({
     port: 0,
     host: '127.0.0.1',
     token: TOKEN,
     // Small enough to exercise the 413 path without allocating a real trace.
     maxBodyBytes: 64 * 1024,
-    dataDir,
+    scratchDir,
   });
   base = `http://127.0.0.1:${server.port}`;
 });
 
 afterAll(async () => {
   await server.stop();
-  for (const directory of [dataDir, ...extraDataDirs]) {
+  for (const directory of [scratchDir, ...extraScratchDirs]) {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-/**
- * A throwaway volume for a server started inside one test.
- *
- * Every `startAcharServer` needs one: without it the queue's volume defaults
- * to `.achar-data` beside the repo, and a test run leaves state behind.
- */
-function temporaryDataDir(): string {
+/** Throwaway scratch for a server started inside one test. */
+function temporaryScratchDir(): string {
   const directory = path.join(
     '/tmp',
     `achar-server-spec-${Bun.randomUUIDv7()}`,
   );
-  extraDataDirs.push(directory);
+  extraScratchDirs.push(directory);
   return directory;
 }
 
-const extraDataDirs: string[] = [];
+const extraScratchDirs: string[] = [];
 
 /** POSTs a raw trace body with the configured bearer token. */
 function postTrace(
@@ -457,7 +452,7 @@ describe('without a token', () => {
     const open = await startAcharServer({
       port: 0,
       host: '127.0.0.1',
-      dataDir: temporaryDataDir(),
+      scratchDir: temporaryScratchDir(),
     });
 
     try {
@@ -475,7 +470,7 @@ describe('concurrency gate', () => {
       port: 0,
       host: '127.0.0.1',
       maxConcurrentParses: 1,
-      dataDir: temporaryDataDir(),
+      scratchDir: temporaryScratchDir(),
     });
 
     try {

@@ -9,8 +9,8 @@ import type { RouteContext } from './context';
 import { badRequest } from './errors';
 import type { RouteResponse } from './http';
 import { json, plainText } from './http';
+import type { Route } from './kernel';
 import type { RequestBody } from './request';
-import { workshopRoutes } from './workshop';
 
 /**
  * The route table and its handlers.
@@ -19,24 +19,14 @@ import { workshopRoutes } from './workshop';
  * Anything that looks like machining logic belongs in core, where the CLI, MCP
  * server, and desktop app can reach it too.
  *
- * Routes marked `gated` read a trace. Their body is spooled to the volume by
- * the router and the work is dispatched to a worker thread — nothing on this
- * table parses on the HTTP thread, because a 311 MB trace holds it for fifteen
- * seconds and every other caller waits, `/health` included.
+ * Routes marked `gated` read a trace. Their body is spooled to scratch by the
+ * kernel and the work is dispatched to a worker thread — nothing on this table
+ * parses on the HTTP thread, because a large trace holds it for many seconds
+ * and every other caller waits, `/health` included.
+ *
+ * Everything here is stateless: inputs arrive in the request, results leave in
+ * the response, and nothing survives it.
  */
-
-export interface Route {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
-  /** May contain `:name` segments, captured into `context.params`. */
-  path: string;
-  gated: boolean;
-  /**
-   * The handler reads `context.request` itself. The router leaves the body
-   * untouched so an upload can be streamed to disk instead of buffered.
-   */
-  streaming?: boolean;
-  handle: (context: RouteContext) => Promise<RouteResponse> | RouteResponse;
-}
 
 /** Hard ceiling on `/v1/trace/parse` page size. */
 const MAX_PARSE_LIMIT = 5000;
@@ -260,8 +250,6 @@ export const v1Routes: Route[] = [
       }),
   },
 ];
-
-export const routes: Route[] = [...v1Routes, ...workshopRoutes];
 
 function compareOptions(body: RequestBody): CompareOptions {
   return {

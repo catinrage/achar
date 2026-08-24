@@ -5,9 +5,9 @@ import {
   parseVmid,
   resolveBuiltinPost,
 } from '@achar/core';
+import { badRequest, messageOf } from '@achar/server';
 import type { DataPaths } from './data/paths';
 import type { JobStore, MachineRecord } from './data/store';
-import { badRequest, messageOf } from './errors';
 
 /**
  * Centrally-owned machine configuration.

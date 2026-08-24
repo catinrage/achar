@@ -18,6 +18,7 @@ COPY packages/desktop/package.json packages/desktop/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
+COPY packages/workshop/package.json packages/workshop/package.json
 
 RUN bun install --frozen-lockfile --filter @achar/web
 
@@ -44,15 +45,18 @@ COPY packages/desktop/package.json packages/desktop/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
+COPY packages/workshop/package.json packages/workshop/package.json
 
 RUN bun install --production --frozen-lockfile --filter @achar/cli
 
-# The HTTP entry point is registered by the CLI. Its static imports require the
-# CLI and MCP packages, while all machining work lives in core and server.
+# The HTTP entry point is registered by the CLI. `server` holds the stateless
+# /v1 API and the parse workers; `workshop` adds the queue and the browser API
+# on top of it; all machining work lives in core.
 COPY packages/cli/src packages/cli/src
 COPY packages/core/src packages/core/src
 COPY packages/mcp/src packages/mcp/src
 COPY packages/server/src packages/server/src
+COPY packages/workshop/src packages/workshop/src
 
 # Only the built assets, none of the toolchain that made them.
 COPY --from=web /app/packages/web/dist packages/web/dist

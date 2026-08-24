@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import {
   compareGeneratedFiles,
   extractProductProfile,
@@ -15,7 +13,7 @@ import {
   loadTraceInputsFrom,
   parseTrace,
 } from '../inputs';
-import type { JobOutcome, WorkerResponse, WorkerTask } from './protocol';
+import type { BundleOutcome, WorkerResponse, WorkerTask } from './protocol';
 
 /**
  * Parse worker.
@@ -149,23 +147,22 @@ async function run(task: WorkerTask): Promise<unknown> {
       return { results, summary: summarizeCompareResults(results) };
     }
 
-    case 'job':
-      return runJob(task, trace);
+    case 'bundle':
+      return bundle(task, trace);
   }
 }
 
 /**
- * The browser-facing job.
+ * Generation, timing and the product profile off a single parse.
  *
- * Generation, timing and the product profile all come off the same parse. The
- * parse is ~97% of the cost, so the two extra extractions add roughly half a
- * second to a fifteen-second job — the reason the results page can show cycle
- * time and a tool list without asking for a second upload.
+ * The parse is ~97% of the cost, so the two extra extractions add roughly half
+ * a second to a fifteen-second job — the reason a caller can show cycle time
+ * and a tool list without asking for a second upload.
  */
-async function runJob(
-  task: Extract<WorkerTask, { op: 'job' }>,
+function bundle(
+  task: Extract<WorkerTask, { op: 'bundle' }>,
   trace: string,
-): Promise<JobOutcome> {
+): BundleOutcome {
   const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
 
   // Extracted before the blocked decision, because the profile carries
@@ -192,18 +189,13 @@ async function runJob(
   }
 
   const { program, programName } = buildProgramFrom(optionsOf(task), inputs);
-  const generated = program.generate();
 
-  await mkdir(task.outDir, { recursive: true });
-  const files: JobOutcome['files'] = [];
-  for (const file of generated) {
-    await Bun.write(path.join(task.outDir, file.file), file.code);
-    files.push({
-      name: file.file,
-      bytes: Buffer.byteLength(file.code, 'utf-8'),
-      lines: file.code.split(/\r?\n/).length,
-    });
-  }
+  const files = program.generate().map((file) => ({
+    name: file.file,
+    code: file.code,
+    bytes: Buffer.byteLength(file.code, 'utf-8'),
+    lines: file.code.split(/\r?\n/).length,
+  }));
 
   return {
     files,
