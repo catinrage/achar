@@ -1,14 +1,16 @@
 import { generatePostProgram } from '@achar/core';
 import type { Command } from 'commander';
 import { resolveInput } from '../inputs';
-import type { CliOptions } from '../options';
+import { type CliOptions, withSetupSelectionOptions } from '../options';
 import { runCommand } from '../runner';
 import { printData } from '../ui';
 
 export function registerExplainCommand(cli: Command): void {
-  cli
-    .command('explain <trace-or-fixture>')
-    .description('Explain which event emitted each command.')
+  withSetupSelectionOptions(
+    cli
+      .command('explain <trace-or-fixture>')
+      .description('Explain which event emitted each command.'),
+  )
     .option('--post <name-or-file>', 'Post module.')
     .option('--machine-profile <file>', 'Machine profile JSON file.')
     .option('--program-name <name>', 'Program name.')

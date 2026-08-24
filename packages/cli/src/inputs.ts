@@ -7,6 +7,7 @@ import type {
   MachineProfile,
   RegisterPost,
   ResolvedFixture,
+  SetupSpan,
   VmidDefinition,
   VmidValidationIssue,
 } from '@achar/core';
@@ -15,9 +16,12 @@ import {
   loadFixture,
   loadMachineProfile,
   loadPost,
+  parseSetupSelection,
   parseTraceFile,
   parseVmidFile,
+  partitionSetups,
   resolveBuiltinPost,
+  selectSetupEvents,
   validateMachineProfileCompatibility,
   validateTraceAgainstVmid,
   writeHtmlReport,
@@ -37,6 +41,8 @@ export interface RunInput {
   vmid?: VmidDefinition;
   machineProfile?: MachineProfile;
   vmidIssues: VmidValidationIssue[];
+  /** Present only when `--setups` narrowed the run. */
+  selectedSetups?: SetupSpan[];
 }
 
 export async function resolveInput(
@@ -67,7 +73,9 @@ export async function resolveInput(
   );
   const vmid = await loadVmid(options, fixture);
   const machineProfile = await loadProfile(options, fixture);
-  const traceEvents = await parseTraceFile(tracePath);
+  const parsedEvents = await parseTraceFile(tracePath);
+  const selection = applySetupSelection(parsedEvents, options);
+  const traceEvents = selection.events;
   const registerPost: RegisterPost = (program, context = {}) =>
     loadedPost(program, {
       ...context,
@@ -104,7 +112,41 @@ export async function resolveInput(
     vmid,
     machineProfile,
     vmidIssues,
+    selectedSetups: selection.selectedSetups,
   };
+}
+
+/**
+ * Narrows the parsed events to `--setups` when it was given.
+ *
+ * VMID and machine-profile validation downstream then run against the events
+ * that will actually be posted, which is the honest thing to check: a travel
+ * limit broken by a setup nobody selected is not this run's problem.
+ */
+function applySetupSelection(
+  events: EventData[],
+  options: CliOptions,
+): { events: EventData[]; selectedSetups?: SetupSpan[] } {
+  if (typeof options.setups !== 'string') return { events };
+
+  const partition = partitionSetups(events);
+  const selection = parseSetupSelection(options.setups, partition.spans);
+  const result = selectSetupEvents(events, selection, {
+    partition,
+    pruneTools: !options.keepAllTools,
+  });
+
+  if (partition.hasImplicitSetup) {
+    result.warnings.unshift(
+      'This trace runs jobs before its first @setup. Those jobs are part of ' +
+        'the shared prologue and are always posted.',
+    );
+  }
+  for (const warning of result.warnings) {
+    printInfo(chalk.yellow(`! ${warning}`));
+  }
+
+  return { events: result.events, selectedSetups: result.selected };
 }
 
 async function loadVmid(

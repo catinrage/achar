@@ -79,6 +79,7 @@ Commands:
   posts                         List built-in post modules.
   init-post <directory>         Create a new Achar post module skeleton.
   validate <trace-or-fixture>   Validate trace inputs, including VMID parameters and axes.
+  setups <trace-or-fixture>     List the setups in a trace.
   generate [trace-or-fixture]   Generate MPF/SPF files from a trace or fixture.
   parity <trace-or-fixture>     Generate files and compare them against reference G-code.
   test <trace-fixture-or-root>  Run golden-output post regression tests.
@@ -671,6 +672,8 @@ Options:
 --vmid <file>          VMID file. Fixtures can provide this.
 --machine-profile <file>  Machine profile JSON file.
 --strict-vmid          Treat VMID warnings as failures.
+--setups <selection>   Post only these setups. See "Posting a subset of setups".
+--keep-all-tools       With --setups, keep the full tool table.
 --watch                Watch inputs and regenerate on changes.
 --interactive          Prompt for generate options.
 ```
@@ -678,6 +681,100 @@ Options:
 Exit status is `0` when generation succeeds and VMID validation does not fail.
 It is non-zero when required inputs are missing, VMID errors are found, or
 `--strict-vmid` promotes warnings to failures.
+
+### `setups`
+
+List the setups in a trace, with the index `generate --setups` expects:
+
+```bash
+bun run achar setups fixtures/PROJECT_2541021_CAM_Milling
+```
+
+```text
+#  Setup   Fixture  Home  Jobs  Duration
+-  ------  -------  ----  ----  --------
+1  Setup1  Fixture  1     13    0:13:14
+2  Setup2  Fixture  1     4     0:03:01
+3  Setup3  Fixture  3     43    0:21:34
+```
+
+Options:
+
+```text
+--json  Print the list as JSON on stdout.
+```
+
+Setup names come from SolidCAM and are not guaranteed unique, so the index is
+the reliable address. A trace whose jobs start before its first `@setup` gets a
+note: those jobs belong to the shared prologue and are posted with every
+selection.
+
+## Posting a Subset of Setups
+
+A setup is one physical fixturing of the part, and the operator runs one at a
+time. `--setups` posts only the ones named:
+
+```bash
+# Indices, ranges, and names all work, in any order
+bun run achar generate fixtures/PROJECT_2541021_CAM_Milling --setups 2      --out generated/setup2
+bun run achar generate fixtures/PROJECT_2541021_CAM_Milling --setups 1-2    --out generated/front
+bun run achar generate fixtures/PROJECT_2541021_CAM_Milling --setups Setup1,Setup3 --out generated/odd
+```
+
+A trace is strictly linear — a shared prologue, one contiguous span per
+`@setup`, then a shared epilogue — so the selection keeps the prologue, the
+chosen spans in trace order, and the epilogue, then regenerates from there.
+Selection order does not matter: setups are always posted in the order the part
+was programmed.
+
+Without `--setups`, nothing changes. The flag is additive and the default path
+is byte-identical to before.
+
+`--setups` is also available on `explain`, which is the fastest way to see how
+one setup posts. It is deliberately **not** available on `parity` or `test`:
+those compare against a reference for the whole program, so a subset has
+nothing to match.
+
+### Tool pruning
+
+By default, `DefTool` events for tools no selected setup loads are dropped, so
+the tool-list comment and `Tools_Length_Measurement.MPF` describe the run the
+operator is about to make rather than the whole part. Tool numbers are carried
+on each event and are never renumbered, so the remaining tools keep their
+identity. Pass `--keep-all-tools` to keep the full table.
+
+### What a subset is not
+
+A subset run is a new, self-consistent program — not a byte-slice of the full
+one. Two consequences:
+
+**Block numbers restart.** The Builder shares one N-number counter across every
+generated file, so the main MPF's numbers advance in step with the subprogram
+bodies. A subset starts from `N10`, and its numbers will not line up with the
+corresponding lines of a full run. Diff with `--ignore-numbering` if you need to
+compare.
+
+**A setup posted without its predecessor starts from program defaults.** The
+post is a modal state machine: it emits only what changed. A setup that is not
+first in the program inherits real values from the setup before it — most
+consequentially the cutting tolerance, which carries forward whenever a job does
+not state its own `Cut_tolerance`, plus the modal G-groups and last position
+that decide whether a move is written out in full. Post setup 2 alone and its
+first job can differ from the same job in a full run:
+
+```text
+-_camtolerance=0.003     (full run: inherited from setup 1's last profile job)
++_camtolerance=0.1       (subset:   the fresh-program default)
+```
+
+The CLI warns whenever a selected setup has lost the setup before it, and names
+what to check. An unbroken run starting at setup 1 has nothing to inherit and is
+identical to the full run apart from block numbers — verified on
+`PROJECT_2541021_CAM_Milling`, where `--setups 1-2` reproduces all 17 of the
+corresponding subprograms exactly.
+
+Output filenames do not change, so a partial program will overwrite a full one
+in the same `--out` directory. Give each selection its own directory.
 
 ### `parity`
 

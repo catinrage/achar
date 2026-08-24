@@ -13,6 +13,7 @@ import { registerParityCommand } from './commands/parity';
 import { registerParseCommand } from './commands/parse';
 import { registerPostsCommand } from './commands/posts';
 import { registerServeCommand } from './commands/serve';
+import { registerSetupsCommand } from './commands/setups';
 import { registerTestCommand } from './commands/test';
 import { registerTimingCommand } from './commands/timing';
 import { registerValidateCommand } from './commands/validate';
@@ -41,6 +42,7 @@ registerValidateCommand(cli);
 registerGenerateCommand(cli);
 registerParityCommand(cli);
 registerTestCommand(cli);
+registerSetupsCommand(cli);
 registerTimingCommand(cli);
 
 cli.helpCommand(true);

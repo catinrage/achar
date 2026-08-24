@@ -125,6 +125,18 @@ export type {
 export { extractProductProfile } from './lib/product-profile';
 export { Program } from './lib/program';
 export type {
+  SelectSetupEventsOptions,
+  SetupPartition,
+  SetupSelectionResult,
+  SetupSpan,
+} from './lib/setup-selection';
+export {
+  availableSetups,
+  parseSetupSelection,
+  partitionSetups,
+  selectSetupEvents,
+} from './lib/setup-selection';
+export type {
   JobTiming,
   SetupTiming,
   SetupToolTiming,

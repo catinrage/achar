@@ -9,6 +9,7 @@ import {
 import chalk from 'chalk';
 import type { Command } from 'commander';
 import inquirer from 'inquirer';
+import type { RunInput } from '../inputs';
 import {
   dropUndefined,
   emptyToUndefined,
@@ -20,6 +21,7 @@ import {
 import {
   type CliOptions,
   withGenerationOptions,
+  withSetupSelectionOptions,
   withVmidOptions,
 } from '../options';
 import { runCommand } from '../runner';
@@ -37,11 +39,13 @@ interface GenerateRequest {
 }
 
 export function registerGenerateCommand(cli: Command): void {
-  withVmidOptions(
-    withGenerationOptions(
-      cli
-        .command('generate [trace-or-fixture]')
-        .description('Generate MPF/SPF files from a trace or fixture.'),
+  withSetupSelectionOptions(
+    withVmidOptions(
+      withGenerationOptions(
+        cli
+          .command('generate [trace-or-fixture]')
+          .description('Generate MPF/SPF files from a trace or fixture.'),
+      ),
     ),
   )
     .option('--watch', 'Watch inputs and regenerate on changes.')
@@ -81,6 +85,7 @@ export function registerGenerateCommand(cli: Command): void {
               `Generated ${files.length} files -> ${input.outputDir} in ${elapsed}`,
             ),
           );
+          printSetupSelection(input.selectedSetups);
           return 0;
         };
 
@@ -195,6 +200,16 @@ async function collectGenerateRequest(
       },
     },
     {
+      type: 'input',
+      name: 'setups',
+      message: 'Setups to post (e.g. 1,3 or 1-3; blank posts every setup)',
+      default: options.setups ?? '',
+      when: options.interactive === true || !target,
+      filter(value: string) {
+        return emptyToUndefined(value);
+      },
+    },
+    {
       type: 'confirm',
       name: 'strictVmid',
       message: 'Fail on VMID warnings',
@@ -218,4 +233,24 @@ async function collectGenerateRequest(
       interactive: options.interactive,
     },
   };
+}
+
+/**
+ * Names the setups a narrowed run covered.
+ *
+ * Worth saying out loud because a subset writes the same filenames a full run
+ * does: point the same `--out` at both and the partial program silently
+ * replaces the complete one.
+ */
+function printSetupSelection(selected: RunInput['selectedSetups']): void {
+  if (!selected) return;
+  const listed = selected
+    .map((setup) => `${setup.index} (${setup.name})`)
+    .join(', ');
+  printInfo(
+    chalk.yellow(
+      `Partial program: setup ${listed} only. These files carry the same ` +
+        'names a full run would, so keep them in their own output directory.',
+    ),
+  );
 }

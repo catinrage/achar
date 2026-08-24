@@ -12,6 +12,7 @@ export interface CliOptions {
   ignoreNumbering?: boolean;
   interactive?: boolean;
   json?: boolean;
+  keepAllTools?: boolean;
   interfaceName?: string;
   maxDiffs?: number;
   name?: string;
@@ -27,6 +28,7 @@ export interface CliOptions {
   reference?: string;
   report?: string;
   retentionDays?: number;
+  setups?: string;
   strict?: boolean;
   strictVmid?: boolean;
   token?: string;
@@ -63,6 +65,24 @@ export function withGenerationOptions(command: Command): Command {
     .option(
       '--post <name-or-file>',
       'Post module. Built-ins: default, siemens-828d.',
+    );
+}
+
+/**
+ * `--setups`, `--keep-all-tools` for commands that can post a subset of a
+ * trace. Deliberately absent from `parity` and `test`: those compare against a
+ * reference for the whole program, so a subset has nothing to match, and an
+ * undeclared flag is rejected with a clear message.
+ */
+export function withSetupSelectionOptions(command: Command): Command {
+  return command
+    .option(
+      '--setups <selection>',
+      'Post only these setups: indices, ranges, or names (e.g. 1,3 or 1-3,7 or Setup1). Run `achar setups <trace>` to list them.',
+    )
+    .option(
+      '--keep-all-tools',
+      'With --setups, keep every tool definition instead of pruning to the tools the selected setups load.',
     );
 }
 
