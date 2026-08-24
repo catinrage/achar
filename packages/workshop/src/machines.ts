@@ -67,7 +67,7 @@ export interface MachineDocuments {
 const VMID_FILENAME = 'machine.vmid';
 const PROFILE_FILENAME = 'machine.json';
 
-export function machineDirectory(paths: DataPaths, id: string): string {
+function machineDirectory(paths: DataPaths, id: string): string {
   return path.join(paths.machines, id);
 }
 

@@ -16,7 +16,6 @@ import {
   validateTraceAgainstVmid,
 } from '@achar/core';
 import { badRequest, parseFailed } from './errors';
-import type { RequestBody } from './request';
 
 /**
  * Turns request parts into the content-based inputs `@achar/core` expects.
@@ -25,10 +24,10 @@ import type { RequestBody } from './request';
  * and no error carries a server-side path. The `source` labels handed to core
  * parsers ('machineProfile') are deliberately generic for the same reason.
  *
- * Each entry point comes in two shapes: one reading a {@link RequestBody},
- * used by the `/v1` routes, and one taking plain values, used by the parse
- * worker — which receives its inputs over a thread boundary and has no
- * request to read.
+ * Every entry point takes plain values rather than a request. Parsing happens
+ * in a worker that receives its inputs over a thread boundary and has no
+ * request to read, so the route layer decodes the body and passes the pieces
+ * through.
  */
 
 const DEFAULT_POST_ID = 'siemens-828d';
@@ -125,21 +124,6 @@ function countLines(source: string, upTo: number): number {
 }
 
 /** Parses the trace plus whichever optional companions were supplied. */
-export function loadTraceInputs(
-  body: RequestBody,
-  postId?: string,
-): TraceInputs {
-  return loadTraceInputsFrom(
-    {
-      trace: body.document('trace'),
-      vmid: body.part('vmid'),
-      machineProfile: body.part('machineProfile'),
-    },
-    postId,
-  );
-}
-
-/** {@link loadTraceInputs} for a caller that already holds the documents. */
 export function loadTraceInputsFrom(
   documents: TraceDocuments,
   postId?: string,
@@ -240,17 +224,6 @@ function resolveProgramName(
 }
 
 /** Builds and runs the post program for the given inputs. */
-export function buildProgram(
-  body: RequestBody,
-  inputs: TraceInputs,
-): { program: Program; programName: string } {
-  return buildProgramFrom(
-    { postId: body.option('postId'), programName: body.option('programName') },
-    inputs,
-  );
-}
-
-/** {@link buildProgram} for a caller that already holds the options. */
 export function buildProgramFrom(
   options: ProgramOptions,
   inputs: TraceInputs,

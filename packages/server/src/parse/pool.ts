@@ -59,16 +59,18 @@ export class WorkerPool {
     this.taskTimeoutMs = options.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
   }
 
+  // Reached through the typed service container, which fallow's syntactic
+  // member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   get inFlight(): number {
     return this.active;
   }
 
+  // Reached through the typed service container, which fallow's syntactic
+  // member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   get queued(): number {
     return this.waiting.length;
-  }
-
-  get capacity(): number {
-    return this.size;
   }
 
   /** Queues the task and resolves when a worker has finished it. */
@@ -88,6 +90,9 @@ export class WorkerPool {
   }
 
   /** Runs immediately, or rejects with `503 busy` if no slot is free. */
+  // Reached through the typed service container, which fallow's syntactic
+  // member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   tryRun<T>(task: WorkerTask): Promise<T> {
     if (this.active >= this.size || this.waiting.length > 0) {
       return Promise.reject(busy(RETRY_AFTER_SECONDS));

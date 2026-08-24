@@ -63,6 +63,9 @@ export class RequestBody {
   }
 
   /** All parts uploaded under a repeatable name, keyed by their filename. */
+  // Reached through the request context, which fallow's syntactic member
+  // analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   fileList(name: string): GeneratedFile[] {
     return this.files.get(name) ?? [];
   }

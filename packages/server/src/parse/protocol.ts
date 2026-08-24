@@ -10,12 +10,12 @@ import type { CompareOptions, GeneratedFile } from '@achar/core';
  */
 
 /** Documents supplied as content rather than paths. These are all small. */
-export interface TaskDocuments {
+interface TaskDocuments {
   vmid?: string;
   machineProfile?: string;
 }
 
-export interface TaskOptions {
+interface TaskOptions {
   postId?: string;
   programName?: string;
 }

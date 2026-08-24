@@ -28,7 +28,7 @@ export interface DataPaths {
 
 const DEFAULT_DEV_ROOT = '.achar-data';
 
-export function resolveDataRoot(explicit?: string): string {
+function resolveDataRoot(explicit?: string): string {
   const configured = explicit?.trim() || Bun.env.ACHAR_DATA_DIR?.trim();
   return path.resolve(configured || DEFAULT_DEV_ROOT);
 }
@@ -63,7 +63,7 @@ export function prepareDataPaths(explicit?: string): DataPaths {
 }
 
 /** Directory holding one job's spooled trace and generated output. */
-export function jobDirectory(paths: DataPaths, jobId: string): string {
+function jobDirectory(paths: DataPaths, jobId: string): string {
   return path.join(paths.jobs, jobId);
 }
 

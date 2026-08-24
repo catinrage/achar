@@ -231,6 +231,9 @@ export class JobStore {
     return row ? toJob(row) : undefined;
   }
 
+  // Reached through the store held by the route context, which fallow's
+  // syntactic member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   listRecentJobs(limit: number): JobRecord[] {
     const rows = this.db
       .query<JobRow, [number]>(

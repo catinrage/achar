@@ -16,7 +16,7 @@ export type Route =
   | { name: 'history' }
   | { name: 'machines' };
 
-export function parseRoute(pathname: string): Route {
+function parseRoute(pathname: string): Route {
   const segments = pathname.split('/').filter(Boolean);
   if (segments[0] === 'jobs' && segments[1]) {
     return { name: 'job', id: decodeURIComponent(segments[1]) };

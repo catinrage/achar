@@ -205,20 +205,34 @@ function parseFeatureValue(
 ): boolean | number | string {
   const key = `${source}.features.${spec.key}`;
 
-  if (spec.kind === 'boolean') {
-    if (typeof raw !== 'boolean') {
-      throw new Error(`${key} must be a boolean.`);
-    }
-    return raw;
-  }
+  if (spec.kind === 'boolean') return parseBooleanValue(raw, key);
+  if (spec.kind === 'enum') return parseEnumValue(spec, raw, key);
+  return parseNumberValue(spec, raw, key);
+}
 
-  if (spec.kind === 'enum') {
-    if (typeof raw !== 'string' || !spec.values.includes(raw)) {
-      throw new Error(`${key} must be one of: ${spec.values.join(', ')}.`);
-    }
-    return raw;
+function parseBooleanValue(raw: unknown, key: string): boolean {
+  if (typeof raw !== 'boolean') {
+    throw new Error(`${key} must be a boolean.`);
   }
+  return raw;
+}
 
+function parseEnumValue(
+  spec: EnumFeatureSpec,
+  raw: unknown,
+  key: string,
+): string {
+  if (typeof raw !== 'string' || !spec.values.includes(raw)) {
+    throw new Error(`${key} must be one of: ${spec.values.join(', ')}.`);
+  }
+  return raw;
+}
+
+function parseNumberValue(
+  spec: NumberFeatureSpec,
+  raw: unknown,
+  key: string,
+): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {
     throw new Error(`${key} must be a finite number.`);
   }

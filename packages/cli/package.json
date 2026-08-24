@@ -12,7 +12,6 @@
   "dependencies": {
     "@achar/core": "workspace:*",
     "@achar/mcp": "workspace:*",
-    "@achar/server": "workspace:*",
     "chalk": "^5.3.0",
     "cli-spinners": "^3.2.0",
     "commander": "^14.0.2",
