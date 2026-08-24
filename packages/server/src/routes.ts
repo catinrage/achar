@@ -16,8 +16,8 @@ import type { RequestBody } from './request';
  * The route table and its handlers.
  *
  * Handlers stay thin on purpose: decode, call a service, shape the response.
- * Anything that looks like machining logic belongs in core, where the CLI, MCP
- * server, and desktop app can reach it too.
+ * Anything that looks like machining logic belongs in core, where the CLI and
+ * MCP server can reach it too.
  *
  * Routes marked `gated` read a trace. Their body is spooled to scratch by the
  * kernel and the work is dispatched to a worker thread — nothing on this table
@@ -95,6 +95,7 @@ export const v1Routes: Route[] = [
           id: post.id,
           name: post.name,
           aliases: post.aliases,
+          dialects: post.dialects,
         })),
       }),
   },

@@ -47,14 +47,31 @@ export type {
 export { discoverFixtures, loadFixture } from './lib/fixture';
 export { Logger } from './lib/logger';
 export type {
-  MachineProfile,
+  BooleanFeatureSpec,
+  EnumFeatureSpec,
+  MachineFeatureSpec,
   MachineProfileFeatures,
+  NumberFeatureSpec,
+} from './lib/machine-features';
+export {
+  MACHINE_FEATURE_SPECS,
+  machineFeatureSchema,
+  parseMachineFeatures,
+} from './lib/machine-features';
+export type {
+  LoadMachineProfileOptions,
+  MachineProfile,
   MachineProfileHome,
+  MachineProfilePostBinding,
+  MachineProfileResolver,
+  MachineProfileValidationOptions,
 } from './lib/machine-profile';
 export {
   loadMachineProfile,
+  mergeMachineProfiles,
   parseMachineProfile,
   requireMachineProfile,
+  resolveMachineProfileChain,
   validateMachineProfileCompatibility,
 } from './lib/machine-profile';
 export type { EventData } from './lib/parser';

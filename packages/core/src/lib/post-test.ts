@@ -1,6 +1,9 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { MachineProfile } from './machine-profile';
+import type {
+  MachineProfile,
+  MachineProfilePostBinding,
+} from './machine-profile';
 import { validateMachineProfileCompatibility } from './machine-profile';
 import type { EventData } from './parser';
 import { Parser } from './parser';
@@ -73,6 +76,8 @@ export interface PostTestConfig {
   update?: boolean;
   vmid?: VmidDefinition;
   machineProfile?: MachineProfile;
+  /** Post metadata, when the caller knows which built-in post it is using. */
+  post?: MachineProfilePostBinding;
 }
 
 export function deriveProgramName(tracePath: string): string {
@@ -161,11 +166,10 @@ export async function testPost(
     ? validateTraceAgainstVmid(events, config.vmid)
     : [];
   vmidIssues.push(
-    ...validateMachineProfileCompatibility(
-      config.machineProfile,
-      events,
-      config.vmid,
-    ),
+    ...validateMachineProfileCompatibility(config.machineProfile, events, {
+      vmid: config.vmid,
+      post: config.post,
+    }),
   );
 
   if (config.out) {

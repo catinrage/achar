@@ -1,8 +1,8 @@
 # Workshop UI
 
 A browser front end so everyone in the workshop generates G-code from one
-place, with one copy of each machine's configuration, instead of running their
-own desktop install against their own `.vmid`.
+place, with one copy of each machine's configuration, instead of everyone
+running the tool locally against their own `.vmid`.
 
 It is served by the same process as the [`/v1` API](http-server.md) — one
 container, one port, no separate web server. Open `http://<host>:7788/`.
@@ -72,6 +72,26 @@ A machine is a name, a post id, and optionally a VMID and a machine profile.
 Both companion files are parsed when the machine is created, not when a trace is
 first posted against it, so a wrong file fails while an admin is looking at the
 form.
+
+The machine form renders its property inputs from the feature schema served
+by `GET /api/posts`, so a property added to the core table reaches the UI
+without a form change. A machine that declares `maxSpindleSpeed` blocks any
+job commanding more, with the speed named in the diagnostics.
+
+A profile is checked on the form through the same function that gates
+generation, so what an admin sees when saving a machine is what a machinist
+would have hit when posting: a controller that does not match the post, a
+dialect the post cannot speak, a home position outside the VMID's travel.
+Changing a machine's post or VMID re-checks the profile already on disk, since
+either can invalidate a profile nobody touched.
+
+A profile can also `extends` another machine by id, stating only what differs
+— "like the PoyaKar, but four-axis". The shared values then have one home, the
+one everybody already edits, so correcting a base corrects every machine built
+on it. The base must exist, a machine cannot extend itself, and a machine that
+others are built on cannot be deleted until they are pointed elsewhere. Jobs
+receive the profile already flattened, because the worker that posts a trace
+cannot reach the other machines.
 
 Uploading arbitrary text as a VMID is caught: the core parser is lenient and
 returns an empty definition rather than an error, so a definition with no axes

@@ -95,6 +95,30 @@ describe('machines', () => {
     expect(posts).toContainEqual({
       id: 'siemens-828d',
       name: 'Siemens 828D Milling 4A',
+      dialects: ['siemens-828d', 'poyakar-1160l'],
+    });
+  });
+
+  it('serves the machine feature schema the form renders inputs from', async () => {
+    const { machineFeatures } = await (await fetch(`${base}/api/posts`)).json();
+
+    expect(machineFeatures).toContainEqual({
+      key: 'maxSpindleSpeed',
+      kind: 'number',
+      label: 'Maximum spindle speed',
+      min: 1,
+      integer: true,
+      unit: 'rpm',
+      description:
+        'Fastest the spindle can turn. A program commanding more is refused rather than posted.',
+    });
+    expect(
+      machineFeatures.find(
+        (spec: { key: string }) => spec.key === 'toolChanger',
+      ),
+    ).toMatchObject({
+      kind: 'enum',
+      values: ['carousel', 'umbrella', 'manual'],
     });
   });
 });

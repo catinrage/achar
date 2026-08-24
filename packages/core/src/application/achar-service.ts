@@ -136,8 +136,8 @@ export async function bootstrapAchar(
   let machineProfiles: AcharMachineProfileSummary[] = [];
 
   if (existsSync(fixturesRoot)) {
-    // Browsing surfaces (desktop, MCP workspace tool) still list ignored
-    // fixtures; only test runs exclude them.
+    // The MCP workspace tool still lists ignored fixtures; only test runs
+    // exclude them.
     fixtures = (
       await discoverFixtures(fixturesRoot, { includeIgnored: true })
     ).map((fixture) => ({
@@ -213,7 +213,7 @@ async function findMachineProfilePaths(root: string): Promise<string[]> {
   return found;
 }
 
-async function loadInput(input: AcharInput) {
+async function loadInput(input: AcharInput, root?: string) {
   if (!input.tracePath.trim()) throw new Error('Trace 5 file is required.');
   if (!input.programName.trim()) throw new Error('Program name is required.');
 
@@ -226,11 +226,14 @@ async function loadInput(input: AcharInput) {
     ? await parseVmidFile(path.resolve(input.vmidPath))
     : undefined;
   const machineProfile = input.machineProfilePath?.trim()
-    ? await loadMachineProfile(path.resolve(input.machineProfilePath))
+    ? await loadMachineProfile(path.resolve(input.machineProfilePath), { root })
     : undefined;
   const diagnostics = [
     ...(vmid ? validateTraceAgainstVmid(events, vmid) : []),
-    ...validateMachineProfileCompatibility(machineProfile, events, vmid),
+    ...validateMachineProfileCompatibility(machineProfile, events, {
+      vmid,
+      post: resolveBuiltinPost(input.postId),
+    }),
   ] satisfies AcharDiagnostic[];
 
   return { events, vmid, machineProfile, diagnostics };
@@ -245,9 +248,12 @@ function assertNoErrors(diagnostics: AcharDiagnostic[]): void {
 
 export async function validateAcharInput(
   input: AcharInput,
+  workspaceRoot?: string,
 ): Promise<AcharValidationResult> {
   const startedAt = performance.now();
-  const loaded = await loadInput(input);
+  // The root travels with the input so a profile's `extends` chain cannot
+  // reach past a sandbox the caller already applied to the profile path.
+  const loaded = await loadInput(input, workspaceRoot);
   return {
     eventCount: loaded.events.length,
     durationMs: performance.now() - startedAt,
@@ -270,7 +276,7 @@ export async function generateAcharFiles(
   const startedAt = performance.now();
   const programName = input.programName.trim();
   resolveGeneratedFilePath(workspaceRoot, programName);
-  const loaded = await loadInput(input);
+  const loaded = await loadInput(input, workspaceRoot);
   assertNoErrors(loaded.diagnostics);
 
   const post = resolveBuiltinPost(input.postId);

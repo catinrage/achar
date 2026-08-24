@@ -146,6 +146,17 @@ bun run achar generate fixtures/PROJECT_434_112466504665666_CAM_2_MILLING --out 
 `machineProfile` is optional machine-specific generation policy. Use it for
 real machine differences such as whether a final `G04F2` dwell is required.
 
+It carries two separable things. The `features` block holds properties of the
+machine itself — a tool probe, coolant dwells, a tapping-cycle operator stop.
+The `dialect` field names an output convention defined in the post's own code,
+covering everything about *how the G-code text is written*: modal `F`
+suppression, coordinate compaction, comment blocks, block ordering. A new
+machine that posts like an existing one names its dialect and states only its
+own hardware; it does not restate the convention. `extends` takes that
+further: a profile can start from another and state only its delta. See the machine profile
+section of [cli-guide.md](cli-guide.md) for the schema and the available
+Siemens 828D dialects.
+
 ## VMID Validation
 
 A fixture can include `vmid`. Achar parses VMID machine metadata, axes, and

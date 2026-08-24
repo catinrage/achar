@@ -16,7 +16,7 @@ export interface SiemensJobLifecycleSettings {
   home: Position;
   returnHome: Position;
   cancelAirCoolantSchedule: boolean;
-  machineProfileConfigured: boolean;
+  startPositionRequiresToolChange: boolean;
 }
 
 interface JobToolChange {
@@ -236,7 +236,7 @@ function emitStartPosition(
   params: EventsType['StartOfJob'],
   toolChange: EventsType['ChangeTool'] | null,
 ): void {
-  if (toolChange === null && settings.machineProfileConfigured) return;
+  if (toolChange === null && settings.startPositionRequiresToolChange) return;
 
   builder.Block([
     toolChange ? `G0 G${runtime.state.currentHomeNumber} G90` : undefined,

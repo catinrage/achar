@@ -15,7 +15,10 @@ export function registerPostsCommand(cli: Command): void {
             post.aliases.length > 0
               ? chalk.dim(` aliases: ${post.aliases.join(', ')}`)
               : '';
-          printData(`${chalk.green(post.id)}  ${post.name}${aliases}`);
+          const dialects = chalk.dim(` dialects: ${post.dialects.join(', ')}`);
+          printData(
+            `${chalk.green(post.id)}  ${post.name}${aliases}${dialects}`,
+          );
         }
 
         return 0;

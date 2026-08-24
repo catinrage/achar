@@ -17,6 +17,7 @@ import {
   loadPost,
   parseTraceFile,
   parseVmidFile,
+  resolveBuiltinPost,
   validateMachineProfileCompatibility,
   validateTraceAgainstVmid,
   writeHtmlReport,
@@ -74,7 +75,14 @@ export async function resolveInput(
     });
   const vmidIssues = vmid ? validateTraceAgainstVmid(traceEvents, vmid) : [];
   vmidIssues.push(
-    ...validateMachineProfileCompatibility(machineProfile, traceEvents, vmid),
+    ...validateMachineProfileCompatibility(machineProfile, traceEvents, {
+      vmid,
+      // Only built-in posts declare a controller and a dialect list. A custom
+      // post module is left unchecked: it can target whatever it likes.
+      post: resolveBuiltinPost(
+        typeof options.post === 'string' ? options.post : (fixture?.post ?? ''),
+      ),
+    }),
   );
 
   if (requirements.requireReference && !referenceDir) {

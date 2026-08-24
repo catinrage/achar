@@ -5,9 +5,11 @@ import { definePost } from '../../lib/post-definition';
 import type { Program } from '../../lib/program';
 import type { CommandsType } from '../../types';
 import { createSiemensPostContext } from './context';
+import { resolveSiemens828dDialect } from './dialect';
 import { registerDrillingHandlers } from './drilling';
 import { registerJobLifecycleHandlers } from './job-lifecycle';
 import { registerIgnoredLifecycleEvents } from './lifecycle';
+import { resolveSiemens828dMachine } from './machine';
 import { siemens828dPolicy } from './policy';
 import { registerRapidMotionHandlers } from './rapid-motion';
 import { createSiemensPostRuntime, lineCoordinates } from './runtime';
@@ -26,58 +28,47 @@ export interface Siemens828dPostOptions {
   };
   measureTools?: boolean;
   machineProfile?: MachineProfile;
+  /**
+   * Overrides the dialect the machine profile names. Mainly for parity runs
+   * that need to post one trace both ways; production callers name the
+   * dialect on the profile so it travels with the machine.
+   */
+  dialect?: string;
 }
 
 export function registerSiemens828dPost(
   program: Program,
   options: Siemens828dPostOptions = {},
 ): void {
-  const postContext = createSiemensPostContext(options.machineProfile);
+  const dialect = resolveSiemens828dDialect(
+    options.dialect ?? options.machineProfile?.dialect,
+  );
+  const machine = resolveSiemens828dMachine(options.machineProfile, {
+    home: options.home,
+    returnHome: options.returnHome,
+    measureTools: options.measureTools,
+  });
+  const postContext = createSiemensPostContext(
+    options.machineProfile,
+    dialect,
+    machine,
+  );
   const post = definePost(program, postContext);
   registerIgnoredLifecycleEvents(post);
   const state = post.context.state;
   const toolDefinitions = post.context.state.tools;
   const callMode = options.callMode ?? 'extcall';
-  const home = {
-    x: options.home?.x ?? options.machineProfile?.home?.x ?? -465,
-    y: options.home?.y ?? options.machineProfile?.home?.y ?? 190,
-    z: options.home?.z ?? options.machineProfile?.home?.z ?? 0,
-  };
-  const returnHome = {
-    x: options.returnHome?.x ?? options.machineProfile?.returnHome?.x ?? 260,
-    y: options.returnHome?.y ?? options.machineProfile?.returnHome?.y ?? 190,
-    z: options.returnHome?.z ?? options.machineProfile?.returnHome?.z ?? 0,
-  };
-  const measureTools =
-    options.measureTools ??
-    options.machineProfile?.features?.toolMeasurementProgram ??
-    true;
-  const deferToolMeasurementProgram =
-    options.machineProfile?.features?.toolMeasurementProgramDeferred === true;
-  const mainToolListComments =
-    options.machineProfile?.features?.mainToolListComments === true;
-  const dwellAfterCoolantOn =
-    options.machineProfile?.features?.dwellAfterCoolantOn === true;
-  const dwellAfterCoolantOff =
-    options.machineProfile?.features?.dwellAfterCoolantOff === true;
-  const cancelAirCoolantSchedule =
-    options.machineProfile?.features?.cancelAirCoolantSchedule !== false;
-  const forceInitialApproachPosition =
-    options.machineProfile?.features?.forceInitialApproachPosition === true;
-  const inlineFeedRateMode =
-    options.machineProfile?.features?.inlineFeedRateMode !== false;
-  const compactCoordinates =
-    options.machineProfile?.features?.compactCoordinates === true;
-  const lineFeedFromChangeFlag =
-    options.machineProfile?.features?.lineFeedFromChangeFlag === true;
+  // Both `machine` and `dialect` arrive fully resolved: what this machine is,
+  // and how its G-code is written. Nothing below re-decides a default.
+  const { home, measureTools, returnHome } = machine;
 
   const measurementTools: string[] = [];
 
   const { formatNumber, sameNumber, traceChanged } = siemens828dPolicy;
   const runtime = createSiemensPostRuntime(state, {
     callMode,
-    compactCoordinates,
-    dwellAfterCoolantOn,
+    compactCoordinates: dialect.compactCoordinates,
+    dwellAfterCoolantOn: machine.dwellAfterCoolantOn,
   });
   const {
     changedOrDifferent,
@@ -110,11 +101,11 @@ export function registerSiemens828dPost(
   registerJobLifecycleHandlers(post, runtime, {
     home,
     returnHome,
-    cancelAirCoolantSchedule,
-    machineProfileConfigured: options.machineProfile !== undefined,
+    cancelAirCoolantSchedule: dialect.cancelAirCoolantSchedule,
+    startPositionRequiresToolChange: dialect.startPositionRequiresToolChange,
   });
   registerRapidMotionHandlers(post, runtime, {
-    forceInitialApproachPosition,
+    forceInitialApproachPosition: dialect.forceInitialApproachPosition,
   });
 
   post.on('StartOfFile', ($, params) => {
@@ -195,12 +186,15 @@ export function registerSiemens828dPost(
       radiusTolerance: params.tolerance_rad,
     });
 
-    if ((!measureTools || mainToolListComments) && !state.emittedToolList) {
+    if (
+      (!measureTools || dialect.mainToolListComments) &&
+      !state.emittedToolList
+    ) {
       $.Comment('Tools Used In This Program :');
       state.emittedToolList = true;
     }
 
-    if (!measureTools || mainToolListComments) {
+    if (!measureTools || dialect.mainToolListComments) {
       // The tool-list comment uses SolidCAM's short display name
       // (tool_message), not the full tool_id_string used for T="..."
       // selection elsewhere; the two diverge whenever the tool name
@@ -211,7 +205,7 @@ export function registerSiemens828dPost(
       );
     }
 
-    if (measureTools && deferToolMeasurementProgram) {
+    if (measureTools && dialect.toolMeasurementProgramDeferred) {
       measurementTools.push(params.tool_id_string);
       return;
     }
@@ -234,11 +228,11 @@ export function registerSiemens828dPost(
   });
 
   post.on('StartProgram', ($, params, metadata) => {
-    if (mainToolListComments && state.emittedToolList) {
+    if (dialect.mainToolListComments && state.emittedToolList) {
       $.BlankLine();
     }
 
-    if (measureTools && !deferToolMeasurementProgram) {
+    if (measureTools && !dialect.toolMeasurementProgramDeferred) {
       $.OpenFile('Tools_Length_Measurement', 'MPF', 'append');
       controller($).ToolProbeCycle();
       $.ProgramEnd();
@@ -290,7 +284,7 @@ export function registerSiemens828dPost(
 
   post.on('Line', ($, params) => {
     const forceFeedMode =
-      inlineFeedRateMode &&
+      dialect.inlineFeedRateMode &&
       state.pendingPathMode &&
       !state.jobFeedModeEstablished;
     const forceFeed =
@@ -302,7 +296,8 @@ export function registerSiemens828dPost(
       // m_feed_spin touches the shared feed variable. The Siemens 4A post
       // instead overrides that bit with its own `feed ne prevFeed`
       // comparison, so only the numeric fallback applies there.
-      (lineFeedFromChangeFlag && traceChanged(params, 'feed') === true) ||
+      (dialect.lineFeedFromChangeFlag &&
+        traceChanged(params, 'feed') === true) ||
       !sameNumber(params.feed, state.previousLineFeed);
     emitPathMode($);
 
@@ -391,7 +386,7 @@ export function registerSiemens828dPost(
     } else {
       $.flush();
     }
-    if (options.machineProfile?.features?.trackArcFeedRate === true) {
+    if (dialect.trackArcFeedRate) {
       state.previousLineFeed = params.feed;
     }
     state.deferredJobStartZ = false;
@@ -411,7 +406,7 @@ export function registerSiemens828dPost(
 
   post.on('EndProgram', ($) => {
     controller($).CoolantOff();
-    if (dwellAfterCoolantOff) {
+    if (machine.dwellAfterCoolantOff) {
       controller($).Dwell(2);
     }
     $.NumberedBlankLine();
@@ -421,7 +416,7 @@ export function registerSiemens828dPost(
       .SupaRapid({ x: returnHome.x, y: returnHome.y });
     $.ProgramEnd();
     $.BlankLine();
-    if (measureTools && deferToolMeasurementProgram) {
+    if (measureTools && dialect.toolMeasurementProgramDeferred) {
       emitToolMeasurementProgram($);
     }
   });

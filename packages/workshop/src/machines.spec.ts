@@ -5,7 +5,12 @@ import { HttpError } from '@achar/server';
 import type { DataPaths } from './data/paths';
 import { prepareDataPaths } from './data/paths';
 import { JobStore } from './data/store';
-import { createMachine, deleteMachine, loadMachineDocuments } from './machines';
+import {
+  createMachine,
+  deleteMachine,
+  loadMachineDocuments,
+  updateMachine,
+} from './machines';
 
 const FIXTURES = path.resolve(
   import.meta.dir,
@@ -106,6 +111,84 @@ describe('createMachine', () => {
     expect(error.message).toContain('not valid JSON');
   });
 
+  it("rejects a dialect the machine's post cannot speak", async () => {
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Typo Dialect',
+        postId: 'siemens-828d',
+        machineProfile: JSON.stringify({
+          id: 'typo',
+          dialect: 'poyakar-1160',
+        }),
+      }),
+    );
+    expect(error.message).toContain(
+      "names dialect 'poyakar-1160', which post siemens-828d does not define",
+    );
+  });
+
+  it("rejects dialect traits left in a profile's features block", async () => {
+    // Accepting them would store a profile whose flags are silently ignored,
+    // so the machine would post different G-code than the file describes.
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Legacy Flags',
+        postId: 'siemens-828d',
+        machineProfile: JSON.stringify({
+          id: 'legacy',
+          features: { compactCoordinates: true },
+        }),
+      }),
+    );
+    expect(error.message).toContain('compactCoordinates');
+  });
+
+  it('rejects a profile for a different control than the post emits', async () => {
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Wrong Control',
+        postId: 'siemens-828d',
+        machineProfile: JSON.stringify({
+          id: 'fanuc-cell',
+          controller: 'fanuc-0i',
+        }),
+      }),
+    );
+    expect(error.message).toContain(
+      'is for a fanuc-0i control, but post siemens-828d emits for siemens-828d',
+    );
+  });
+
+  it('rejects a home position the machine cannot reach', async () => {
+    // Home is emitted at the start and end of every program, so one outside
+    // the VMID envelope is a crash on every job the machine ever runs.
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Unreachable Home',
+        postId: 'siemens-828d',
+        vmid: await vmid(),
+        machineProfile: JSON.stringify({
+          id: 'unreachable',
+          home: { x: -900, y: 0, z: 0 },
+        }),
+      }),
+    );
+    expect(error.message).toContain(
+      'puts home X at -900, outside the VMID travel limits -550 to 550',
+    );
+  });
+
+  it('accepts a home position inside the VMID envelope', async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Reachable Home',
+      postId: 'siemens-828d',
+      vmid: await vmid(),
+      machineProfile: await profile(),
+    });
+
+    expect(machine.hasProfile).toBe(true);
+  });
+
   it('rejects a blank name', async () => {
     const error = await expectRejection(
       createMachine(store, paths, { name: '   ', postId: 'siemens-828d' }),
@@ -164,5 +247,94 @@ describe('deleteMachine', () => {
   it('rejects an unknown machine', async () => {
     const error = await expectRejection(deleteMachine(store, paths, 'ghost'));
     expect(error.message).toContain("Unknown machine 'ghost'");
+  });
+});
+
+describe('machine profile inheritance', () => {
+  const baseProfile = JSON.stringify({
+    id: 'poyakar-1160l-3a',
+    controller: 'siemens-828d',
+    axes: 3,
+    dialect: 'poyakar-1160l',
+    features: { dwellAfterCoolantOn: true, tapCycleOptionalStop: true },
+    home: { x: -465, y: 190, z: 0 },
+  });
+
+  const createBase = () =>
+    createMachine(store, paths, {
+      name: 'PoyaKar 1160L 3A',
+      postId: 'siemens-828d',
+      machineProfile: baseProfile,
+    });
+
+  it('lets a machine state only what differs from its base', async () => {
+    const base = await createBase();
+    const derived = await createMachine(store, paths, {
+      name: 'PoyaKar 1160L 4A',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({
+        id: 'poyakar-1160l-4a',
+        extends: base.id,
+        axes: 4,
+      }),
+    });
+
+    const documents = await loadMachineDocuments(store, paths, derived.id);
+    const profile = JSON.parse(documents.machineProfile ?? '{}');
+
+    expect(profile.axes).toBe(4);
+    expect(profile.dialect).toBe('poyakar-1160l');
+    expect(profile.features).toEqual({
+      dwellAfterCoolantOn: true,
+      tapCycleOptionalStop: true,
+    });
+    expect(profile.home).toEqual({ x: -465, y: 190, z: 0 });
+    // Flattened on this side: the worker process cannot reach other machines.
+    expect(profile.extends).toBeUndefined();
+  });
+
+  it('rejects a base that does not exist', async () => {
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Orphan',
+        postId: 'siemens-828d',
+        machineProfile: JSON.stringify({ id: 'orphan', extends: 'nope' }),
+      }),
+    );
+    expect(error.message).toContain("machine 'nope', which does not exist");
+  });
+
+  it('rejects a machine extending itself', async () => {
+    const base = await createBase();
+    const error = await expectRejection(
+      updateMachine(store, paths, base.id, {
+        machineProfile: JSON.stringify({ id: 'self', extends: base.id }),
+      }),
+    );
+    expect(error.message).toContain('cannot extend itself');
+  });
+
+  it('refuses to delete a machine another machine is built on', async () => {
+    const base = await createBase();
+    await createMachine(store, paths, {
+      name: 'PoyaKar 1160L 4A',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({
+        id: 'derived',
+        extends: base.id,
+        axes: 4,
+      }),
+    });
+
+    const error = await expectRejection(deleteMachine(store, paths, base.id));
+    expect(error.message).toContain('PoyaKar 1160L 4A');
+    expect(store.findMachine(base.id)).toBeDefined();
+  });
+
+  it('deletes a base once nothing is built on it', async () => {
+    const base = await createBase();
+    await deleteMachine(store, paths, base.id);
+
+    expect(store.findMachine(base.id)).toBeUndefined();
   });
 });

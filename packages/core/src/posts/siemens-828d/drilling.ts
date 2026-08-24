@@ -27,7 +27,7 @@ export function registerDrillingHandlers(
       );
     }
     if (
-      state.machineProfile?.features?.drillApproachZBeforeCoolant === true &&
+      state.dialect.drillApproachZBeforeCoolant &&
       params.drill_cycle_name !== 'CYCLE84' &&
       (traceChanged(params, 'zpos') === true ||
         !sameNumber(params.zpos, state.lastPosition.z))
@@ -35,10 +35,7 @@ export function registerDrillingHandlers(
       $.Word('Z', formatCoordinate(params.zpos));
       state.lastPosition.z = params.zpos;
     }
-    if (
-      state.machineProfile?.features?.retainCoolantAcrossJobs !== true ||
-      !state.coolantActive
-    ) {
+    if (!state.dialect.retainCoolantAcrossJobs || !state.coolantActive) {
       emitCoolantOn($);
       state.coolantActive = true;
     }
@@ -67,12 +64,14 @@ export function registerDrillingHandlers(
     ]);
     $.SetFeedRate(state.currentDrill.feed, { forcePrint: true });
     if (
-      state.machineProfile?.features?.tapCycleOptionalStop === true &&
+      state.machine.tapCycleOptionalStop &&
       state.currentDrill.drill_cycle_name === 'CYCLE84'
     ) {
       // Tapping cycles get an optional stop immediately before the cycle
       // call on machines with this feature — no corresponding trace flag,
-      // so it is machine-profile gated rather than trace-driven.
+      // so it is machine-profile gated rather than trace-driven. This is a
+      // property of the machine, not of the output convention: the same GPP
+      // omits it on machines that do not want the operator check.
       $.OptionalStop();
     }
     controller($).DrillCycle(state.currentDrill, {

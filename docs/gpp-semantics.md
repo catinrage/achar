@@ -192,7 +192,8 @@ with no deferred-Z interaction.
 
 ### Rule 8 — Tapping cycles do not repeat the drill-approach Z
 
-**Statement.** The `drillApproachZBeforeCoolant` repeat (rule from the
+**Statement.** The `drillApproachZBeforeCoolant` repeat (a dialect trait;
+rule from the
 Drill handler: re-emit Z when the trace flags it changed even if the
 prior rapid already positioned there) applies to ordinary drill cycles
 only. Tapping cycles (`drill_cycle_name === 'CYCLE84'`) never repeat that
@@ -210,7 +211,7 @@ fix, cascading N-numbers through the entire file.
 
 ### Rule 9 — Tapping cycles get an unconditional optional stop, machine-gated
 
-**Statement.** On machines with the `tapCycleOptionalStop` feature, every
+**Statement.** On machines with the `tapCycleOptionalStop` machine feature, every
 `CYCLE84` call is preceded by `M1` (optional stop), immediately after the
 feed word — unconditionally, with no corresponding trace flag. Machines
 without the feature never emit it.
@@ -224,15 +225,18 @@ preceded by `M1`, always, regardless of trace fields on the `Drill` event
 the PoyaKar case — ruling out a trace-driven explanation and pointing to
 a machine-level default instead.
 
-**Implementation.** New `MachineProfileFeatures.tapCycleOptionalStop`
-flag (`machine-profile.ts`); `drilling.ts` DrillPoint handler emits
+**Implementation.** `MachineProfileFeatures.tapCycleOptionalStop`
+(`machine-profile.ts`); `drilling.ts` DrillPoint handler emits
 `$.OptionalStop()` before the cycle call when the feature is on and
 `drill_cycle_name === 'CYCLE84'`. Enabled on `PoyaKar_1160L_3A.machine.json`.
+This stayed a *machine* property after the dialect split: the evidence above
+is that the same GPP omits it elsewhere, so it tracks the machine rather than
+the output convention.
 
 ### Rule 10 — The tool-list comment uses SolidCAM's short tool name, not the selection id
 
 **Statement.** The `; T<number>-<name>` lines in the "Tools Used In This
-Program" comment block (main-file, `mainToolListComments` feature) use
+Program" comment block (main-file, `mainToolListComments` dialect trait) use
 `tool_message` — SolidCAM's short display name — not `tool_id_string`,
 which is what `T="..."` tool-selection words use elsewhere. The two
 diverge whenever the tool carries a length/variant suffix.
@@ -279,10 +283,12 @@ where the reference prints `F753`; enabling the flag globally regressed
 2541021/26646 (Siemens-GPP fixtures), matching the source difference
 exactly.
 
-**Implementation.** `MachineProfileFeatures.lineFeedFromChangeFlag`
-(enabled on `PoyaKar_1160L_3A.machine.json`); `post.ts` Line handler
-adds `traceChanged(params, 'feed') === true` to `forceFeed` only when
-the feature is on.
+**Implementation.** `Siemens828dDialect.lineFeedFromChangeFlag`
+(`posts/siemens-828d/dialect.ts`, set on the `poyakar-1160l` dialect that
+`PoyaKar_1160L_3A.machine.json` names); `post.ts` Line handler adds
+`traceChanged(params, 'feed') === true` to `forceFeed` only when the trait is
+on. This rule is the clearest case for the dialect split: the statement above
+is literally "two GPPs, two rules", with no machine involved.
 
 ---
 

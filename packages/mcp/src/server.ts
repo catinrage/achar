@@ -99,7 +99,10 @@ function createServer(workspaceRoot: string): McpServer {
     (input) =>
       guarded(async () =>
         text(
-          await validateAcharInput(constrainAcharInput(workspaceRoot, input)),
+          await validateAcharInput(
+            constrainAcharInput(workspaceRoot, input),
+            workspaceRoot,
+          ),
         ),
       ),
   );

@@ -3,6 +3,15 @@ export {
   type SiemensPostContextState,
   type SiemensToolDefinition,
 } from './context';
+export {
+  DEFAULT_SIEMENS_828D_DIALECT_ID,
+  listSiemens828dDialectIds,
+  POYAKAR_1160L_DIALECT,
+  resolveSiemens828dDialect,
+  SIEMENS_828D_DIALECTS,
+  SIEMENS_828D_STOCK_DIALECT,
+  type Siemens828dDialect,
+} from './dialect';
 export { registerDrillingHandlers } from './drilling';
 export {
   type AssignmentOptions,
@@ -21,6 +30,12 @@ export {
   type SiemensJobLifecycleSettings,
 } from './job-lifecycle';
 export { registerIgnoredLifecycleEvents } from './lifecycle';
+export {
+  resolveSiemens828dMachine,
+  SIEMENS_828D_MACHINE_DEFAULTS,
+  type Siemens828dMachineOverrides,
+  type Siemens828dMachineSettings,
+} from './machine';
 export { siemens828dPolicy } from './policy';
 export {
   registerSiemens828dPost as default,

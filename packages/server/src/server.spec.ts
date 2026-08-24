@@ -90,6 +90,7 @@ describe('GET /v1/posts', () => {
       id: 'siemens-828d',
       name: 'Siemens 828D Milling 4A',
       aliases: ['default'],
+      dialects: ['siemens-828d', 'poyakar-1160l'],
     });
   });
 });

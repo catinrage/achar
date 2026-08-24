@@ -293,7 +293,39 @@ Machine profiles are optional. If a post behavior depends on a profile value
 that has no safe default, the post should throw a clear error explaining that a
 machine profile is required.
 
-Initial schema:
+A profile answers two separate questions, and keeps them apart:
+
+- **What is this machine?** — the `features` block, plus `axes`, `home`, and
+  `returnHome`. Everything a machinist could point at on the shop floor.
+- **Which output convention must its G-code follow?** — the `dialect` field,
+  a single name. Dialects are defined in the post's code, not in profiles,
+  because they describe how the text is written rather than what the machine
+  is. Two machines wired identically produce different files when different
+  legacy GPPs posted them; one machine produces the same file whichever job
+  it runs.
+
+Run `achar posts` to see which dialects a post can speak. An unknown dialect
+is an error, never a silent fallback to the default.
+
+A profile can also start from another with `extends`, stating only what
+differs. In a file, the reference is a path relative to the profile that
+writes it:
+
+```json
+{
+  "id": "poyakar-1160l-4a",
+  "extends": "../machines/poyakar-1160l-3a.machine.json",
+  "axes": 4
+}
+```
+
+Merging is per-section and one level deep: a `features` key the derived
+profile does not mention keeps the base's value, and `home.z` survives a
+derived profile that only moves `home.x`. `id` is never inherited — two
+machines sharing one is the confusion profiles exist to prevent. A missing
+base, a cycle, or a chain deeper than eight levels is an error.
+
+Schema:
 
 ```json
 {
@@ -301,19 +333,12 @@ Initial schema:
   "name": "PoyaKar 1160L 3A",
   "controller": "siemens-828d",
   "axes": 3,
+  "dialect": "poyakar-1160l",
   "features": {
     "toolMeasurementProgram": true,
-    "toolMeasurementProgramDeferred": true,
-    "mainToolListComments": true,
     "dwellAfterCoolantOn": true,
     "dwellAfterCoolantOff": true,
-    "drillApproachZBeforeCoolant": true,
-    "trackArcFeedRate": true,
-    "retainCoolantAcrossJobs": true,
-    "cancelAirCoolantSchedule": false,
-    "forceInitialApproachPosition": true,
-    "inlineFeedRateMode": false,
-    "compactCoordinates": true
+    "tapCycleOptionalStop": true
   },
   "home": {
     "x": -465,
@@ -336,24 +361,92 @@ Supported fields:
 | `name` | No | Human-readable name. |
 | `controller` | No | Controller family, such as `siemens-828d`. |
 | `axes` | No | Number of machine axes expected by this profile. |
-| `features.toolMeasurementProgram` | No | Whether to emit `Tools_Length_Measurement.MPF`. Defaults to true in the unified Siemens post. |
-| `features.toolMeasurementProgramDeferred` | No | Whether to generate the tool measurement program after the main program so it does not consume early main-program N-numbers. |
-| `features.mainToolListComments` | No | Whether to emit a main-file `Tools Used In This Program` comment block even when tool measurement output is enabled. |
-| `features.dwellAfterCoolantOn` | No | Whether to emit `G04F2` after `M8`. |
-| `features.dwellAfterCoolantOff` | No | Whether to emit `G04F2` after final `M9`. |
-| `features.drillApproachZBeforeCoolant` | No | Whether drill events emit their approach Z before turning coolant on. |
-| `features.trackArcFeedRate` | No | Whether arc feed becomes the modal feed used to suppress the next unchanged `F` word. |
-| `features.retainCoolantAcrossJobs` | No | Whether an already-active coolant state suppresses repeated coolant-on output in a later job. |
-| `features.cancelAirCoolantSchedule` | No | Whether to emit scheduled-air-coolant `CANCEL(...)` cleanup. Defaults to true for existing Siemens parity. |
-| `features.forceInitialApproachPosition` | No | Whether to repeat the first approach XY position after the first job-start Z move. |
-| `features.inlineFeedRateMode` | No | Whether first feed moves emit an inline `G94`. Defaults to true for existing Siemens parity. |
-| `features.compactCoordinates` | No | Whether to compact trace coordinates through the post formatter before emitting them. |
+| `dialect` | No | Output convention the post must follow. Omit for the post's stock dialect. |
+| `extends` | No | Another profile to start from. A path relative to this file; a machine id in the workshop. |
+| `features.toolMeasurementProgram` | boolean | The machine has a tool-length probe, so `Tools_Length_Measurement.MPF` is worth emitting. Defaults to true. |
+| `features.dwellAfterCoolantOn` | boolean | Coolant needs a `G04F2` dwell after `M8` before cutting. |
+| `features.dwellAfterCoolantOff` | boolean | Coolant needs a `G04F2` dwell after the final `M9`. |
+| `features.tapCycleOptionalStop` | boolean | Tapping cycles get an `M1` operator stop before every call. |
+| `features.maxSpindleSpeed` | number, rpm | Fastest the spindle can turn. A program commanding more is refused. |
+| `features.toolChanger` | `carousel`, `umbrella`, `manual` | How tools are exchanged. Recorded only; no post branches on it yet. |
 | `home` | No | Machine home values used by the post. |
 | `returnHome` | No | End-of-program return-home values used by the post. |
 
-Achar validates profile compatibility where it has enough data. For example, if
-the profile declares `axes: 3` but the VMID defines four axes, generation fails
-with a machine-profile compatibility error.
+### Siemens 828D dialects
+
+| Dialect | Matches |
+| --- | --- |
+| `siemens-828d` | Stock `Siemens_828D_Milling_4A.gpp` output. The default. |
+| `poyakar-1160l` | `PoyaKar_1160L_3A.gpp` output. |
+
+The traits a dialect fixes — modal `F` suppression, inline `G94`, coordinate
+compaction, the tool-list comment block, air-coolant `CANCEL` cleanup, the
+drill approach-Z repeat, cross-job coolant retention, tool-measurement file
+ordering, and whether a job's start block needs a tool change — are listed in
+`packages/core/src/posts/siemens-828d/dialect.ts`, each with the fixture and
+GPP source that pins it. Adding a dialect is a reviewed code change; adding a
+machine is not.
+
+Dialect traits are rejected if left in `features`. A profile carrying the old
+flat flag set fails to load with a message naming the moved keys, rather than
+loading with them silently ignored and posting subtly different G-code.
+
+Every value a post reads is resolved once, at load, against a single table of
+defaults per post — `SIEMENS_828D_MACHINE_DEFAULTS` for the Siemens 828D. A
+machine that says nothing gets exactly the behaviour it had before profiles
+existed, and a machine that says `false` gets false rather than the default,
+which a per-read `?? true` could not express.
+
+### Machine properties
+
+The `features` vocabulary is declared as a table in
+`packages/core/src/lib/machine-features.ts`. One row per property carries its
+key, type, bounds, label and description; that single row types the field,
+validates a loaded profile, and describes it to the workshop's machine form.
+Adding a property is adding a row.
+
+Properties are typed, not just boolean: `maxSpindleSpeed` is a whole number of
+at least 1, `toolChanger` is one of a fixed set. Values are checked against
+those bounds at load.
+
+An unrecognised key under `features` is an error rather than something to
+ignore. A key nobody reads is a setting its author believes is in force and is
+not, which on this system means G-code that differs from what the profile
+describes.
+
+Declaring `maxSpindleSpeed` makes it enforced: any program whose commanded
+speed exceeds it fails validation, naming the highest speed found. On the
+`generate` path that refuses the run; in the workshop the job is recorded as
+blocked with the reason attached.
+
+### What confirms a profile
+
+A profile is a set of claims about a machine. The trace, the VMID and the post
+each know some of the same facts from a different direction, and a
+disagreement means one of them is describing a different machine. Everything
+achar can cross-check, it does:
+
+| Claim | Confirmed against | On mismatch |
+| --- | --- | --- |
+| `axes` | trace `iNumberOfAixs`, VMID axis count | error |
+| `controller` | the bound post's controller family | error |
+| `dialect` | the bound post's dialect list | error |
+| `features.maxSpindleSpeed` | highest `spin` in the trace | error |
+| `home`, `returnHome` | VMID axis travel limits | error |
+
+All of them block generation rather than warn. A profile that disagrees with
+the VMID is not a style problem — it produces a plausible file for the wrong
+machine, which is the one outcome this tool exists to prevent.
+
+The post checks apply only to built-in posts, which declare a controller and a
+dialect list. A custom post module supplies neither and is left unchecked; it
+can target whatever it likes.
+
+`home` and `returnHome` are worth singling out: the post emits them
+unconditionally at the start and end of every program, so one outside the
+machine's travel is a crash on the first and last move of every job it runs.
+Both the profile and the VMID already state the numbers, so nothing is
+inferred.
 
 ## Watch Mode
 

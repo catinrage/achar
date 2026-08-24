@@ -1,9 +1,14 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  type MachineProfile,
+  type MachineProfileResolver,
   parseMachineProfile,
   parseVmid,
   resolveBuiltinPost,
+  resolveMachineProfileChain,
+  type VmidDefinition,
+  validateMachineProfileCompatibility,
 } from '@achar/core';
 import { badRequest, messageOf } from '@achar/server';
 import type { DataPaths } from './data/paths';
@@ -100,36 +105,13 @@ export async function createMachine(
     );
   }
 
-  if (draft.vmid !== undefined) {
-    let parsed: ReturnType<typeof parseVmid>;
-    try {
-      parsed = parseVmid(draft.vmid);
-    } catch (error) {
-      throw badRequest(`The VMID could not be parsed: ${messageOf(error)}`);
-    }
-    // `parseVmid` is deliberately lenient — arbitrary text yields an empty
-    // definition rather than an error. Accepting that would store a file that
-    // validates nothing and silently weakens every job posted against this
-    // machine, so an empty result is treated as the wrong file.
-    if (parsed.axes.length === 0 && parsed.parameters.length === 0) {
-      throw badRequest(
-        "That file contains no VMID axes or parameters. Check that it is the machine's .vmid file.",
-      );
-    }
-  }
+  if (draft.vmid !== undefined) assertVmid(draft.vmid);
 
   if (draft.machineProfile !== undefined) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(draft.machineProfile);
-    } catch {
-      throw badRequest('The machine profile is not valid JSON.');
-    }
-    try {
-      parseMachineProfile(parsed, 'machineProfile');
-    } catch (error) {
-      throw badRequest(messageOf(error));
-    }
+    await assertMachineProfile(store, paths, draft.machineProfile, {
+      postId: draft.postId,
+      vmid: draft.vmid === undefined ? undefined : parseVmid(draft.vmid),
+    });
   }
 
   const id = uniqueId(store, slugify(name));
@@ -186,8 +168,34 @@ export async function updateMachine(
   }
 
   if (patch.vmid !== undefined) assertVmid(patch.vmid);
+
+  // The profile is checked against whichever VMID the machine will have once
+  // this patch lands, not the one it had: a new VMID with tighter travel can
+  // put an untouched home position out of reach.
+  const effectiveVmid = await resolveEffectiveVmid(paths, existing, patch);
+
   if (patch.machineProfile !== undefined) {
-    assertMachineProfile(patch.machineProfile);
+    await assertMachineProfile(store, paths, patch.machineProfile, {
+      postId,
+      selfId: id,
+      vmid: effectiveVmid,
+    });
+  } else if (
+    (postId !== existing.postId || patch.vmid !== undefined) &&
+    existing.profileFile
+  ) {
+    // Changing the post or the VMID can invalidate a profile nobody touched:
+    // dialects belong to one post, and travel limits belong to one VMID.
+    // Re-check what is already on disk rather than discovering it on the next
+    // upload.
+    const stored = await Bun.file(
+      path.join(machineDirectory(paths, id), existing.profileFile),
+    ).text();
+    await assertMachineProfile(store, paths, stored, {
+      postId,
+      selfId: id,
+      vmid: effectiveVmid,
+    });
   }
 
   const directory = machineDirectory(paths, id);
@@ -244,6 +252,17 @@ export async function deleteMachine(
   id: string,
 ): Promise<void> {
   if (!store.findMachine(id)) throw badRequest(`Unknown machine '${id}'.`);
+
+  // Deleting a base would leave its dependants unpostable, and they would not
+  // find out until someone uploaded a trace against one. Refusing here puts
+  // the choice in front of the person who can still make it.
+  const dependents = await dependentMachines(store, paths, id);
+  if (dependents.length > 0) {
+    throw badRequest(
+      `This machine is the base for ${dependents.join(', ')}. Point them at another base, or delete them first.`,
+    );
+  }
+
   store.deleteMachine(id);
   // Jobs keep their machine_id after the machine is gone, so history still
   // records what a program was posted for even once the machine is retired.
@@ -265,10 +284,25 @@ export async function loadMachineDocuments(
     vmid: machine.vmidFile
       ? await Bun.file(path.join(directory, machine.vmidFile)).text()
       : undefined,
-    machineProfile: machine.profileFile
-      ? await Bun.file(path.join(directory, machine.profileFile)).text()
-      : undefined,
+    // Flattened before it leaves: the profile crosses into a worker process
+    // that has no way to reach the other machines, so `extends` is resolved
+    // on this side and what travels is one self-contained document.
+    machineProfile: await loadResolvedProfile(store, paths, id),
   };
+}
+
+async function loadResolvedProfile(
+  store: JobStore,
+  paths: DataPaths,
+  id: string,
+): Promise<string | undefined> {
+  const profile = await readStoredProfile(store, paths, id);
+  if (!profile) return undefined;
+  if (profile.extends === undefined) return JSON.stringify(profile);
+
+  return JSON.stringify(
+    await resolveMachineProfileChain(profile, machineResolver(store, paths)),
+  );
 }
 
 /**
@@ -293,18 +327,149 @@ function assertVmid(source: string): void {
   }
 }
 
-function assertMachineProfile(source: string): void {
+/**
+ * Reads one machine's stored profile, unresolved.
+ *
+ * Returns undefined when the machine has no profile, which the chain walker
+ * reports as an unfound base.
+ */
+async function readStoredProfile(
+  store: JobStore,
+  paths: DataPaths,
+  machineId: string,
+): Promise<MachineProfile | undefined> {
+  const machine = store.findMachine(machineId);
+  if (!machine?.profileFile) return undefined;
+
+  const source = await Bun.file(
+    path.join(machineDirectory(paths, machineId), machine.profileFile),
+  ).text();
+  return parseMachineProfile(JSON.parse(source), `machine ${machineId}`);
+}
+
+/**
+ * Resolves `extends` as another machine's id.
+ *
+ * A workshop's shared configuration already has names: the machines
+ * themselves. "Like the PoyaKar but four-axis" is the sentence an admin would
+ * say, and making it the literal content of the profile means the shared
+ * values have exactly one home, the one everybody already edits.
+ */
+function machineResolver(
+  store: JobStore,
+  paths: DataPaths,
+): MachineProfileResolver {
+  return (reference) => readStoredProfile(store, paths, reference);
+}
+
+interface ProfileCheck {
+  postId: string;
+  /** The machine being edited, when there is one — it cannot extend itself. */
+  selfId?: string;
+  /** The VMID the machine will have, when it has one. */
+  vmid?: VmidDefinition;
+}
+
+/** The VMID a machine will hold once a patch is applied. */
+async function resolveEffectiveVmid(
+  paths: DataPaths,
+  existing: MachineRecord,
+  patch: MachinePatch,
+): Promise<VmidDefinition | undefined> {
+  if (patch.vmid !== undefined) return parseVmid(patch.vmid);
+  if (patch.clearVmid || !existing.vmidFile) return undefined;
+
+  return parseVmid(
+    await Bun.file(
+      path.join(machineDirectory(paths, existing.id), existing.vmidFile),
+    ).text(),
+  );
+}
+
+/**
+ * Rejects a profile the given post cannot honour, or whose base is unusable.
+ *
+ * The dialect check needs the post, which is why this takes one: a dialect id
+ * is meaningful only to the post that defines it, and a machine bound to a
+ * post that has never heard of its dialect would otherwise fail at post time,
+ * on a machinist's upload, instead of here on an admin's form.
+ *
+ * The chain is walked rather than merely inspected, so a missing base or a
+ * cycle is caught at the same moment, on the same form.
+ */
+async function assertMachineProfile(
+  store: JobStore,
+  paths: DataPaths,
+  source: string,
+  check: ProfileCheck,
+): Promise<void> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
   } catch {
     throw badRequest('The machine profile is not valid JSON.');
   }
+
+  let profile: MachineProfile;
   try {
-    parseMachineProfile(parsed, 'machineProfile');
+    profile = parseMachineProfile(parsed, 'machineProfile');
   } catch (error) {
     throw badRequest(messageOf(error));
   }
+
+  if (profile.extends !== undefined) {
+    if (profile.extends === check.selfId) {
+      throw badRequest('A machine cannot extend itself.');
+    }
+    if (!store.findMachine(profile.extends)) {
+      throw badRequest(
+        `This profile extends machine '${profile.extends}', which does not exist.`,
+      );
+    }
+    try {
+      profile = await resolveMachineProfileChain(
+        profile,
+        machineResolver(store, paths),
+      );
+    } catch (error) {
+      throw badRequest(messageOf(error));
+    }
+  }
+
+  // Checked against the resolved profile, and through the same function the
+  // posting path uses. An inherited dialect or an inherited home position is
+  // exactly as capable of being wrong as one written here, and a check that
+  // only lived in this file would drift from the one that actually gates
+  // generation.
+  const issues = validateMachineProfileCompatibility(profile, [], {
+    vmid: check.vmid,
+    post: resolveBuiltinPost(check.postId),
+  });
+  const errors = issues.filter((issue) => issue.severity === 'error');
+  if (errors.length > 0) {
+    throw badRequest(errors.map((issue) => issue.message).join(' '));
+  }
+}
+
+/**
+ * Machines whose profile extends the given one, by id.
+ *
+ * Used to refuse a delete that would leave a profile pointing at nothing.
+ */
+async function dependentMachines(
+  store: JobStore,
+  paths: DataPaths,
+  machineId: string,
+): Promise<string[]> {
+  const dependents: string[] = [];
+
+  for (const machine of store.listMachines()) {
+    if (machine.id === machineId) continue;
+    const profile = await readStoredProfile(store, paths, machine.id);
+    if (profile?.extends === machineId) dependents.push(machine.name);
+  }
+
+  return dependents;
 }
 
 /**

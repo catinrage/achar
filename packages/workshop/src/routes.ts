@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { listBuiltinPosts } from '@achar/core';
+import { listBuiltinPosts, machineFeatureSchema } from '@achar/core';
 import type { Route, RouteContext } from '@achar/server';
 import {
   attachment,
@@ -43,7 +43,12 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
         posts: listBuiltinPosts().map((post) => ({
           id: post.id,
           name: post.name,
+          dialects: post.dialects,
         })),
+        // The machine form renders its feature inputs from this rather than
+        // hard-coding them, so a new property reaches the UI with the row
+        // that declares it.
+        machineFeatures: machineFeatureSchema(),
       }),
   },
 

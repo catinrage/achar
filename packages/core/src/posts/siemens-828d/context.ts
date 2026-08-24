@@ -1,6 +1,11 @@
 import type { MachineProfile } from '../../lib/machine-profile';
 import { createPostContext } from '../../lib/post-context';
 import type { EventsType } from '../../types';
+import { SIEMENS_828D_STOCK_DIALECT, type Siemens828dDialect } from './dialect';
+import {
+  SIEMENS_828D_MACHINE_DEFAULTS,
+  type Siemens828dMachineSettings,
+} from './machine';
 
 export interface SiemensToolDefinition {
   diameter: number;
@@ -11,6 +16,10 @@ export interface SiemensToolDefinition {
 
 export interface SiemensPostContextState {
   machineProfile?: MachineProfile;
+  /** Resolved output convention. Always present, always complete. */
+  dialect: Siemens828dDialect;
+  /** Resolved machine settings. Always present, always complete. */
+  machine: Siemens828dMachineSettings;
   tools: Map<string, SiemensToolDefinition>;
   jobFiles: Set<string>;
   toolIndex: number;
@@ -59,9 +68,15 @@ export interface SiemensPostContextState {
   pendingWearTool: string;
 }
 
-export function createSiemensPostContext(machineProfile?: MachineProfile) {
+export function createSiemensPostContext(
+  machineProfile?: MachineProfile,
+  dialect: Siemens828dDialect = SIEMENS_828D_STOCK_DIALECT,
+  machine: Siemens828dMachineSettings = SIEMENS_828D_MACHINE_DEFAULTS,
+) {
   return createPostContext<SiemensPostContextState>(() => ({
     machineProfile,
+    dialect,
+    machine,
     tools: new Map(),
     jobFiles: new Set(),
     toolIndex: 0,

@@ -125,16 +125,25 @@ function countLines(source: string, upTo: number): number {
 }
 
 /** Parses the trace plus whichever optional companions were supplied. */
-export function loadTraceInputs(body: RequestBody): TraceInputs {
-  return loadTraceInputsFrom({
-    trace: body.document('trace'),
-    vmid: body.part('vmid'),
-    machineProfile: body.part('machineProfile'),
-  });
+export function loadTraceInputs(
+  body: RequestBody,
+  postId?: string,
+): TraceInputs {
+  return loadTraceInputsFrom(
+    {
+      trace: body.document('trace'),
+      vmid: body.part('vmid'),
+      machineProfile: body.part('machineProfile'),
+    },
+    postId,
+  );
 }
 
 /** {@link loadTraceInputs} for a caller that already holds the documents. */
-export function loadTraceInputsFrom(documents: TraceDocuments): TraceInputs {
+export function loadTraceInputsFrom(
+  documents: TraceDocuments,
+  postId?: string,
+): TraceInputs {
   const startedAt = performance.now();
   const events = parseTrace(documents.trace);
   const vmid = readVmid(documents.vmid);
@@ -146,7 +155,10 @@ export function loadTraceInputsFrom(documents: TraceDocuments): TraceInputs {
     machineProfile,
     diagnostics: [
       ...(vmid ? validateTraceAgainstVmid(events, vmid) : []),
-      ...validateMachineProfileCompatibility(machineProfile, events, vmid),
+      ...validateMachineProfileCompatibility(machineProfile, events, {
+        vmid,
+        post: postId === undefined ? undefined : resolveBuiltinPost(postId),
+      }),
     ],
     durationMs: performance.now() - startedAt,
   };
@@ -176,11 +188,24 @@ function readMachineProfile(
     throw badRequest("The 'machineProfile' part is not valid JSON.");
   }
 
+  let profile: MachineProfile;
   try {
-    return parseMachineProfile(parsed, 'machineProfile');
+    profile = parseMachineProfile(parsed, 'machineProfile');
   } catch (error) {
     throw badRequest(messageOf(error));
   }
+
+  // A profile arrives here as one self-contained upload, so there is nothing
+  // an `extends` could name. Posting it anyway would silently drop every
+  // inherited value and generate G-code from defaults the machine never
+  // asked for, so the request is refused instead.
+  if (profile.extends !== undefined) {
+    throw badRequest(
+      `The 'machineProfile' part extends '${profile.extends}', which this endpoint cannot resolve. Upload a profile with its inherited values already merged in.`,
+    );
+  }
+
+  return profile;
 }
 
 function resolvePost(postId: string | undefined): BuiltInPost {

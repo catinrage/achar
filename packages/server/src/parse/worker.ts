@@ -94,7 +94,10 @@ async function run(task: WorkerTask): Promise<unknown> {
     }
 
     case 'validate': {
-      const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
+      const inputs = loadTraceInputsFrom(
+        { trace, ...documentsOf(task) },
+        optionsOf(task).postId,
+      );
       return {
         eventCount: inputs.events.length,
         durationMs: inputs.durationMs,
@@ -103,7 +106,10 @@ async function run(task: WorkerTask): Promise<unknown> {
     }
 
     case 'generate': {
-      const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
+      const inputs = loadTraceInputsFrom(
+        { trace, ...documentsOf(task) },
+        optionsOf(task).postId,
+      );
       if (hasErrorDiagnostics(inputs.diagnostics)) return refusal(inputs);
 
       const files = buildProgramFrom(
@@ -124,7 +130,10 @@ async function run(task: WorkerTask): Promise<unknown> {
     }
 
     case 'explain': {
-      const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
+      const inputs = loadTraceInputsFrom(
+        { trace, ...documentsOf(task) },
+        optionsOf(task).postId,
+      );
       if (hasErrorDiagnostics(inputs.diagnostics)) return refusal(inputs);
 
       const { program } = buildProgramFrom(optionsOf(task), inputs);
@@ -132,7 +141,10 @@ async function run(task: WorkerTask): Promise<unknown> {
     }
 
     case 'parity': {
-      const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
+      const inputs = loadTraceInputsFrom(
+        { trace, ...documentsOf(task) },
+        optionsOf(task).postId,
+      );
       if (hasErrorDiagnostics(inputs.diagnostics)) return refusal(inputs);
 
       const generated = buildProgramFrom(
@@ -163,7 +175,10 @@ function bundle(
   task: Extract<WorkerTask, { op: 'bundle' }>,
   trace: string,
 ): BundleOutcome {
-  const inputs = loadTraceInputsFrom({ trace, ...documentsOf(task) });
+  const inputs = loadTraceInputsFrom(
+    { trace, ...documentsOf(task) },
+    optionsOf(task).postId,
+  );
 
   // Extracted before the blocked decision, because the profile carries
   // diagnostics of its own. `no-timing-data` in particular is error-severity
