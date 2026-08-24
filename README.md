@@ -113,8 +113,8 @@ bun test
 
 The Docker image runs two surfaces on one port: the **workshop web UI**, where
 anyone in the shop uploads a Trace 5 file and gets G-code back, and the
-**stateless `/v1` HTTP API** another application consumes. It does not package
-the desktop app or expose the stdio MCP server.
+**stateless `/v1` HTTP API** another application consumes. It does not expose
+the stdio MCP server.
 
 `/v1` needs nothing persistent — every trace arrives in a request and every
 result is returned in the response, and `@achar/server` has no database or
@@ -270,36 +270,6 @@ reference output after reviewing a post change.
 The `generate` command prints a final summary with the number of files written
 and the elapsed time.
 
-### Desktop UI
-
-The Electrobun desktop app is primarily packaged for Windows 11 x64 and exposes
-the same generation and validation core as the CLI. The view is built with
-Svelte 5 and supports dark, light, and system theme modes. It supports fixture
-selection, custom Trace 5/VMID/profile paths, native file dialogs, parity
-status, diagnostics, generated-file browsing, and G-code preview. The Windows
-build uses the installed Microsoft Edge WebView2 runtime instead of bundling
-Chromium, keeping the application package smaller.
-
-```bash
-# Build and run once
-bun run desktop
-
-# Rebuild when desktop source files change
-bun run desktop:dev
-
-# Create a stable artifact for the current development platform
-bun run desktop:build
-
-# Create the Windows release on a Windows x64 host or CI runner
-bun run desktop:build:windows
-```
-
-Electrobun 1.18 builds for the current host platform, so the Windows release
-command intentionally rejects non-Windows hosts. Windows 11 provides WebView2;
-older or stripped-down installations must install the WebView2 Evergreen
-Runtime. Linux remains useful for development and requires GTK 3 and WebKitGTK
-4.1 development/runtime packages.
-
 ### MCP Server
 
 Achar also ships a stdio MCP server for LLM clients. It exposes tools for
@@ -326,8 +296,7 @@ bun run achar mcp --workspace /path/to/achar
 ```
 
 On Windows, use the same command from PowerShell in the project directory, or
-set `ACHAR_WORKSPACE` in the client configuration. The desktop UI includes this
-MCP command in its sidebar for quick client setup.
+set `ACHAR_WORKSPACE` in the client configuration.
 
 ### Fixture Manifests
 

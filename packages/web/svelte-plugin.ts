@@ -7,10 +7,9 @@ import { compile, compileModule } from 'svelte/compiler';
  * Compiles `.svelte` files for `Bun.build`.
  *
  * Svelte 5 publishes its runtime as source with subpath exports that Bun's
- * bundler does not resolve on its own, so the mapping below is explicit. This
- * mirrors the desktop app's plugin; the two are kept separate rather than
- * shared because each resolves the runtime out of its own `node_modules`, and
- * a shared module would have to be told which one to use anyway.
+ * bundler does not resolve on its own, so the mapping below is explicit. The
+ * paths resolve out of this package's own `node_modules`, which is why the
+ * plugin lives here rather than somewhere shared.
  */
 
 const packageRoot = path.resolve(import.meta.dir);

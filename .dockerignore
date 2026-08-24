@@ -18,8 +18,6 @@ test
 docs
 examples
 scripts
-packages/desktop/*
-!packages/desktop/package.json
 packages/**/*.spec.ts
 packages/**/*.spec-helper.ts
 packages/*/artifacts

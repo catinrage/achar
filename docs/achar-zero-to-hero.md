@@ -109,7 +109,7 @@ Important paths:
 packages/cli/src/index.ts                    CLI entrypoint
 packages/core/src/index.ts                  Public package API
 packages/core/src/application/achar-service.ts
-                                           Shared CLI/MCP/desktop application service
+                                           Shared CLI/MCP application service
 packages/core/src/lib/parser.ts             SolidCAM trace parser
 packages/core/src/lib/program.ts            Event orchestration
 packages/core/src/lib/event.ts              Event and metadata types
@@ -125,7 +125,8 @@ packages/core/src/lib/default-post.ts       Compatibility re-export
 packages/core/src/posts/siemens-828d        Bundled Siemens 828D post
 packages/core/src/types.ts                  Trace event and command types
 packages/mcp/src/server.ts                  MCP stdio server
-packages/desktop/src                       Electrobun/Svelte desktop app
+packages/web/src                           Svelte workshop UI
+packages/workshop/src                      Job queue and machine registry
 fixtures/PROJECT_434_112466504665666_CAM_2_MILLING                     First real Siemens fixture
 fixtures/PROJECT_2551019_CAM_MILLING
                               Second, larger real Siemens fixture

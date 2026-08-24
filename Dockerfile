@@ -14,7 +14,6 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages/cli/package.json packages/cli/package.json
 COPY packages/core/package.json packages/core/package.json
-COPY packages/desktop/package.json packages/desktop/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
@@ -41,7 +40,6 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages/cli/package.json packages/cli/package.json
 COPY packages/core/package.json packages/core/package.json
-COPY packages/desktop/package.json packages/desktop/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
