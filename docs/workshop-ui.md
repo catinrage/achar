@@ -143,9 +143,7 @@ Consequences to be clear about:
 - Anyone on the network can read every job's output.
 - Nothing records *who* generated a program.
 
-Do not publish this port beyond the workshop. The parser also has a known
-quadratic case on very long lines — bounded by an 8 KB line cap, not cured by it
-— which is a second reason the same limit applies. If this ever needs to be
+Do not publish this port beyond the workshop. If this ever needs to be
 reachable more widely, that is a decision to revisit, not a header to add.
 
 ## Restarts

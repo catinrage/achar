@@ -241,4 +241,55 @@ just_a_word
 
     expect(result[6]._eventName).toBe('EndOfFile');
   });
+
+  describe('key-value backtracking', () => {
+    /**
+     * Guards the `\b` anchors in `keyValuePattern`. Removing them restores
+     * O(n²) behaviour in line length, which the HTTP server turns into a
+     * denial of service: one upload of long colon-free lines stalls a worker
+     * that parses one trace at a time. The budget is deliberately loose —
+     * before the anchor a single 64 KB line took ~6.6 s, so anything in the
+     * same order of magnitude as the limit means the anchor is gone, not that
+     * the machine is briefly busy.
+     */
+    it('parses a long colon-free line in linear time', () => {
+      // Arrange — one 64 KB run of word characters, the worst case for the
+      // pattern: nothing to match, everything to backtrack over.
+      const input = `\n(0)@start_of_file\n${'a'.repeat(64 * 1024)}\nreal_key : 7\n`;
+
+      // Act
+      const started = performance.now();
+      const result = new Parser(input).parse();
+      const elapsed = performance.now() - started;
+
+      // Assert — the line yields no pairs, and the one after it still parses.
+      expect(elapsed).toBeLessThan(1000);
+      expect(result).toHaveLength(1);
+      expect(result[0].real_key).toBe(7);
+    });
+
+    it('still finds a pair whose key ends a long word run', () => {
+      // Arrange — the anchor must not skip a key just because it is long.
+      const key = `k${'x'.repeat(4096)}`;
+      const input = `\n(0)@start_of_file\n${key} : 5\n`;
+
+      // Act
+      const result = new Parser(input).parse();
+
+      // Assert
+      expect(result[0][key]).toBe(5);
+    });
+
+    it('finds pairs that follow a long colon-free run on the same line', () => {
+      // Arrange — a word start after the junk still has to be reachable.
+      const input = `\n(0)@start_of_file\n${'a'.repeat(8192)} after:1 last:'two'\n`;
+
+      // Act
+      const result = new Parser(input).parse();
+
+      // Assert
+      expect(result[0].after).toBe(1);
+      expect(result[0].last).toBe('two');
+    });
+  });
 });

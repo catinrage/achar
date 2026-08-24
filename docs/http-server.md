@@ -399,25 +399,28 @@ stateless API client is built to handle. Browser uploads queue instead, because
 an operator who has already uploaded a file should be told they are third in
 line. Raise `--max-parses` only against measured headroom on your own hardware.
 
-**Line length — 8 KB, fixed.** The parser's key-value regex backtracks
-quadratically on a long run of word characters containing no `:`:
+**Line length — 8 KB, fixed.** A check on the shape of the input, not a
+performance guard. The longest line in any of this repo's seven fixtures is 877
+bytes, and the longest in the 311 MB trace above is 834 bytes, so a line past
+8 KB is not SolidCAM Trace 5 output; traces containing one are rejected
+`400 bad-request`.
 
-| Single line | Parse time |
-|---|---|
-| 2 KB | 8 ms |
-| 8 KB | 105 ms |
-| 32 KB | 1.66 s |
-| 64 KB | 6.59 s |
+This cap used to be the only thing bounding a denial of service. The parser's
+key-value regex backtracked quadratically on a long run of word characters
+containing no `:`, so a single crafted line could occupy the parse worker for
+seconds — and with the default of one concurrent parse, that is the whole
+service. The pattern is anchored now, and the cost is linear:
 
-The longest line in any of this repo's seven fixtures is 877 bytes, and the
-longest in the 311 MB trace above is 834 bytes, so 8 KB leaves ~9x headroom over
-genuine SolidCAM output while bounding one pathological line to ~100 ms. Traces
-with a longer line are rejected `400 bad-request`.
+| Single line | Before | After |
+|---|---|---|
+| 8 KB | 105 ms | 0.9 ms |
+| 32 KB | 1.66 s | 0.2 ms |
+| 64 KB | 6.59 s | 0.3 ms |
+| 256 KB | — | 1.6 ms |
 
-> This guard bounds the worst case; it does not remove it. The quadratic parse
-> is a defect in the core parser, and a body full of maximum-length lines is
-> still far slower than a real trace. Treat this port as trusted-network only
-> until that is fixed.
+Measured through `Parser.parse()`; see `keyValuePattern` in
+`packages/core/src/lib/parser.ts` for why the anchor matters and why it cannot
+change which pairs are found.
 
 ## Running under systemd
 

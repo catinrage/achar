@@ -36,14 +36,16 @@ const FALLBACK_PROGRAM_NAME = 'PROGRAM';
 /**
  * Longest accepted line in a posted trace.
  *
- * The parser's key-value regex backtracks quadratically on a long run of word
- * characters containing no `:` — measured at 105 ms for one 8 KB line, 1.7 s
- * for 32 KB, 6.6 s for 64 KB. The longest line in any of this repo's seven
- * fixtures is 877 bytes, so 8 KB leaves ~9x headroom over real SolidCAM output
- * while keeping a single pathological line under ~100 ms.
+ * A check on the shape of the input, not a performance guard. The longest line
+ * in any of this repo's seven fixtures is 877 bytes, so a line past 8 KB is not
+ * Trace 5 output and there is nothing useful to do with it.
  *
- * This is a boundary guard, not a cure: the quadratic parse itself is a core
- * defect and is why this port must stay on a trusted network.
+ * It used to be load-bearing. The parser's key-value regex backtracked
+ * quadratically on a long run of word characters containing no `:` — 105 ms for
+ * one 8 KB line, 6.6 s for 64 KB — so this cap was the only thing standing
+ * between a crafted upload and a stalled parse worker. `keyValuePattern` in
+ * `@achar/core` is anchored and linear now; the same 64 KB line parses in
+ * 0.3 ms. Keep the cap anyway, on its own merits.
  */
 const MAX_TRACE_LINE_BYTES = 8 * 1024;
 

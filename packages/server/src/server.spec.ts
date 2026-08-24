@@ -405,9 +405,9 @@ describe('errors', () => {
   });
 
   it('rejects a pathologically long line instead of parsing it', async () => {
-    // The parser backtracks quadratically on a long run of word characters
-    // with no colon: 64 KB on one line costs ~6.6 s. Real SolidCAM lines top
-    // out under 900 bytes, so this is refused at the boundary.
+    // Real SolidCAM lines top out under 900 bytes, so a 16 KB line is not
+    // Trace 5 output and is refused at the boundary. The parser no longer
+    // cares — it is linear in line length — but the cap still says no.
     const response = await postTrace(
       '/v1/trace/profile',
       `${TIMED_TRACE}\n${'x'.repeat(16 * 1024)}`,
@@ -478,8 +478,8 @@ describe('concurrency gate', () => {
       // Padded so reading the body actually suspends; a 1 KB trace parses
       // inside one tick and never overlaps. Semaphore.spec.ts covers the
       // gate's own accounting deterministically. The padding must be many
-      // short lines, not one long one — the parser is quadratic in line
-      // length, so a single 4 MB line takes effectively forever.
+      // short lines, not one long one: parse cost scales with the number of
+      // lines, so one 4 MB line is a single cheap line and would not suspend.
       const padded = `${TIMED_TRACE}\n${'; pad\n'.repeat(400_000)}`;
       const responses = await Promise.all(
         Array.from({ length: 6 }, () =>
