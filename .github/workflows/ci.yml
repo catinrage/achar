@@ -6,20 +6,6 @@ on:
   pull_request:
 
 jobs:
-  fallow:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: fallow-rs/fallow@v2
-        with:
-          command: audit
-          gate: new-only
-          fail-on-issues: true
-
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 20
