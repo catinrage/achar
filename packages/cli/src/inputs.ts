@@ -45,6 +45,28 @@ export interface RunInput {
   selectedSetups?: SetupSpan[];
 }
 
+/**
+ * Locates a trace and its output directory, without parsing it.
+ *
+ * `resolveInput` loads a post, a VMID and a machine profile and materializes
+ * every event, because a generation-family command needs all four. A command
+ * that only summarises a trace needs none of them, and materializing the events
+ * is the single largest allocation a parse makes — so those commands resolve
+ * the target here and stream instead.
+ */
+export async function resolveTraceTarget(
+  target: string,
+  options: CliOptions,
+): Promise<{ tracePath: string; outputDir?: string }> {
+  const fixture = isFixtureTarget(target)
+    ? await loadFixture(target)
+    : undefined;
+  return {
+    tracePath: fixture?.trace ?? target,
+    outputDir: typeof options.out === 'string' ? options.out : fixture?.out,
+  };
+}
+
 export async function resolveInput(
   target: string,
   options: CliOptions,

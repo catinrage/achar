@@ -242,6 +242,131 @@ just_a_word
     expect(result[6]._eventName).toBe('EndOfFile');
   });
 
+  describe('parseEvents', () => {
+    /** A drill whose CYCLE line lands several events later, as real traces do. */
+    const DELAYED_CYCLE = `
+(0)@start_of_file
+part_name : 'P'
+(1)@drill
+drill_upper_z : 10
+(1)@line
+x : 1
+(1)@line
+x : 2
+(1)@rapid
+> N100 CYCLE81(20,16.0005,2,12.0005,,0,0,1,12)
+(1)@end_of_file
+`;
+
+    it('yields the same events, in the same order, as parse()', () => {
+      // Arrange
+      const input = `
+(0)@start_of_file
+part_name : 'Widget'
+(1)@setup
+setup_name : 'Setup1'
+(1)@start_of_job
+job_name : 'Rough'
+(1)@end_of_file
+`;
+
+      // Act
+      const streamed = [...new Parser(input).parseEvents()];
+
+      // Assert
+      expect(streamed).toEqual(new Parser(input).parse());
+    });
+
+    it('is single-use, so a second walk yields nothing', () => {
+      // Arrange — the trap this whole design exists to make visible.
+      const stream = new Parser(DELAYED_CYCLE).parseEvents();
+
+      // Act
+      const first = [...stream];
+      const second = [...stream];
+
+      // Assert
+      expect(first.length).toBeGreaterThan(0);
+      expect(second).toEqual([]);
+    });
+
+    it('applies the retroactive drill cycle when the caller retains events', () => {
+      // Arrange + Act — materializing keeps the object the parser writes back to.
+      const events = [...new Parser(DELAYED_CYCLE).parseEvents()];
+      const drill = events.find((event) => event._eventName === 'Drill');
+
+      // Assert
+      expect(drill?.cycle_clearance_z_precise).toBe(20);
+      expect(drill?.cycle_lower_z_precise).toBe(12.0005);
+    });
+
+    /**
+     * The one documented gap. A consumer that reads an event and drops it sees
+     * the drill before the trailing `CYCLE81(...)` line writes to it. Pinned
+     * here so the gap stays exactly this size: if a future change makes any
+     * *other* field depend on a later line, this fails.
+     */
+    it('shows only the cycle fields missing to a read-and-discard consumer', () => {
+      // Arrange
+      const retained = new Parser(DELAYED_CYCLE).parse();
+
+      // Act — snapshot each event as it arrives, keeping no reference.
+      const snapshots: Record<string, unknown>[] = [];
+      for (const event of new Parser(DELAYED_CYCLE).parseEvents()) {
+        snapshots.push({ ...event });
+      }
+
+      // Assert
+      expect(snapshots).toHaveLength(retained.length);
+      const differing = new Set<string>();
+      retained.forEach((event, index) => {
+        const before = event as unknown as Record<string, unknown>;
+        const after = snapshots[index];
+        for (const key of new Set([
+          ...Object.keys(before),
+          ...Object.keys(after),
+        ])) {
+          if (before[key] !== after[key]) {
+            differing.add(`${String(before._eventName)}.${key}`);
+          }
+        }
+      });
+      expect([...differing].sort()).toEqual([
+        'Drill.cycle_clearance_z_precise',
+        'Drill.cycle_lower_z_precise',
+        'Drill.cycle_upper_z_precise',
+      ]);
+    });
+  });
+
+  describe('line walking', () => {
+    // The parser no longer splits the input; these pin the boundary cases
+    // `split('\n')` used to handle for free.
+    it.each([
+      ['trailing newline', '(0)@start_of_file\nk : 1\n'],
+      ['no trailing newline', '(0)@start_of_file\nk : 1'],
+      ['blank lines between', '(0)@start_of_file\n\n\nk : 1\n\n'],
+      ['carriage returns', '(0)@start_of_file\r\nk : 1\r\n'],
+      ['leading blank line', '\n(0)@start_of_file\nk : 1\n'],
+    ])('handles %s', (_label, input) => {
+      const result = new Parser(input).parse();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].k).toBe(1);
+    });
+
+    it('reports the same line count the old split produced', () => {
+      // Arrange
+      const input = 'a\nb\nc\n';
+
+      // Act
+      const { statistics } = new Parser(input).parseWithOptions();
+
+      // Assert — 'a', 'b', 'c', and the empty string after the final newline.
+      expect(statistics.totalLines).toBe(input.split('\n').length);
+    });
+  });
+
   describe('key-value backtracking', () => {
     /**
      * Guards the `\b` anchors in `keyValuePattern`. Removing them restores

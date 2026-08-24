@@ -96,6 +96,34 @@ export function parseTrace(source: string): EventData[] {
 }
 
 /**
+ * Streams a posted trace's events instead of materializing them.
+ *
+ * The event array is the largest thing a parse allocates — 216 MB against a
+ * 58 MB input on the biggest fixture — and a summary endpoint keeps none of it.
+ * Emptiness is still an error, for the reason above, but it is now decided from
+ * the first event rather than from a finished list.
+ */
+export function* streamTrace(source: string): Generator<EventData> {
+  assertLineLengths(source);
+
+  let seen = false;
+  try {
+    for (const event of new Parser(source).parseEvents()) {
+      seen = true;
+      yield event;
+    }
+  } catch (error) {
+    throw parseFailed(error);
+  }
+
+  if (!seen) {
+    throw parseFailed(
+      new Error('no Trace 5 events were found; is this a Trace 5 .MPF file?'),
+    );
+  }
+}
+
+/**
  * Rejects a trace containing a line long enough to trigger the parser's
  * quadratic backtracking. Scans without splitting, so checking the limit
  * costs one pass and no extra allocation.

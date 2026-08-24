@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { extractTimingReport } from '@achar/core';
+import { extractTimingReport, streamTraceFile } from '@achar/core';
 import chalk from 'chalk';
 import type { Command } from 'commander';
-import { resolveInput } from '../inputs';
+import { resolveTraceTarget } from '../inputs';
 import type { CliOptions } from '../options';
 import { runCommand } from '../runner';
 import { printData, printInfo } from '../ui';
@@ -21,8 +21,11 @@ export function registerTimingCommand(cli: Command): void {
     .option('--json', 'Print the report to stdout instead of writing a file.')
     .action(
       runCommand(async (target: string, options: CliOptions) => {
-        const input = await resolveInput(target, options);
-        const report = extractTimingReport(input.events);
+        const { tracePath, outputDir } = await resolveTraceTarget(
+          target,
+          options,
+        );
+        const report = extractTimingReport(await streamTraceFile(tracePath));
         const json = `${JSON.stringify(report, null, 2)}\n`;
 
         if (options.json) {
@@ -30,7 +33,7 @@ export function registerTimingCommand(cli: Command): void {
           return 0;
         }
 
-        const outPath = resolveTimingOutPath(options.out, input.outputDir);
+        const outPath = resolveTimingOutPath(options.out, outputDir);
         if (!outPath) {
           printData(json.trimEnd());
           return 0;

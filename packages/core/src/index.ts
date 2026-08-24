@@ -39,6 +39,8 @@ export type { BuilderDriver } from './lib/driver';
 export { defineDriver } from './lib/driver';
 export { ValidationError } from './lib/errors';
 export type { EventListenerMetadata } from './lib/event';
+export type { EventConsumer } from './lib/event-consumer';
+export { runConsumer, runConsumers } from './lib/event-consumer';
 export type {
   DiscoverFixturesOptions,
   FixtureManifest,
@@ -107,6 +109,7 @@ export {
   generatePostFiles,
   generatePostProgram,
   parseTraceFile,
+  streamTraceFile,
   summarizeCompareResults,
   testPost,
   writeGeneratedFiles,
@@ -122,7 +125,10 @@ export type {
   ProductSetup,
   ProductTool,
 } from './lib/product-profile';
-export { extractProductProfile } from './lib/product-profile';
+export {
+  createProductProfileConsumer,
+  extractProductProfile,
+} from './lib/product-profile';
 export { Program } from './lib/program';
 export type {
   SelectSetupEventsOptions,
@@ -132,6 +138,7 @@ export type {
 } from './lib/setup-selection';
 export {
   availableSetups,
+  createSetupPartitionConsumer,
   parseSetupSelection,
   partitionSetups,
   selectSetupEvents,
@@ -144,12 +151,16 @@ export type {
   ToolTiming,
 } from './lib/timing';
 export {
+  createTimingConsumer,
   extractTimingReport,
   formatDurationSeconds,
   parseDurationSeconds,
 } from './lib/timing';
 export type { ToolCatalogEntry } from './lib/tool-catalog';
-export { extractToolCatalog } from './lib/tool-catalog';
+export {
+  createToolCatalogConsumer,
+  extractToolCatalog,
+} from './lib/tool-catalog';
 export type {
   VmidAxis,
   VmidDefinition,

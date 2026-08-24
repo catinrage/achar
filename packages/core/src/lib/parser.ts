@@ -79,6 +79,17 @@ function toPascalCase(str: string): string {
     .join('');
 }
 
+/** Counters a streaming parse accumulates for `ParseResult.statistics`. */
+interface ParseStatisticsAccumulator {
+  totalLines: number;
+  skippedLines: number;
+  warningCount: number;
+}
+
+function createParseStatistics(): ParseStatisticsAccumulator {
+  return { totalLines: 0, skippedLines: 0, warningCount: 0 };
+}
+
 /**
  * @interface ParseOptions
  * @description Configuration options for parsing
@@ -549,239 +560,278 @@ export class Parser {
       'parseWithOptions',
     );
 
-    return measurePerformance(
+    const stats = createParseStatistics();
+    const events = measurePerformance(
       'parse',
-      () => {
-        const lines = this._input.split('\n');
-        const events: EventData[] = [];
-        let currentEvent: EventData | null = null;
-        let lastDrillEvent: EventData<'Drill'> | null = null;
-        let indexCounter = 0;
-        let skippedLines = 0;
-        let warningCount = 0;
+      () => [...this._streamEvents(mergedOptions, stats)],
+      this._logger,
+    );
 
-        lines.forEach((line, lineIndex) => {
-          try {
-            const lineNumber = lineIndex + 1;
+    const result: ParseResult = {
+      events,
+      errors: this._errorCollector.getAll(),
+      statistics: {
+        totalLines: stats.totalLines,
+        parsedEvents: events.length,
+        skippedLines: stats.skippedLines,
+        errorCount: this._errorCollector.getAll().length,
+        warningCount: stats.warningCount,
+        processingTime: performance.now() - startTime,
+      },
+    };
 
-            if (lineNumber % 100 === 0) {
-              this._logger.debug(
-                `Processing line ${lineNumber}/${lines.length}`,
-                {
-                  progress: `${((lineNumber / lines.length) * 100).toFixed(1)}%`,
-                },
-                'parseWithOptions',
-              );
-            }
+    this._logger.info(
+      'Parsing completed',
+      result.statistics,
+      'parseWithOptions',
+    );
 
-            // Check for event section
-            const sectionMatch = line.match(eventSectionPattern);
-            if (sectionMatch) {
-              // Save previous event if exists
-              if (currentEvent) {
-                if (mergedOptions.validateParsedData) {
-                  this._validateEventData(currentEvent, lineNumber);
-                }
-                events.push(currentEvent);
-              }
+    return result;
+  }
 
-              // Start new event
-              const eventName = toPascalCase(
-                sectionMatch[2],
-              ) as keyof EventsType;
-              currentEvent = {
-                _eventName: eventName,
-                _index: indexCounter,
-                _depth: Number(sectionMatch[1]),
-              };
-              if (eventName === 'Drill') {
-                lastDrillEvent = currentEvent as EventData<'Drill'>;
-              }
-              indexCounter++;
+  /**
+   * Yields events as they are completed, without ever holding them all.
+   *
+   * The array `parse()` returns costs roughly four times what the input string
+   * does — 216 MB against 58 MB on the largest fixture — so a caller that only
+   * summarises a trace pays for a structure it never keeps. This is that
+   * caller's door.
+   *
+   * One difference from `parse()`, and it is not incidental. A `CYCLE81(...)`
+   * line can appear up to thirty events after the `@drill` it describes, and
+   * the parser writes `cycle_*_precise` back onto that earlier event. `parse()`
+   * sees those writes because its array still holds the object; a consumer that
+   * reads an event and drops it does not. Holding drills back until they settle
+   * is not an option — the pointer stays live until the *next* `@drill`, which
+   * is 209,603 events later on one real fixture, so the buffer would be the
+   * whole file.
+   *
+   * Those three fields have one reader, the Siemens post, and generation cannot
+   * stream regardless: the post asks `findLastEvent`/`findNearestEvent` in both
+   * directions from any point, which needs the whole array. So generation keeps
+   * using `parse()`, and `parser.spec.ts` pins the difference between the two to
+   * exactly those three fields.
+   */
+  public *parseEvents(options?: ParseOptions): Generator<EventData> {
+    yield* this._streamEvents(
+      { ...this._options, ...options },
+      createParseStatistics(),
+    );
+  }
 
-              this._logger.debug(
-                `Found event: ${eventName} at line ${lineNumber}`,
-                {
-                  eventName,
-                  eventIndex: indexCounter - 1,
-                  lineNumber,
-                },
-                'parseWithOptions',
-              );
-            }
+  /**
+   * Walks `this._input` a line at a time without splitting it.
+   *
+   * `split('\n')` on the largest fixture allocates 864,311 strings holding
+   * 45 MB that the parser reads once and never needs again.
+   */
+  private *_eachLine(): Generator<string> {
+    const input = this._input;
+    let start = 0;
+    while (start <= input.length) {
+      const newline = input.indexOf('\n', start);
+      if (newline === -1) {
+        yield input.slice(start);
+        return;
+      }
+      yield input.slice(start, newline);
+      start = newline + 1;
+    }
+  }
 
-            const cycleArguments = line.match(
-              /\bCYCLE(?:81|83|84|85|830)\(([^)]*)\)/,
-            )?.[1];
-            if (lastDrillEvent && cycleArguments !== undefined) {
-              const args = cycleArguments.split(',');
-              const clearance = Number(args[0]);
-              const upper = Number(args[1]);
-              const lower = Number(args[3]);
-              if (Number.isFinite(clearance)) {
-                lastDrillEvent.cycle_clearance_z_precise ??= clearance;
-              }
-              if (Number.isFinite(upper)) {
-                lastDrillEvent.cycle_upper_z_precise ??= upper;
-              }
-              if (Number.isFinite(lower)) {
-                lastDrillEvent.cycle_lower_z_precise ??= lower;
-              }
-            }
+  private *_streamEvents(
+    mergedOptions: ParseOptions,
+    stats: ParseStatisticsAccumulator,
+  ): Generator<EventData> {
+    let currentEvent: EventData | null = null;
+    let lastDrillEvent: EventData<'Drill'> | null = null;
+    let indexCounter = 0;
 
-            // Parse key-value pairs
-            if (currentEvent) {
-              const event = currentEvent;
-              const keyValueMatch = line.match(keyValuePattern);
+    for (const line of this._eachLine()) {
+      const lineIndex = stats.totalLines++;
+      try {
+        const lineNumber = lineIndex + 1;
 
-              if (keyValueMatch) {
-                keyValueMatch.forEach((pair) => {
-                  try {
-                    const splitIndex = pair.indexOf(':');
-                    const key = pair.substring(0, splitIndex).trim();
-                    const rawValue = pair.substring(splitIndex + 1).trim();
+        if (lineNumber % 100 === 0) {
+          this._logger.debug(
+            `Processing line ${lineNumber}`,
+            { lineNumber },
+            'parseWithOptions',
+          );
+        }
 
-                    const parsedValue = this._parseValue(
-                      rawValue,
-                      key,
-                      lineNumber,
-                    );
-                    event[key] = parsedValue;
-                    if (traceChangeSuffix.test(rawValue)) {
-                      event[`${key}__changed`] = rawValue.endsWith('T');
-                    }
-                  } catch (error) {
-                    warningCount++;
-                    this._logger.warn(
-                      `Failed to parse key-value pair: ${pair}`,
-                      {
-                        line: lineNumber,
-                        pair,
-                        error:
-                          error instanceof Error
-                            ? error.message
-                            : String(error),
-                      },
-                      'parseWithOptions',
-                    );
-
-                    if (!mergedOptions.continueOnError) {
-                      throw error;
-                    }
-                  }
-                });
-              }
-
-              const wearMessage = line.match(
-                /\bsWCM_MSG\s*:\s*(.*?)(?=\s+iM1\s*:|$)/,
-              )?.[1];
-              if (wearMessage !== undefined) {
-                event.sWCM_MSG = wearMessage.trim();
-              }
-
-              const toolChangeMessage = line.match(
-                /\bsM1_MSG\s*:\s*(.*?)(?=\s+iTC_SUPA_MODE\s*:|$)/,
-              )?.[1];
-              if (toolChangeMessage !== undefined) {
-                event.sM1_MSG = toolChangeMessage.trim();
-              }
-            }
-
-            // Check if we should stop due to too many errors
-            if (
-              this._errorCollector.getAll().length >=
-              (mergedOptions.maxErrors || 100)
-            ) {
-              this._logger.error(
-                `Maximum error count reached (${mergedOptions.maxErrors}), stopping parsing`,
-                undefined,
-                {
-                  errorCount: this._errorCollector.getAll().length,
-                  lineNumber,
-                },
-                'parseWithOptions',
-              );
-              return; // Return instead of break to exit the forEach
-            }
-          } catch (error) {
-            skippedLines++;
-
-            const parseError = new ParseError(
-              `Failed to parse line ${lineIndex + 1}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              createErrorContext(
-                'Parser',
-                'parseWithOptions',
-                {
-                  lineNumber: lineIndex + 1,
-                  lineContent: line,
-                },
-                error instanceof Error ? error : undefined,
-              ),
-            );
-
-            this._errorCollector.add(parseError);
-            this._logger.logError(parseError, 'parseWithOptions');
-
-            if (!mergedOptions.continueOnError) {
-              throw parseError;
-            }
-          }
-        });
-
-        // Process final event
-        const finalEvent = currentEvent as EventData | null;
-        if (finalEvent) {
-          try {
+        // Check for event section
+        const sectionMatch = line.match(eventSectionPattern);
+        if (sectionMatch) {
+          // Save previous event if exists
+          if (currentEvent) {
             if (mergedOptions.validateParsedData) {
-              this._validateEventData(finalEvent, lines.length);
+              this._validateEventData(currentEvent, lineNumber);
             }
-            events.push(finalEvent);
-          } catch (error) {
-            this._logger.error(
-              `Failed to validate final event: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              error instanceof Error ? error : undefined,
-              {
-                eventName: finalEvent._eventName,
-                eventIndex: finalEvent._index,
-              },
-              'parseWithOptions',
-            );
+            yield currentEvent;
+          }
 
-            if (!mergedOptions.continueOnError) {
-              throw error;
-            }
+          // Start new event
+          const eventName = toPascalCase(sectionMatch[2]) as keyof EventsType;
+          currentEvent = {
+            _eventName: eventName,
+            _index: indexCounter,
+            _depth: Number(sectionMatch[1]),
+          };
+          if (eventName === 'Drill') {
+            lastDrillEvent = currentEvent as EventData<'Drill'>;
+          }
+          indexCounter++;
+
+          this._logger.debug(
+            `Found event: ${eventName} at line ${lineNumber}`,
+            {
+              eventName,
+              eventIndex: indexCounter - 1,
+              lineNumber,
+            },
+            'parseWithOptions',
+          );
+        }
+
+        const cycleArguments = line.match(
+          /\bCYCLE(?:81|83|84|85|830)\(([^)]*)\)/,
+        )?.[1];
+        if (lastDrillEvent && cycleArguments !== undefined) {
+          const args = cycleArguments.split(',');
+          const clearance = Number(args[0]);
+          const upper = Number(args[1]);
+          const lower = Number(args[3]);
+          if (Number.isFinite(clearance)) {
+            lastDrillEvent.cycle_clearance_z_precise ??= clearance;
+          }
+          if (Number.isFinite(upper)) {
+            lastDrillEvent.cycle_upper_z_precise ??= upper;
+          }
+          if (Number.isFinite(lower)) {
+            lastDrillEvent.cycle_lower_z_precise ??= lower;
           }
         }
 
-        const endTime = performance.now();
-        const processingTime = endTime - startTime;
+        // Parse key-value pairs
+        if (currentEvent) {
+          const event = currentEvent;
+          const keyValueMatch = line.match(keyValuePattern);
 
-        const result: ParseResult = {
-          events,
-          errors: this._errorCollector.getAll(),
-          statistics: {
-            totalLines: lines.length,
-            parsedEvents: events.length,
-            skippedLines,
-            errorCount: this._errorCollector.getAll().length,
-            warningCount,
-            processingTime,
+          if (keyValueMatch) {
+            keyValueMatch.forEach((pair) => {
+              try {
+                const splitIndex = pair.indexOf(':');
+                const key = pair.substring(0, splitIndex).trim();
+                const rawValue = pair.substring(splitIndex + 1).trim();
+
+                const parsedValue = this._parseValue(rawValue, key, lineNumber);
+                event[key] = parsedValue;
+                if (traceChangeSuffix.test(rawValue)) {
+                  event[`${key}__changed`] = rawValue.endsWith('T');
+                }
+              } catch (error) {
+                stats.warningCount++;
+                this._logger.warn(
+                  `Failed to parse key-value pair: ${pair}`,
+                  {
+                    line: lineNumber,
+                    pair,
+                    error:
+                      error instanceof Error ? error.message : String(error),
+                  },
+                  'parseWithOptions',
+                );
+
+                if (!mergedOptions.continueOnError) {
+                  throw error;
+                }
+              }
+            });
+          }
+
+          const wearMessage = line.match(
+            /\bsWCM_MSG\s*:\s*(.*?)(?=\s+iM1\s*:|$)/,
+          )?.[1];
+          if (wearMessage !== undefined) {
+            event.sWCM_MSG = wearMessage.trim();
+          }
+
+          const toolChangeMessage = line.match(
+            /\bsM1_MSG\s*:\s*(.*?)(?=\s+iTC_SUPA_MODE\s*:|$)/,
+          )?.[1];
+          if (toolChangeMessage !== undefined) {
+            event.sM1_MSG = toolChangeMessage.trim();
+          }
+        }
+
+        // Check if we should stop due to too many errors
+        if (
+          this._errorCollector.getAll().length >=
+          (mergedOptions.maxErrors || 100)
+        ) {
+          this._logger.error(
+            `Maximum error count reached (${mergedOptions.maxErrors}), stopping parsing`,
+            undefined,
+            {
+              errorCount: this._errorCollector.getAll().length,
+              lineNumber,
+            },
+            'parseWithOptions',
+          );
+        }
+      } catch (error) {
+        stats.skippedLines++;
+
+        const parseError = new ParseError(
+          `Failed to parse line ${lineIndex + 1}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          createErrorContext(
+            'Parser',
+            'parseWithOptions',
+            {
+              lineNumber: lineIndex + 1,
+              lineContent: line,
+            },
+            error instanceof Error ? error : undefined,
+          ),
+        );
+
+        this._errorCollector.add(parseError);
+        this._logger.logError(parseError, 'parseWithOptions');
+
+        if (!mergedOptions.continueOnError) {
+          throw parseError;
+        }
+      }
+    }
+
+    // Process final event
+    const finalEvent = currentEvent as EventData | null;
+    if (finalEvent) {
+      try {
+        if (mergedOptions.validateParsedData) {
+          this._validateEventData(finalEvent, stats.totalLines);
+        }
+        yield finalEvent;
+      } catch (error) {
+        this._logger.error(
+          `Failed to validate final event: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          error instanceof Error ? error : undefined,
+          {
+            eventName: finalEvent._eventName,
+            eventIndex: finalEvent._index,
           },
-        };
-
-        this._logger.info(
-          'Parsing completed',
-          result.statistics,
           'parseWithOptions',
         );
 
-        return result;
-      },
-      this._logger,
-    );
+        if (!mergedOptions.continueOnError) {
+          throw error;
+        }
+      }
+    }
   }
 }

@@ -1,3 +1,5 @@
+import type { EventConsumer } from './event-consumer';
+import { runConsumer } from './event-consumer';
 import type { EventFields } from './event-fields';
 import { fieldsOf, readNumber, readString } from './event-fields';
 import type { EventData } from './parser';
@@ -48,14 +50,14 @@ function readWorkTime(data: EventFields): string | undefined {
  * Collects one entry per distinct `tool_id_string`, keeping the first
  * occurrence and preserving trace order.
  */
-export function extractToolCatalog(events: EventData[]): ToolCatalogEntry[] {
+export function createToolCatalogConsumer(): EventConsumer<ToolCatalogEntry[]> {
   const tools = new Map<string, ToolCatalogEntry>();
 
-  for (const event of events) {
-    if (event._eventName !== 'DefTool') continue;
+  const push = (event: EventData): void => {
+    if (event._eventName !== 'DefTool') return;
     const data = fieldsOf(event);
     const toolIdString = readString(data, 'tool_id_string');
-    if (!toolIdString || tools.has(toolIdString)) continue;
+    if (!toolIdString || tools.has(toolIdString)) return;
 
     tools.set(toolIdString, {
       toolIdString,
@@ -74,7 +76,13 @@ export function extractToolCatalog(events: EventData[]): ToolCatalogEntry[] {
       cuttingLength: readNumber(data, 'cutting_tool_length'),
       declaredWorkTime: readWorkTime(data),
     });
-  }
+  };
 
-  return [...tools.values()];
+  return { push, finish: () => [...tools.values()] };
+}
+
+export function extractToolCatalog(
+  events: Iterable<EventData>,
+): ToolCatalogEntry[] {
+  return runConsumer(createToolCatalogConsumer(), events);
 }

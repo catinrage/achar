@@ -1,10 +1,12 @@
+import type { EventConsumer } from './event-consumer';
+import { runConsumer } from './event-consumer';
 import type { EventFields } from './event-fields';
 import { fieldsOf, readBoolean, readNumber, readString } from './event-fields';
 import type { EventData } from './parser';
 import type { SetupTiming, ToolTiming } from './timing';
-import { extractTimingReport, formatDurationSeconds } from './timing';
+import { createTimingConsumer, formatDurationSeconds } from './timing';
 import type { ToolCatalogEntry } from './tool-catalog';
-import { extractToolCatalog } from './tool-catalog';
+import { createToolCatalogConsumer } from './tool-catalog';
 
 /**
  * Whole-part summary of a Trace 5 program.
@@ -81,38 +83,83 @@ const NO_TIMING_MESSAGE =
   'SolidCAM with time estimation enabled, otherwise every reported duration ' +
   'is zero.';
 
-export function extractProductProfile(events: EventData[]): ProductProfile {
-  const timing = extractTimingReport(events);
-  const catalog = extractToolCatalog(events);
-  const metadata = collectSetupMetadata(events);
+/**
+ * The profile as a fold, so a caller that also needs something else from the
+ * same trace can drive both over one pass instead of walking twice.
+ */
+export function createProductProfileConsumer(): EventConsumer<ProductProfile> {
+  // Four folds, one pass. Walking `events` again would be silently empty if a
+  // caller handed in a generator — see event-consumer.ts.
+  const partConsumer = createPartConsumer();
+  const timingConsumer = createTimingConsumer();
+  const catalogConsumer = createToolCatalogConsumer();
+  const metadataConsumer = createSetupMetadataConsumer();
+  const consumers = [
+    partConsumer,
+    timingConsumer,
+    catalogConsumer,
+    metadataConsumer,
+  ];
 
-  const setups: ProductSetup[] = timing.setups.map((setup, index) => ({
-    name: setup.name,
-    fixtureName: metadata[index]?.fixtureName,
-    partHomeNumber: metadata[index]?.partHomeNumber,
-    seconds: setup.seconds,
-    duration: setup.duration,
-    tools: setup.tools,
-    jobs: setup.jobs,
-  }));
-
-  return {
-    part: extractPart(events),
-    setups,
-    tools: mergeToolTiming(catalog, timing.tools),
-    totals: { seconds: timing.seconds, duration: timing.duration },
-    eventCount: events.length,
-    diagnostics: collectDiagnostics(timing, catalog, setups, metadata),
+  const push = (event: EventData): void => {
+    for (const consumer of consumers) consumer.push(event);
   };
+
+  const finish = (): ProductProfile => {
+    const timing = timingConsumer.finish();
+    const catalog = catalogConsumer.finish();
+    const metadata = metadataConsumer.finish();
+
+    const setups: ProductSetup[] = timing.setups.map((setup, index) => ({
+      name: setup.name,
+      fixtureName: metadata[index]?.fixtureName,
+      partHomeNumber: metadata[index]?.partHomeNumber,
+      seconds: setup.seconds,
+      duration: setup.duration,
+      tools: setup.tools,
+      jobs: setup.jobs,
+    }));
+
+    return {
+      part: partConsumer.finish(),
+      setups,
+      tools: mergeToolTiming(catalog, timing.tools),
+      totals: { seconds: timing.seconds, duration: timing.duration },
+      eventCount: partConsumer.count,
+      diagnostics: collectDiagnostics(timing, catalog, setups, metadata),
+    };
+  };
+
+  return { push, finish };
 }
 
-function extractPart(events: EventData[]): ProductPart {
-  const startOfFile = events.find(
-    (event) => event._eventName === 'StartOfFile',
-  );
-  if (!startOfFile) return {};
+export function extractProductProfile(
+  events: Iterable<EventData>,
+): ProductProfile {
+  return runConsumer(createProductProfileConsumer(), events);
+}
 
-  const data = fieldsOf(startOfFile);
+/**
+ * Keeps the first `start_of_file` and counts everything, so the part summary
+ * and `eventCount` both come out of the same single pass.
+ */
+function createPartConsumer(): EventConsumer<ProductPart> & { count: number } {
+  let startOfFile: EventData | undefined;
+  const consumer = {
+    count: 0,
+    push(event: EventData): void {
+      consumer.count++;
+      if (!startOfFile && event._eventName === 'StartOfFile') {
+        startOfFile = event;
+      }
+    },
+    finish: (): ProductPart =>
+      startOfFile ? describePart(fieldsOf(startOfFile)) : {},
+  };
+  return consumer;
+}
+
+function describePart(data: EventFields): ProductPart {
   return {
     name: readString(data, 'part_name'),
     modelName: readString(data, 'part_model_name'),
@@ -151,13 +198,13 @@ interface SetupMetadata {
  * `undefined` are that implicit bucket, which has no `@setup` event and so no
  * fixture or home number to report.
  */
-function collectSetupMetadata(
-  events: EventData[],
-): (SetupMetadata | undefined)[] {
+function createSetupMetadataConsumer(): EventConsumer<
+  (SetupMetadata | undefined)[]
+> {
   const metadata: (SetupMetadata | undefined)[] = [];
   let opened = false;
 
-  for (const event of events) {
+  const push = (event: EventData): void => {
     if (event._eventName === 'Setup') {
       const data = fieldsOf(event);
       metadata.push({
@@ -165,15 +212,15 @@ function collectSetupMetadata(
         partHomeNumber: readNumber(data, 'part_home_number'),
       });
       opened = true;
-      continue;
+      return;
     }
     if (event._eventName === 'StartOfJob' && !opened) {
       metadata.push(undefined);
       opened = true;
     }
-  }
+  };
 
-  return metadata;
+  return { push, finish: () => metadata };
 }
 
 /**

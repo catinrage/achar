@@ -90,6 +90,21 @@ export async function parseTraceFile(tracePath: string): Promise<EventData[]> {
   return new Parser(source).parse();
 }
 
+/**
+ * Reads a trace and hands back its events as a single-use stream.
+ *
+ * For callers that summarise rather than post: the event array is four times
+ * the size of the input string, and a summary keeps none of it. Generation must
+ * keep using {@link parseTraceFile} — the post needs random access — and so must
+ * anything that reads a drill's `cycle_*_precise` fields. See `Parser.parseEvents`.
+ */
+export async function streamTraceFile(
+  tracePath: string,
+): Promise<Iterable<EventData>> {
+  const source = await readFile(tracePath, 'utf-8');
+  return new Parser(source).parseEvents();
+}
+
 export function generatePostFiles(
   events: EventData[],
   programName: string,

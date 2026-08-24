@@ -12,6 +12,7 @@ import {
   hasErrorDiagnostics,
   loadTraceInputsFrom,
   parseTrace,
+  streamTrace,
 } from '../inputs';
 import type { BundleOutcome, WorkerResponse, WorkerTask } from './protocol';
 
@@ -75,10 +76,10 @@ async function run(task: WorkerTask): Promise<unknown> {
 
   switch (task.op) {
     case 'profile':
-      return analyze(() => extractProductProfile(parseTrace(trace)));
+      return analyze(() => extractProductProfile(streamTrace(trace)));
 
     case 'timing':
-      return analyze(() => extractTimingReport(parseTrace(trace)));
+      return analyze(() => extractTimingReport(streamTrace(trace)));
 
     case 'parse': {
       const events = parseTrace(trace);

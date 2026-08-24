@@ -58,6 +58,32 @@ function timedProgram(): Record<string, unknown>[] {
 }
 
 describe('extractProductProfile', () => {
+  /**
+   * The trap this phase was built around. `extractProductProfile` folds four
+   * aggregations; if any of them walked the events separately, a generator
+   * would be exhausted by the first and the rest would return empty — with no
+   * error, and with a result that still looks like a profile. Arrays re-iterate,
+   * so an array-fed test cannot catch it. This one feeds a real generator.
+   */
+  it('produces the same profile from a single-use stream as from an array', () => {
+    // Arrange
+    const list = makeEvents(timedProgram());
+    function* stream(): Generator<EventData> {
+      yield* list;
+    }
+
+    // Act
+    const fromArray = extractProductProfile(list);
+    const fromStream = extractProductProfile(stream());
+
+    // Assert
+    expect(fromStream).toEqual(fromArray);
+    expect(fromStream.tools.length).toBeGreaterThan(0);
+    expect(fromStream.setups.length).toBeGreaterThan(0);
+    expect(fromStream.part.name).toBe(fromArray.part.name);
+    expect(fromStream.eventCount).toBe(list.length);
+  });
+
   it('summarizes part, setups, tools, and totals', () => {
     const profile = extractProductProfile(makeEvents(timedProgram()));
 

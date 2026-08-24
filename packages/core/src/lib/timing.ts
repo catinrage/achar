@@ -1,4 +1,6 @@
 import { createErrorContext, ValidationError } from './errors';
+import type { EventConsumer } from './event-consumer';
+import { runConsumer } from './event-consumer';
 import type { EventData } from './parser';
 
 /**
@@ -167,7 +169,7 @@ function rollUpTools(jobs: JobTiming[]): SetupToolTiming[] {
     .sort((left, right) => right.seconds - left.seconds);
 }
 
-export function extractTimingReport(events: EventData[]): TimingReport {
+export function createTimingConsumer(): EventConsumer<TimingReport> {
   const setups: MutableSetup[] = [];
   const declaredToolTimes = new Map<string, string>();
   /** Keyed by job name, spanning setups: SolidCAM names are program-unique. */
@@ -183,7 +185,7 @@ export function extractTimingReport(events: EventData[]): TimingReport {
     return currentSetup;
   };
 
-  for (const event of events) {
+  const push = (event: EventData): void => {
     const data = event as unknown as Record<string, unknown>;
     switch (data._eventName) {
       case 'Setup': {
@@ -251,36 +253,44 @@ export function extractTimingReport(events: EventData[]): TimingReport {
       default:
         break;
     }
-  }
+  };
 
-  const setupTimings: SetupTiming[] = setups.map((setup) => {
-    const jobs = [...setup.jobs.values()].map((job) => ({
-      ...job,
-      duration: formatDurationSeconds(job.seconds),
+  const finish = (): TimingReport => {
+    const setupTimings: SetupTiming[] = setups.map((setup) => {
+      const jobs = [...setup.jobs.values()].map((job) => ({
+        ...job,
+        duration: formatDurationSeconds(job.seconds),
+      }));
+      const seconds = jobs.reduce((sum, job) => sum + job.seconds, 0);
+      return {
+        name: setup.name,
+        seconds,
+        duration: formatDurationSeconds(seconds),
+        tools: rollUpTools(jobs),
+        jobs,
+      };
+    });
+
+    const tools: ToolTiming[] = rollUpTools(
+      setupTimings.flatMap((setup) => setup.jobs),
+    ).map((tool) => ({
+      ...tool,
+      declaredWorkTime: declaredToolTimes.get(tool.tool),
     }));
-    const seconds = jobs.reduce((sum, job) => sum + job.seconds, 0);
+
+    const seconds = setupTimings.reduce((sum, setup) => sum + setup.seconds, 0);
+
     return {
-      name: setup.name,
       seconds,
       duration: formatDurationSeconds(seconds),
-      tools: rollUpTools(jobs),
-      jobs,
+      setups: setupTimings,
+      tools,
     };
-  });
-
-  const tools: ToolTiming[] = rollUpTools(
-    setupTimings.flatMap((setup) => setup.jobs),
-  ).map((tool) => ({
-    ...tool,
-    declaredWorkTime: declaredToolTimes.get(tool.tool),
-  }));
-
-  const seconds = setupTimings.reduce((sum, setup) => sum + setup.seconds, 0);
-
-  return {
-    seconds,
-    duration: formatDurationSeconds(seconds),
-    setups: setupTimings,
-    tools,
   };
+
+  return { push, finish };
+}
+
+export function extractTimingReport(events: Iterable<EventData>): TimingReport {
+  return runConsumer(createTimingConsumer(), events);
 }

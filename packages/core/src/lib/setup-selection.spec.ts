@@ -78,6 +78,17 @@ describe('partitionSetups', () => {
     ]);
   });
 
+  it('partitions a single-use stream the same as an array', () => {
+    // Arrange
+    const list = makeEvents(threeSetupProgram());
+    function* stream(): Generator<EventData> {
+      yield* list;
+    }
+
+    // Act + Assert
+    expect(partitionSetups(stream())).toEqual(partitionSetups(list));
+  });
+
   it('reports no spans when the trace has no setup events', () => {
     // Arrange
     const events = makeEvents([

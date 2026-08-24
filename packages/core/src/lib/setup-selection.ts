@@ -1,3 +1,5 @@
+import type { EventConsumer } from './event-consumer';
+import { runConsumer } from './event-consumer';
 import { fieldsOf, readString } from './event-fields';
 import type { EventData } from './parser';
 
@@ -69,49 +71,79 @@ export interface SetupSelectionResult {
  * shared epilogue. Never throws: a trace with no `@setup` at all is one big
  * prologue with zero spans.
  */
-export function partitionSetups(events: EventData[]): SetupPartition {
-  const starts: number[] = [];
+export function partitionSetups(events: Iterable<EventData>): SetupPartition {
+  return runConsumer(createSetupPartitionConsumer(), events);
+}
+
+/**
+ * The partition as a fold, so a caller that also needs the product profile can
+ * drive both over one pass rather than walking the events twice.
+ */
+export function createSetupPartitionConsumer(): EventConsumer<SetupPartition> {
+  // Single pass, because a caller may hand in a generator. Spans are closed
+  // retroactively as the next `Setup` or the closing `EndProgram` arrives.
+  const spans: SetupSpan[] = [];
+  const unnamed: SetupSpan[] = [];
+  let index = 0;
+  let prologueEnd = -1;
+  let epilogueStart = -1;
   let firstJob = -1;
-  let endProgram = -1;
+  let hasImplicitSetup = false;
+  let open: SetupSpan | undefined;
 
-  for (let index = 0; index < events.length; index++) {
-    const name = events[index]._eventName;
-    if (name === 'Setup') starts.push(index);
-    else if (name === 'StartOfJob' && firstJob === -1) firstJob = index;
-    else if (name === 'EndProgram' && endProgram === -1) endProgram = index;
-  }
+  const push = (event: EventData): void => {
+    const name = event._eventName;
 
-  if (starts.length === 0) {
-    return {
-      prologueEnd: events.length,
-      spans: [],
-      epilogueStart: events.length,
-      hasImplicitSetup: false,
-    };
-  }
+    if (name === 'Setup') {
+      if (prologueEnd === -1) {
+        prologueEnd = index;
+        hasImplicitSetup = firstJob !== -1;
+      }
+      if (open) open.end = index;
+      open = {
+        index: spans.length + 1,
+        start: index,
+        end: index,
+        name: readString(fieldsOf(event), 'setup_name') ?? '',
+        jobCount: 0,
+      };
+      if (open.name === '') unnamed.push(open);
+      spans.push(open);
+    } else if (name === 'StartOfJob') {
+      if (firstJob === -1) firstJob = index;
+      if (open) open.jobCount++;
+    } else if (name === 'EndProgram' && epilogueStart === -1 && open) {
+      // The `end_program` that closes the last setup, not an earlier one.
+      epilogueStart = index;
+      open.end = index;
+      open = undefined;
+    }
 
-  const prologueEnd = starts[0];
-  const hasImplicitSetup = firstJob !== -1 && firstJob < prologueEnd;
-  const lastStart = starts[starts.length - 1];
-  // The epilogue opens at `end_program`, but only the one that closes the last
-  // setup. A trace without it simply has no epilogue.
-  const epilogueStart =
-    endProgram > lastStart
-      ? endProgram
-      : findEventFrom(events, 'EndProgram', lastStart);
+    index++;
+  };
 
-  const spans = starts.map((start, position) => {
-    const end = starts[position + 1] ?? epilogueStart;
-    return {
-      index: position + 1,
-      start,
-      end,
-      name: setupName(events[start], position, hasImplicitSetup),
-      jobCount: countEvents(events, 'StartOfJob', start, end),
-    };
-  });
+  const finish = (): SetupPartition => {
+    if (prologueEnd === -1) {
+      return {
+        prologueEnd: index,
+        spans: [],
+        epilogueStart: index,
+        hasImplicitSetup: false,
+      };
+    }
+    if (epilogueStart === -1) epilogueStart = index;
+    if (open) open.end = epilogueStart;
 
-  return { prologueEnd, spans, epilogueStart, hasImplicitSetup };
+    // Matches the positional fallback in `extractTimingReport`, which counts the
+    // implicit leading setup when the trace has one.
+    for (const span of unnamed) {
+      span.name = `Setup${span.index + (hasImplicitSetup ? 1 : 0)}`;
+    }
+
+    return { prologueEnd, spans, epilogueStart, hasImplicitSetup };
+  };
+
+  return { push, finish };
 }
 
 /**
@@ -347,40 +379,4 @@ function toolsUsedIn(events: EventData[], spans: SetupSpan[]): Set<string> {
 function isToolUsed(event: EventData, used: Set<string>): boolean {
   const tool = readString(fieldsOf(event), 'tool_id_string');
   return tool === undefined || used.has(tool);
-}
-
-function setupName(
-  event: EventData,
-  position: number,
-  hasImplicitSetup: boolean,
-): string {
-  const declared = readString(fieldsOf(event), 'setup_name');
-  if (declared !== undefined) return declared;
-  // Matches the positional fallback in `extractTimingReport`, which counts the
-  // implicit leading setup when the trace has one.
-  return `Setup${position + 1 + (hasImplicitSetup ? 1 : 0)}`;
-}
-
-function findEventFrom(
-  events: EventData[],
-  name: EventData['_eventName'],
-  from: number,
-): number {
-  for (let index = from; index < events.length; index++) {
-    if (events[index]._eventName === name) return index;
-  }
-  return events.length;
-}
-
-function countEvents(
-  events: EventData[],
-  name: EventData['_eventName'],
-  from: number,
-  to: number,
-): number {
-  let count = 0;
-  for (let index = from; index < to; index++) {
-    if (events[index]._eventName === name) count++;
-  }
-  return count;
 }

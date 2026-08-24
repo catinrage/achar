@@ -1,7 +1,13 @@
-import { extractProductProfile, partitionSetups } from '@achar/core';
+import type { ProductProfile, SetupSpan } from '@achar/core';
+import {
+  createProductProfileConsumer,
+  createSetupPartitionConsumer,
+  runConsumers,
+  streamTraceFile,
+} from '@achar/core';
 import chalk from 'chalk';
 import type { Command } from 'commander';
-import { resolveInput } from '../inputs';
+import { resolveTraceTarget } from '../inputs';
 import type { CliOptions } from '../options';
 import { runCommand } from '../runner';
 import { printData, printInfo } from '../ui';
@@ -24,8 +30,16 @@ export function registerSetupsCommand(cli: Command): void {
     .option('--json', 'Print the list as JSON on stdout.')
     .action(
       runCommand(async (target: string, options: CliOptions) => {
-        const input = await resolveInput(target, options);
-        const partition = partitionSetups(input.events);
+        const { tracePath } = await resolveTraceTarget(target, options);
+        // Both folds run over one pass: the stream is single-use, and walking
+        // it twice would silently produce an empty second answer.
+        const partitionConsumer = createSetupPartitionConsumer();
+        const profileConsumer = createProductProfileConsumer();
+        runConsumers(await streamTraceFile(tracePath), [
+          partitionConsumer,
+          profileConsumer,
+        ]);
+        const partition = partitionConsumer.finish();
 
         if (partition.spans.length === 0) {
           printInfo(
@@ -36,7 +50,7 @@ export function registerSetupsCommand(cli: Command): void {
           return 0;
         }
 
-        const rows = describeSetups(input.events, partition.spans);
+        const rows = describeSetups(profileConsumer.finish(), partition.spans);
 
         if (options.json) {
           printData(`${JSON.stringify(rows, null, 2)}\n`.trimEnd());
@@ -72,10 +86,9 @@ export function registerSetupsCommand(cli: Command): void {
  * has no span; aligning from the tail absorbs that offset.
  */
 function describeSetups(
-  events: Parameters<typeof extractProductProfile>[0],
-  spans: ReturnType<typeof partitionSetups>['spans'],
+  profile: ProductProfile,
+  spans: SetupSpan[],
 ): SetupRow[] {
-  const profile = extractProductProfile(events);
   const offset = profile.setups.length - spans.length;
 
   return spans.map((span, position) => {
