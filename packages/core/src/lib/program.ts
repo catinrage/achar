@@ -64,10 +64,6 @@ export interface ProgramExecutionOptions {
    * Log level for execution
    */
   logLevel?: LogLevel;
-  /**
-   * Timeout for individual event processing (in milliseconds)
-   */
-  eventTimeout?: number;
 }
 
 /**
@@ -130,7 +126,6 @@ export class Program {
     validateEvents: true,
     logProgress: true,
     logLevel: LogLevel.INFO,
-    eventTimeout: 5000,
   };
 
   /**
@@ -352,13 +347,9 @@ export class Program {
             builder.currentEventListenerIndex = index;
             builder.currentEventIndex = metadata.index;
 
-            // Execute the listener with timeout
-            this._executeListenerWithTimeout(
-              listener,
-              builder,
-              params,
-              metadata,
-            );
+            // Called directly, and synchronously, so a listener that throws
+            // is caught below rather than escaping as an unhandled rejection.
+            listener(builder, params as EventsType[keyof EventsType], metadata);
           } catch (error) {
             const processingError = new EventProcessingError(
               `Event listener failed for ${eventKey} (listener ${index}): ${
@@ -596,57 +587,6 @@ export class Program {
       const wrappedError = wrapError(error, 'Program', 'generate');
       this._logger.logError(wrappedError, 'generate');
       throw wrappedError;
-    }
-  }
-
-  /**
-   * @private
-   * @method _executeListenerWithTimeout
-   * @description Executes an event listener with timeout protection
-   */
-  private _executeListenerWithTimeout(
-    listener: EventListener,
-    builder: Builder,
-    params:
-      | EventsType[keyof EventsType]
-      | Partial<EventsType[keyof EventsType]>,
-    metadata: EventListenerMetadata,
-  ): void {
-    if (
-      this._executionOptions.eventTimeout &&
-      this._executionOptions.eventTimeout > 0
-    ) {
-      // Create a promise that resolves when the listener completes
-      const listenerPromise = new Promise<void>((resolve, reject) => {
-        try {
-          listener(builder, params as EventsType[keyof EventsType], metadata);
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      });
-
-      // Create a timeout promise
-      const timeoutPromise = new Promise<void>((_, reject) => {
-        setTimeout(() => {
-          reject(
-            new EventProcessingError(
-              `Event listener timed out after ${this._executionOptions.eventTimeout}ms`,
-              createErrorContext('Program', '_executeListenerWithTimeout', {
-                timeout: this._executionOptions.eventTimeout,
-              }),
-            ),
-          );
-        }, this._executionOptions.eventTimeout);
-      });
-
-      // Race the listener against the timeout
-      Promise.race([listenerPromise, timeoutPromise]).catch((error) => {
-        throw error;
-      });
-    } else {
-      // Execute without timeout
-      listener(builder, params as EventsType[keyof EventsType], metadata);
     }
   }
 
