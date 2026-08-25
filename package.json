@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": ">=1.4.0"
   },
   "exports": {
     ".": "./packages/core/src/index.ts",
@@ -33,7 +33,7 @@
     "dev": "bun run --watch examples/playground.ts",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --write",
-    "test": "bun test --timeout 30000",
+    "test": "bun test --parallel --timeout 30000",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
