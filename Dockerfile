@@ -7,7 +7,7 @@
 # so the final image carries none of the build-time dependencies (svelte, the
 # compiler) that produced it.
 ################################################################################
-FROM oven/bun:1.3.14 AS web
+FROM oven/bun:1.4.0 AS web
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN NODE_ENV=production bun run --cwd packages/web build
 ################################################################################
 # Runtime
 ################################################################################
-FROM oven/bun:1.3.14
+FROM oven/bun:1.4.0
 
 WORKDIR /app
 
