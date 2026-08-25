@@ -1,3 +1,4 @@
+import { mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { listBuiltinPosts, machineFeatureSchema } from '@achar/core';
 import type { Route, RouteContext } from '@achar/server';
@@ -10,7 +11,8 @@ import {
   spoolToFile,
 } from '@achar/server';
 import type { WorkshopServices } from './context';
-import { jobOutputDirectory, jobTracePath } from './data/paths';
+import { jobOutputDirectory, traceFilePath } from './data/paths';
+import type { TraceRecord } from './data/store';
 import { describeJob } from './jobs/runner';
 import {
   createMachine,
@@ -32,6 +34,8 @@ import { createZip } from './zip';
 
 const MAX_RECENT_JOBS = 100;
 const DEFAULT_RECENT_JOBS = 25;
+/** A trace with more setups than this is not a part anyone hand-picks from. */
+const MAX_SETUP_INDEX = 999;
 
 export const workshopRoutes: Array<Route<WorkshopServices>> = [
   {
@@ -43,6 +47,11 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
         posts: listBuiltinPosts().map((post) => ({
           id: post.id,
           name: post.name,
+          // The form fills the profile's `controller` in from the post rather
+          // than asking: the two must agree or generation is refused, and a
+          // field whose only correct value is already known is a field that
+          // can only be got wrong.
+          controller: post.controller,
           dialects: post.dialects,
         })),
         // The machine form renders its feature inputs from this rather than
@@ -106,16 +115,32 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
     },
   },
 
+  // ---- traces -----------------------------------------------------------
+
+  {
+    method: 'POST',
+    path: '/api/traces',
+    gated: false,
+    // The handler owns the request stream: the trace is written to the volume
+    // as it arrives rather than buffered, so a queued upload costs disk, not
+    // the memory the parse ahead of it is already competing for.
+    streaming: true,
+    handle: async (context) => uploadTrace(context),
+  },
+  {
+    method: 'GET',
+    path: '/api/traces/:sha',
+    gated: false,
+    handle: ({ params, services }) =>
+      json({ trace: describeTrace(requireTrace(services, params.sha)) }),
+  },
+
   // ---- jobs -------------------------------------------------------------
 
   {
     method: 'POST',
     path: '/api/jobs',
     gated: false,
-    // The handler owns the request stream: the trace is written to the volume
-    // as it arrives rather than buffered, so a queued upload costs disk, not
-    // the memory the parse ahead of it is already competing for.
-    streaming: true,
     handle: async (context) => submitJob(context),
   },
   {
@@ -172,13 +197,14 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
       const job = requireJob(services, params.id);
       // Retention deletes the upload long before the job row, so "gone" is a
       // normal outcome here and needs to say so rather than 404 like a typo.
-      if (job.tracePurgedAt !== null) {
+      const trace = services.store.findTrace(job.traceSha256);
+      if (trace === undefined || trace.purgedAt !== null) {
         throw badRequest(
           'The uploaded trace for this job has passed its retention window and been deleted.',
         );
       }
 
-      const file = Bun.file(jobTracePath(services.paths, job.id));
+      const file = Bun.file(traceFilePath(services.paths, job.traceSha256));
       if (!(await file.exists())) throw notFound();
 
       return {
@@ -227,59 +253,226 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
 ];
 
 /**
- * Accepts an upload and queues it.
+ * Accepts an upload and analyses it.
  *
- * Returns `200` with an existing job when this exact trace has already been
- * posted for this machine, and `202` with a new one otherwise. Generation is
+ * The upload is not a job. An operator cannot say which setups to post until
+ * something has read the file, and the same file is routinely posted again
+ * for another machine or another setup — so the trace is stored once by
+ * content hash, analysed once, and referenced by every job built from it.
+ *
+ * A file already on the volume is answered immediately with its stored
+ * analysis: no parse, no queue, no second copy of a 300 MB upload.
+ */
+async function uploadTrace(context: RouteContext<WorkshopServices>) {
+  const { services, url } = context;
+  const name = url.searchParams.get('filename')?.trim() || 'trace.MPF';
+
+  // Spooled under a scratch name first: the destination is the content hash,
+  // which is not known until the last byte has arrived.
+  const scratch = path.join(
+    services.paths.spool,
+    `upload-${Bun.randomUUIDv7()}`,
+  );
+  const upload = await spoolToFile(
+    context.request,
+    scratch,
+    services.maxBodyBytes,
+  );
+
+  const destination = traceFilePath(services.paths, upload.sha256);
+  const known = services.store.findTrace(upload.sha256);
+  // A row is not enough: retention deletes the file and leaves the analysis,
+  // and a failed one has nothing worth reusing.
+  const reusable =
+    known !== undefined &&
+    known.purgedAt === null &&
+    known.status !== 'failed' &&
+    (await Bun.file(destination).exists());
+
+  if (reusable) {
+    // Identical bytes already on the volume. Keeping the second copy would
+    // cost as much as the first and buy nothing.
+    await Bun.file(scratch)
+      .delete()
+      .catch(() => {});
+    services.store.touchTrace(upload.sha256, name);
+    const trace = services.store.findTrace(upload.sha256);
+    if (!trace) throw notFound();
+    return json({ trace: describeTrace(trace), cached: true }, 200);
+  }
+
+  await mkdir(path.dirname(destination), { recursive: true });
+  await rename(scratch, destination);
+
+  services.store.createTrace({
+    sha256: upload.sha256,
+    name,
+    bytes: upload.bytes,
+  });
+  services.runner.analyze(upload.sha256);
+
+  const trace = services.store.findTrace(upload.sha256);
+  if (!trace) throw notFound();
+  return json({ trace: describeTrace(trace), cached: false }, 202);
+}
+
+/**
+ * Queues generation for an already-uploaded trace.
+ *
+ * Returns `200` with an existing job when this exact combination has already
+ * been posted, and `202` with a new one otherwise. Generation is
  * deterministic, so the cached answer is not merely equivalent — it is the
  * same bytes, which is the guarantee the whole service exists to provide.
+ * The selection is part of that key: the same trace posted for setups 1,3 is
+ * a different program from the same trace posted whole.
  */
 async function submitJob(context: RouteContext<WorkshopServices>) {
-  const { services, url } = context;
-  const machineId = url.searchParams.get('machineId')?.trim();
+  const { body, services } = context;
+
+  const machineId = body.option('machineId');
   if (!machineId) {
-    throw badRequest("A 'machineId' query parameter is required.");
+    throw badRequest("A 'machineId' is required.");
   }
   const machine = services.store.findMachine(machineId);
   if (!machine) throw badRequest(`Unknown machine '${machineId}'.`);
 
-  const programName = url.searchParams.get('programName')?.trim() || null;
-  const traceName = url.searchParams.get('filename')?.trim() || 'trace.MPF';
+  const traceSha = body.option('traceSha');
+  if (!traceSha) {
+    throw badRequest("A 'traceSha' is required. Upload the trace first.");
+  }
+  const trace = services.store.findTrace(traceSha);
+  if (!trace) throw badRequest(`Unknown trace '${traceSha}'.`);
+  if (trace.purgedAt !== null) {
+    throw badRequest(
+      'That upload has passed its retention window and been deleted. Upload the trace again.',
+    );
+  }
+  if (trace.status !== 'ready') {
+    throw badRequest(
+      trace.status === 'analyzing'
+        ? 'That upload is still being analysed.'
+        : `That upload could not be analysed: ${trace.errorMessage ?? 'unknown error'}`,
+    );
+  }
 
-  const jobId = Bun.randomUUIDv7();
-  const upload = await spoolToFile(
-    context.request,
-    jobTracePath(services.paths, jobId),
-    services.maxBodyBytes,
-  );
+  const programName = body.option('programName') ?? null;
+  const setups = readSetupSelection(body.option('setups'), trace);
+  const keepAllTools = body.option('keepAllTools') === 'true';
 
-  const cached = services.store.findCachedJob(upload.sha256, machineId);
-  if (cached && cached.programName === programName) {
-    // The upload is already on disk under a job id that will never be used.
-    // Dropping it now keeps the volume free of duplicates of the largest
-    // files the service handles.
-    await Bun.file(upload.path)
-      .delete()
-      .catch(() => {});
+  const key = {
+    traceSha256: traceSha,
+    machineId,
+    programName,
+    setups,
+    keepAllTools,
+  };
+  const cached = services.store.findCachedJob(key);
+  if (cached) {
     return json(
       { job: describeJob(services.store, cached), cached: true },
       200,
     );
   }
 
+  const jobId = Bun.randomUUIDv7();
   services.store.createJob({
     id: jobId,
-    traceSha256: upload.sha256,
-    traceName,
-    traceBytes: upload.bytes,
+    traceSha256: traceSha,
+    traceName: trace.name,
+    traceBytes: trace.bytes,
     machineId,
     programName,
+    setups,
+    keepAllTools,
   });
   services.runner.submit(jobId);
 
   const job = services.store.findJob(jobId);
   if (!job) throw notFound();
   return json({ job: describeJob(services.store, job), cached: false }, 202);
+}
+
+/**
+ * Reads a `1,3` selection into the canonical form the cache key uses.
+ *
+ * Indices only, and every one is checked against the setups the analysis
+ * actually found: a selection the trace cannot honour must fail here, on the
+ * request that named it, rather than fifteen seconds later as a failed job
+ * whose error nobody connects to a checkbox.
+ *
+ * Selecting every setup is stored as "the whole part" rather than as an
+ * explicit list, so ticking all the boxes and ticking none produce the same
+ * job — and, crucially, the same bytes as before this feature existed.
+ */
+function readSetupSelection(
+  raw: string | undefined,
+  trace: TraceRecord,
+): string | null {
+  if (raw === undefined) return null;
+
+  const available = (parseJson(trace.setups) ?? []) as Array<{
+    index: number;
+  }>;
+  const indices = new Set<number>();
+
+  for (const token of raw.split(',')) {
+    const trimmed = token.trim();
+    if (trimmed.length === 0) continue;
+
+    const index = Number(trimmed);
+    if (!Number.isInteger(index) || index < 1 || index > MAX_SETUP_INDEX) {
+      throw badRequest(
+        `'${trimmed}' is not a setup index. Select setups by the number the trace analysis reported.`,
+      );
+    }
+    if (!available.some((setup) => setup.index === index)) {
+      throw badRequest(
+        `This trace has no setup ${index}. It has ${available.length} setup(s).`,
+      );
+    }
+    indices.add(index);
+  }
+
+  if (indices.size === 0) {
+    throw badRequest('Select at least one setup, or omit the selection.');
+  }
+  if (indices.size === available.length) return null;
+
+  return [...indices].sort((left, right) => left - right).join(',');
+}
+
+/** The trace as the browser reads it. */
+function describeTrace(trace: TraceRecord) {
+  return {
+    sha256: trace.sha256,
+    name: trace.name,
+    bytes: trace.bytes,
+    status: trace.status,
+    setups: parseJson(trace.setups) ?? [],
+    hasImplicitSetup: trace.hasImplicitSetup,
+    timing: parseJson(trace.timing),
+    profile: parseJson(trace.profile),
+    diagnostics: parseJson(trace.diagnostics) ?? [],
+    eventCount: trace.eventCount,
+    error: trace.errorMessage,
+    purged: trace.purgedAt !== null,
+    createdAt: trace.createdAt,
+  };
+}
+
+function parseJson(value: string | null): unknown {
+  if (value === null) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function requireTrace(services: WorkshopServices, sha: string | undefined) {
+  const trace = sha ? services.store.findTrace(sha) : undefined;
+  if (!trace) throw notFound();
+  return trace;
 }
 
 function requireJob(services: WorkshopServices, id: string | undefined) {

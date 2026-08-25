@@ -18,8 +18,10 @@ export interface DataPaths {
   root: string;
   /** SQLite database file. */
   database: string;
-  /** Per-job directories. */
+  /** Per-job directories: generated output. */
   jobs: string;
+  /** Uploaded traces, one directory per content hash. */
+  traces: string;
   /** Machine presets: VMID and machine-profile files. */
   machines: string;
   /** Scratch space for request bodies being spooled before a parse. */
@@ -46,6 +48,7 @@ export function prepareDataPaths(explicit?: string): DataPaths {
     root,
     database: path.join(root, 'achar.sqlite'),
     jobs: path.join(root, 'jobs'),
+    traces: path.join(root, 'traces'),
     machines: path.join(root, 'machines'),
     spool: path.join(root, 'spool'),
   };
@@ -53,6 +56,7 @@ export function prepareDataPaths(explicit?: string): DataPaths {
   for (const directory of [
     paths.root,
     paths.jobs,
+    paths.traces,
     paths.machines,
     paths.spool,
   ]) {
@@ -62,12 +66,33 @@ export function prepareDataPaths(explicit?: string): DataPaths {
   return paths;
 }
 
-/** Directory holding one job's spooled trace and generated output. */
+/** Directory holding one job's generated output. */
 function jobDirectory(paths: DataPaths, jobId: string): string {
   return path.join(paths.jobs, jobId);
 }
 
-export function jobTracePath(paths: DataPaths, jobId: string): string {
+/**
+ * Where an uploaded trace lives, addressed by its content hash.
+ *
+ * Content-addressed rather than per job, because the same file is routinely
+ * posted more than once — for a second machine, or for a different set of
+ * setups — and a job is no longer what owns the upload. It also means the
+ * second upload of a file already on the volume costs nothing to store.
+ */
+export function traceFilePath(paths: DataPaths, sha256: string): string {
+  return path.join(paths.traces, sha256, 'trace.MPF');
+}
+
+export function traceDirectory(paths: DataPaths, sha256: string): string {
+  return path.join(paths.traces, sha256);
+}
+
+/**
+ * Where a trace uploaded before traces were content-addressed still sits.
+ *
+ * Read only by the startup migration that moves it into the trace store.
+ */
+export function legacyJobTracePath(paths: DataPaths, jobId: string): string {
   return path.join(jobDirectory(paths, jobId), 'trace.MPF');
 }
 

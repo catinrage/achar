@@ -81,7 +81,17 @@
               {label(job)}
             </span>
             <span class="names">
-              <strong class="ltr">{job.traceName}</strong>
+              <strong class="ltr">
+                {job.traceName}
+                <!-- A partial program writes the same filenames a full one
+                     does, so history has to say which is which. -->
+                {#if job.setups}
+                  <em class="partial">
+                    {m.timingSetup}
+                    {job.setups.map((index) => faDigits(index)).join('، ')}
+                  </em>
+                {/if}
+              </strong>
               <small>
                 {job.machineName ?? job.machineId} · {formatBytes(job.traceBytes)}
                 {#if job.tracePurged} · {m.tracePurged}{/if}
@@ -236,6 +246,18 @@
     font-size: 0.94rem;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .partial {
+    display: inline-block;
+    margin-inline-start: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    color: var(--warning);
+    font-size: 0.72rem;
+    font-style: normal;
+    vertical-align: middle;
+    background: var(--warning-soft);
+    border-radius: 999px;
   }
 
   .names small,

@@ -110,3 +110,98 @@ job_name : 'iRough'
 job_time : ''
 (5)@end_of_file
 `;
+
+/**
+ * Two setups, each loading a tool the other does not.
+ *
+ * The smallest trace that can tell a whole-part post from a narrowed one: the
+ * distinct tools make a pruned tool table visible in the output, and the
+ * `@end_program` gives the partition a real epilogue to keep.
+ */
+export const TWO_SETUP_TRACE = `
+(0)@start_of_file
+part_name : 'TWO_SETUPS'
+home_number : 54
+program_number : 4000
+inch_system : 0
+(1)@def_tool
+tool_id_string : 'END12Z3AL'
+tool_name : 'EM12'
+tool_type : 'end mill'
+tool_diameter : 12.000
+tool_number : 1
+tool_teeth_number : 3
+tool_work_time : '  0:02:00'
+(2)@def_tool
+tool_id_string : 'DRILL6'
+tool_name : 'D6'
+tool_type : 'drill'
+tool_diameter : 6.000
+tool_number : 2
+tool_teeth_number : 2
+tool_work_time : '  0:01:00'
+(3)@setup
+setup_name : 'Front'
+fixture_name : 'Vise'
+part_home_number : 1
+(4)@change_tool
+tool_id_string : 'END12Z3AL'
+tool_number : 1
+(5)@start_of_job
+job_name : 'iRough'
+job_type : 'profile'
+original_job_name : 'iRough'
+job_time : '  0:02:00'
+job_cutting_time : '  0:01:30'
+job_linking_time : '  0:00:10'
+xnext : 10.000
+ynext : 20.000
+znext : 5.000
+spin_rate : 3000.000
+spin_direction : cw
+feed_rate : 500.000
+used_in_transform_4x : 0
+(6)@rapid_move
+xpos : 10.000
+ypos : 20.000
+zpos : 5.000
+(7)@line
+xpos : 30.000
+ypos : 20.000
+zpos : -2.000
+feed : 500
+(8)@end_of_job
+(9)@setup
+setup_name : 'Back'
+fixture_name : 'Vise'
+part_home_number : 2
+(10)@change_tool
+tool_id_string : 'DRILL6'
+tool_number : 2
+(11)@start_of_job
+job_name : 'Drill'
+job_type : 'profile'
+original_job_name : 'Drill'
+job_time : '  0:01:00'
+job_cutting_time : '  0:00:45'
+job_linking_time : '  0:00:05'
+xnext : 40.000
+ynext : 25.000
+znext : 5.000
+spin_rate : 2000.000
+spin_direction : cw
+feed_rate : 200.000
+used_in_transform_4x : 0
+(12)@rapid_move
+xpos : 40.000
+ypos : 25.000
+zpos : 5.000
+(13)@line
+xpos : 40.000
+ypos : 25.000
+zpos : -3.000
+feed : 200
+(14)@end_of_job
+(15)@end_program
+(16)@end_of_file
+`;

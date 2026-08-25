@@ -6,8 +6,8 @@ import { WorkerPool } from '@achar/server';
 import type { DataPaths } from '../data/paths';
 import {
   jobOutputDirectory,
-  jobTracePath,
   prepareDataPaths,
+  traceFilePath,
 } from '../data/paths';
 import { JobStore } from '../data/store';
 import { describeJob, JobRunner } from './runner';
@@ -48,25 +48,42 @@ function requireJob(id: string) {
   return job;
 }
 
-/** Creates a finished job with a trace and one output file on disk. */
-async function seedFinishedJob(id: string, createdAt?: number) {
+/** The machine every seeded job is posted for. */
+function seedMachine(id = 'm1') {
   store.upsertMachine({
-    id: 'm1',
+    id,
     name: 'Machine',
     postId: 'siemens-828d',
     vmidFile: null,
-    profileFile: null,
+    profile: null,
     createdAt: Date.now(),
+  });
+}
+
+/** Creates a finished job with its trace and one output file on disk. */
+async function seedFinishedJob(id: string, createdAt?: number) {
+  seedMachine();
+  const sha = `sha-${id}`;
+  store.createTrace({ sha256: sha, name: `${id}.MPF`, bytes: 1234 });
+  store.markTraceReady(sha, {
+    setups: [],
+    hasImplicitSetup: false,
+    timing: null,
+    profile: null,
+    diagnostics: [],
+    eventCount: 1,
   });
   store.createJob({
     id,
-    traceSha256: `sha-${id}`,
+    traceSha256: sha,
     traceName: `${id}.MPF`,
     traceBytes: 1234,
     machineId: 'm1',
     programName: null,
+    setups: null,
+    keepAllTools: false,
   });
-  await Bun.write(jobTracePath(paths, id), 'trace bytes');
+  await Bun.write(traceFilePath(paths, sha), 'trace bytes');
   await Bun.write(
     path.join(jobOutputDirectory(paths, id), 'OUT.SPF'),
     'N10 G0\n',
@@ -76,24 +93,39 @@ async function seedFinishedJob(id: string, createdAt?: number) {
     diagnostics: [],
     timing: { duration: '0:01:00' },
     profile: null,
+    selectedSetups: null,
   });
 
-  if (createdAt !== undefined) age(id, createdAt);
+  if (createdAt !== undefined) age(sha, createdAt);
 }
 
 /**
- * Back-dates a job so retention can be tested without waiting two weeks.
+ * Back-dates an upload so retention can be tested without waiting two weeks.
  *
  * Done over a second connection to the same file rather than through
  * `JobStore`, which has no reason to expose a way to rewrite history.
  */
-function age(id: string, createdAt: number): void {
+function age(sha256: string, createdAt: number): void {
   const db = new Database(paths.database);
   try {
-    db.query('UPDATE jobs SET created_at = ? WHERE id = ?').run(createdAt, id);
+    db.query('UPDATE traces SET created_at = ? WHERE sha256 = ?').run(
+      createdAt,
+      sha256,
+    );
   } finally {
     db.close();
   }
+}
+
+/** The cache key a seeded job was stored under. */
+function cacheKey(id: string) {
+  return {
+    traceSha256: `sha-${id}`,
+    machineId: 'm1',
+    programName: null,
+    setups: null,
+    keepAllTools: false,
+  };
 }
 
 describe('retention', () => {
@@ -104,7 +136,9 @@ describe('retention', () => {
     const purged = await runner.purgeExpiredTraces();
 
     expect(purged).toBe(1);
-    expect(await Bun.file(jobTracePath(paths, 'old')).exists()).toBe(false);
+    expect(await Bun.file(traceFilePath(paths, 'sha-old')).exists()).toBe(
+      false,
+    );
     // The kilobytes stay; only the hundreds of megabytes go.
     expect(
       await Bun.file(
@@ -114,16 +148,21 @@ describe('retention', () => {
 
     const job = store.findJob('old');
     expect(job?.status).toBe('done');
-    expect(job?.tracePurgedAt).not.toBeNull();
+    expect(describeJob(store, requireJob('old')).tracePurged).toBe(true);
     expect(store.listFiles('old')).toHaveLength(1);
+    // The analysis outlives the bytes: what was in the file is still worth
+    // reading once the file itself is gone.
+    expect(store.findTrace('sha-old')?.status).toBe('ready');
   });
 
   it('leaves a trace inside the retention window alone', async () => {
     await seedFinishedJob('recent');
 
     expect(await runner.purgeExpiredTraces()).toBe(0);
-    expect(await Bun.file(jobTracePath(paths, 'recent')).exists()).toBe(true);
-    expect(store.findJob('recent')?.tracePurgedAt).toBeNull();
+    expect(await Bun.file(traceFilePath(paths, 'sha-recent')).exists()).toBe(
+      true,
+    );
+    expect(describeJob(store, requireJob('recent')).tracePurged).toBe(false);
   });
 
   it('does not purge the same trace twice', async () => {
@@ -137,24 +176,17 @@ describe('retention', () => {
     // The trace is gone, so the job can no longer be re-run or verified; a
     // matching upload has to be treated as new work.
     await seedFinishedJob('stale', Date.now() - 30 * 24 * 60 * 60 * 1000);
-    expect(store.findCachedJob('sha-stale', 'm1')?.id).toBe('stale');
+    expect(store.findCachedJob(cacheKey('stale'))?.id).toBe('stale');
 
     await runner.purgeExpiredTraces();
 
-    expect(store.findCachedJob('sha-stale', 'm1')).toBeUndefined();
+    expect(store.findCachedJob(cacheKey('stale'))).toBeUndefined();
   });
 });
 
 describe('recovery', () => {
   it('re-queues a job left running by a restart', () => {
-    store.upsertMachine({
-      id: 'm1',
-      name: 'Machine',
-      postId: 'siemens-828d',
-      vmidFile: null,
-      profileFile: null,
-      createdAt: Date.now(),
-    });
+    seedMachine();
     store.createJob({
       id: 'interrupted',
       traceSha256: 'sha',
@@ -162,6 +194,8 @@ describe('recovery', () => {
       traceBytes: 10,
       machineId: 'm1',
       programName: null,
+      setups: null,
+      keepAllTools: false,
     });
     store.markRunning('interrupted');
 
@@ -169,18 +203,21 @@ describe('recovery', () => {
     expect(store.findJob('interrupted')?.status).toBe('queued');
     expect(store.findJob('interrupted')?.startedAt).toBeNull();
   });
+
+  it('lists an upload left mid-analysis so it can be re-analysed', () => {
+    // The operator is still watching a spinner for this one. Analysis is a
+    // pure function of the file, so re-running it is safe.
+    store.createTrace({ sha256: 'half-read', name: 'x.MPF', bytes: 10 });
+
+    expect(store.listAnalyzingTraces().map((trace) => trace.sha256)).toEqual([
+      'half-read',
+    ]);
+  });
 });
 
 describe('describeJob', () => {
   it('reports a queue position only while the job is queued', async () => {
-    store.upsertMachine({
-      id: 'm1',
-      name: 'Machine',
-      postId: 'siemens-828d',
-      vmidFile: null,
-      profileFile: null,
-      createdAt: Date.now(),
-    });
+    seedMachine();
     store.createJob({
       id: 'first',
       traceSha256: 'a',
@@ -188,6 +225,8 @@ describe('describeJob', () => {
       traceBytes: 1,
       machineId: 'm1',
       programName: null,
+      setups: null,
+      keepAllTools: false,
     });
     await Bun.sleep(2);
     store.createJob({
@@ -197,6 +236,8 @@ describe('describeJob', () => {
       traceBytes: 1,
       machineId: 'm1',
       programName: null,
+      setups: null,
+      keepAllTools: false,
     });
 
     expect(describeJob(store, requireJob('first')).position).toBe(1);
@@ -215,5 +256,24 @@ describe('describeJob', () => {
     expect(view.machineName).toBe('Machine');
     expect(view.blocked).toBe(false);
     expect(view.files).toHaveLength(1);
+  });
+
+  it('reports the setup selection a job was posted with', () => {
+    seedMachine();
+    store.createTrace({ sha256: 'partial', name: 'p.MPF', bytes: 1 });
+    store.createJob({
+      id: 'partial-job',
+      traceSha256: 'partial',
+      traceName: 'p.MPF',
+      traceBytes: 1,
+      machineId: 'm1',
+      programName: null,
+      setups: '1,3',
+      keepAllTools: true,
+    });
+
+    const view = describeJob(store, requireJob('partial-job'));
+    expect(view.setups).toEqual([1, 3]);
+    expect(view.keepAllTools).toBe(true);
   });
 });

@@ -23,6 +23,7 @@ export type { KernelOptions, Route, RunningServer } from './kernel';
 export { startKernel } from './kernel';
 export { WorkerPool } from './parse/pool';
 export type {
+  AnalyzeOutcome,
   BundledFile,
   BundleOutcome,
   WorkerTask,

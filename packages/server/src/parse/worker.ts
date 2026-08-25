@@ -1,20 +1,39 @@
+import type { AcharDiagnostic, EventData, SetupOverview } from '@achar/core';
 import {
   compareGeneratedFiles,
+  createProductProfileConsumer,
+  createSetupPartitionConsumer,
+  createTimingConsumer,
+  describeSetups,
   extractProductProfile,
   extractTimingReport,
   Logger,
+  partitionSetups,
+  runConsumers,
+  selectSetupEvents,
   summarizeCompareResults,
   ValidationError,
 } from '@achar/core';
-import { HttpError, messageOf, unprocessableTrace } from '../errors';
+import {
+  badRequest,
+  HttpError,
+  messageOf,
+  unprocessableTrace,
+} from '../errors';
 import {
   buildProgramFrom,
   hasErrorDiagnostics,
   loadTraceInputsFrom,
   parseTrace,
   streamTrace,
+  validateTraceInputs,
 } from '../inputs';
-import type { BundleOutcome, WorkerResponse, WorkerTask } from './protocol';
+import type {
+  AnalyzeOutcome,
+  BundleOutcome,
+  WorkerResponse,
+  WorkerTask,
+} from './protocol';
 
 /**
  * Parse worker.
@@ -160,6 +179,9 @@ async function run(task: WorkerTask): Promise<unknown> {
       return { results, summary: summarizeCompareResults(results) };
     }
 
+    case 'analyze':
+      return analyzeTrace(trace);
+
     case 'bundle':
       return bundle(task, trace);
   }
@@ -176,10 +198,19 @@ function bundle(
   task: Extract<WorkerTask, { op: 'bundle' }>,
   trace: string,
 ): BundleOutcome {
-  const inputs = loadTraceInputsFrom(
-    { trace, ...documentsOf(task) },
+  const startedAt = performance.now();
+  const parsed = parseTrace(trace);
+  const selection = narrowToSelection(parsed, task);
+  // Validated against the events that will actually be posted, not against
+  // everything that was uploaded: a travel limit broken by a setup nobody
+  // selected is not this run's problem.
+  const inputs = validateTraceInputs(
+    selection.events,
+    documentsOf(task),
     optionsOf(task).postId,
+    startedAt,
   );
+  inputs.diagnostics.push(...selection.diagnostics);
 
   // Extracted before the blocked decision, because the profile carries
   // diagnostics of its own. `no-timing-data` in particular is error-severity
@@ -201,6 +232,7 @@ function bundle(
       programName: '',
       eventCount: inputs.events.length,
       blocked: true,
+      selectedSetups: selection.selected,
     };
   }
 
@@ -221,7 +253,106 @@ function bundle(
     programName,
     eventCount: inputs.events.length,
     blocked: false,
+    selectedSetups: selection.selected,
   };
+}
+
+/**
+ * Narrows a parsed trace to the requested setups.
+ *
+ * The selection's own warnings become job diagnostics rather than log lines:
+ * a setup posted without the one before it starts from program defaults, and
+ * the operator holding the printout is the person who needs to know that.
+ */
+function narrowToSelection(
+  events: EventData[],
+  task: Extract<WorkerTask, { op: 'bundle' }>,
+): {
+  events: EventData[];
+  selected: SetupOverview[] | null;
+  diagnostics: AcharDiagnostic[];
+} {
+  if (!task.setups || task.setups.length === 0) {
+    return { events, selected: null, diagnostics: [] };
+  }
+
+  const partition = partitionSetups(events);
+  let result: ReturnType<typeof selectSetupEvents>;
+  try {
+    result = selectSetupEvents(events, task.setups, {
+      partition,
+      pruneTools: task.keepAllTools !== true,
+    });
+  } catch (error) {
+    // The caller named setups this trace does not have, which is a bad
+    // request rather than a bad trace.
+    throw badRequest(messageOf(error));
+  }
+
+  const warnings = [...result.warnings];
+  if (partition.hasImplicitSetup) {
+    warnings.unshift(
+      'This trace runs jobs before its first @setup. Those jobs are part of ' +
+        'the shared prologue and are posted with every selection.',
+    );
+  }
+
+  // Described from the narrowed program's own profile, so a selected setup's
+  // reported cycle time is the one this program will actually run. The spans
+  // keep their original indices, because those are the numbers the operator
+  // ticked and the ones the setup list still shows.
+  const profile = analyzeOrNull(() => extractProductProfile(result.events));
+
+  return {
+    events: result.events,
+    selected: describeSetups(profile, result.selected),
+    diagnostics: warnings.map((message) => ({
+      severity: 'warning' as const,
+      message,
+    })),
+  };
+}
+
+/**
+ * Everything about a trace that does not depend on a machine.
+ *
+ * One streamed pass drives three folds. Streaming rather than materializing
+ * matters here more than anywhere: the event array is the largest allocation a
+ * parse makes, and none of these three answers keeps an event.
+ */
+function analyzeTrace(trace: string): AnalyzeOutcome {
+  const partitionConsumer = createSetupPartitionConsumer();
+  const profileConsumer = createProductProfileConsumer();
+  const timingConsumer = createTimingConsumer();
+
+  let eventCount = 0;
+  runConsumers(
+    countEvents(streamTrace(trace), () => eventCount++),
+    [partitionConsumer, profileConsumer, timingConsumer],
+  );
+
+  const partition = partitionConsumer.finish();
+  const profile = analyzeOrNull(() => profileConsumer.finish());
+  const timing = analyzeOrNull(() => timingConsumer.finish());
+
+  return {
+    eventCount,
+    setups: describeSetups(profile, partition.spans),
+    hasImplicitSetup: partition.hasImplicitSetup,
+    timing,
+    profile,
+    diagnostics: profile?.diagnostics ?? [],
+  };
+}
+
+function* countEvents(
+  events: Iterable<EventData>,
+  count: () => void,
+): Generator<EventData> {
+  for (const event of events) {
+    count();
+    yield event;
+  }
 }
 
 function documentsOf(task: WorkerTask) {

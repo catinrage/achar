@@ -23,9 +23,12 @@ import type { JobStore, MachineRecord } from './data/store';
  * there is exactly one copy of each, the operator picks a machine by name, and
  * the configuration cannot vary by who ran it.
  *
- * Files live beside the database on the volume; the row records which files a
- * machine has. Both companion documents are optional — a post with neither is
- * still a valid machine, it simply gets no VMID or profile validation.
+ * A machine is a record, not a folder of files. Its profile is a column, built
+ * field by field through the workshop form and normalized here; only the VMID
+ * is still a file, because a `.vmid` is an artefact the machine builder
+ * produced and nobody authors one by hand. That split is the whole storage
+ * rule: what this application owns lives in the database, what it merely
+ * received lives on the volume.
  */
 
 export interface MachineSummary {
@@ -35,6 +38,15 @@ export interface MachineSummary {
   postName: string;
   hasVmid: boolean;
   hasProfile: boolean;
+  /**
+   * The stored profile, as the form needs it back.
+   *
+   * Returned in full rather than as a `hasProfile` flag, because editing a
+   * machine means editing these values, and a form that cannot read the
+   * current ones can only offer to replace them wholesale — which is the
+   * file-upload interface this replaced.
+   */
+  profile: MachineProfile | null;
 }
 
 export interface MachineDraft {
@@ -57,7 +69,7 @@ export interface MachinePatch {
   clearProfile?: boolean;
 }
 
-/** Documents a job needs, read back off the volume. */
+/** Documents a job needs, read back off the volume and the database. */
 export interface MachineDocuments {
   postId: string;
   vmid?: string;
@@ -65,9 +77,8 @@ export interface MachineDocuments {
 }
 
 const VMID_FILENAME = 'machine.vmid';
-const PROFILE_FILENAME = 'machine.json';
 
-function machineDirectory(paths: DataPaths, id: string): string {
+export function machineDirectory(paths: DataPaths, id: string): string {
   return path.join(paths.machines, id);
 }
 
@@ -79,12 +90,13 @@ export function summarizeMachine(machine: MachineRecord): MachineSummary {
     postId: machine.postId,
     postName: post?.name ?? machine.postId,
     hasVmid: machine.vmidFile !== null,
-    hasProfile: machine.profileFile !== null,
+    hasProfile: machine.profile !== null,
+    profile: readProfileColumn(machine),
   };
 }
 
 /**
- * Validates a draft and writes it to the volume.
+ * Validates a draft and stores it.
  *
  * Both documents are parsed here, at the point of definition, rather than on
  * first use. A machine that cannot be posted with should fail while an admin
@@ -107,25 +119,21 @@ export async function createMachine(
 
   if (draft.vmid !== undefined) assertVmid(draft.vmid);
 
-  if (draft.machineProfile !== undefined) {
-    await assertMachineProfile(store, paths, draft.machineProfile, {
-      postId: draft.postId,
-      vmid: draft.vmid === undefined ? undefined : parseVmid(draft.vmid),
-    });
-  }
-
   const id = uniqueId(store, slugify(name));
-  const directory = machineDirectory(paths, id);
-  await mkdir(directory, { recursive: true });
+  const profile =
+    draft.machineProfile === undefined
+      ? null
+      : await validatedProfile(store, draft.machineProfile, {
+          postId: draft.postId,
+          selfId: id,
+          identity: { id, name },
+          vmid: draft.vmid === undefined ? undefined : parseVmid(draft.vmid),
+        });
 
   if (draft.vmid !== undefined) {
+    const directory = machineDirectory(paths, id);
+    await mkdir(directory, { recursive: true });
     await Bun.write(path.join(directory, VMID_FILENAME), draft.vmid);
-  }
-  if (draft.machineProfile !== undefined) {
-    await Bun.write(
-      path.join(directory, PROFILE_FILENAME),
-      draft.machineProfile,
-    );
   }
 
   const record: MachineRecord = {
@@ -133,7 +141,7 @@ export async function createMachine(
     name,
     postId: draft.postId,
     vmidFile: draft.vmid === undefined ? null : VMID_FILENAME,
-    profileFile: draft.machineProfile === undefined ? null : PROFILE_FILENAME,
+    profile,
     createdAt: Date.now(),
   };
   store.upsertMachine(record);
@@ -173,47 +181,38 @@ export async function updateMachine(
   // this patch lands, not the one it had: a new VMID with tighter travel can
   // put an untouched home position out of reach.
   const effectiveVmid = await resolveEffectiveVmid(paths, existing, patch);
+  const check = {
+    postId,
+    selfId: id,
+    identity: { id, name },
+    vmid: effectiveVmid,
+  };
 
+  let profile = existing.profile;
   if (patch.machineProfile !== undefined) {
-    await assertMachineProfile(store, paths, patch.machineProfile, {
-      postId,
-      selfId: id,
-      vmid: effectiveVmid,
-    });
+    profile = await validatedProfile(store, patch.machineProfile, check);
+  } else if (patch.clearProfile) {
+    profile = null;
   } else if (
-    (postId !== existing.postId || patch.vmid !== undefined) &&
-    existing.profileFile
+    existing.profile &&
+    (postId !== existing.postId ||
+      patch.vmid !== undefined ||
+      patch.clearVmid === true ||
+      name !== existing.name)
   ) {
     // Changing the post or the VMID can invalidate a profile nobody touched:
     // dialects belong to one post, and travel limits belong to one VMID.
-    // Re-check what is already on disk rather than discovering it on the next
-    // upload.
-    const stored = await Bun.file(
-      path.join(machineDirectory(paths, id), existing.profileFile),
-    ).text();
-    await assertMachineProfile(store, paths, stored, {
-      postId,
-      selfId: id,
-      vmid: effectiveVmid,
-    });
+    // Re-check what is already stored rather than discovering it on the next
+    // upload. A rename passes through here too, so the profile's own `name`
+    // never drifts from the machine's.
+    profile = await validatedProfile(store, existing.profile, check);
   }
 
-  const directory = machineDirectory(paths, id);
-  await mkdir(directory, { recursive: true });
-
-  const vmidFile = await applyDocument(
-    directory,
-    VMID_FILENAME,
+  const vmidFile = await applyVmid(
+    machineDirectory(paths, id),
     existing.vmidFile,
     patch.vmid,
     patch.clearVmid,
-  );
-  const profileFile = await applyDocument(
-    directory,
-    PROFILE_FILENAME,
-    existing.profileFile,
-    patch.machineProfile,
-    patch.clearProfile,
   );
 
   const record: MachineRecord = {
@@ -221,26 +220,26 @@ export async function updateMachine(
     name,
     postId,
     vmidFile,
-    profileFile,
+    profile,
   };
   store.upsertMachine(record);
   return summarizeMachine(record);
 }
 
-/** Writes, removes, or leaves one companion document, returning its filename. */
-async function applyDocument(
+/** Writes, removes, or leaves the VMID file, returning its filename. */
+async function applyVmid(
   directory: string,
-  filename: string,
   current: string | null,
   replacement: string | undefined,
   clear: boolean | undefined,
 ): Promise<string | null> {
   if (replacement !== undefined) {
-    await Bun.write(path.join(directory, filename), replacement);
-    return filename;
+    await mkdir(directory, { recursive: true });
+    await Bun.write(path.join(directory, VMID_FILENAME), replacement);
+    return VMID_FILENAME;
   }
   if (clear) {
-    await rm(path.join(directory, filename), { force: true });
+    await rm(path.join(directory, VMID_FILENAME), { force: true });
     return null;
   }
   return current;
@@ -256,7 +255,7 @@ export async function deleteMachine(
   // Deleting a base would leave its dependants unpostable, and they would not
   // find out until someone uploaded a trace against one. Refusing here puts
   // the choice in front of the person who can still make it.
-  const dependents = await dependentMachines(store, paths, id);
+  const dependents = dependentMachines(store, id);
   if (dependents.length > 0) {
     throw badRequest(
       `This machine is the base for ${dependents.join(', ')}. Point them at another base, or delete them first.`,
@@ -287,21 +286,20 @@ export async function loadMachineDocuments(
     // Flattened before it leaves: the profile crosses into a worker process
     // that has no way to reach the other machines, so `extends` is resolved
     // on this side and what travels is one self-contained document.
-    machineProfile: await loadResolvedProfile(store, paths, id),
+    machineProfile: await loadResolvedProfile(store, id),
   };
 }
 
 async function loadResolvedProfile(
   store: JobStore,
-  paths: DataPaths,
   id: string,
 ): Promise<string | undefined> {
-  const profile = await readStoredProfile(store, paths, id);
+  const profile = readStoredProfile(store, id);
   if (!profile) return undefined;
   if (profile.extends === undefined) return JSON.stringify(profile);
 
   return JSON.stringify(
-    await resolveMachineProfileChain(profile, machineResolver(store, paths)),
+    await resolveMachineProfileChain(profile, machineResolver(store)),
   );
 }
 
@@ -327,24 +325,37 @@ function assertVmid(source: string): void {
   }
 }
 
-/**
- * Reads one machine's stored profile, unresolved.
- *
- * Returns undefined when the machine has no profile, which the chain walker
- * reports as an unfound base.
- */
-async function readStoredProfile(
+/** One machine's stored profile, unresolved, or undefined when it has none. */
+function readStoredProfile(
   store: JobStore,
-  paths: DataPaths,
   machineId: string,
-): Promise<MachineProfile | undefined> {
+): MachineProfile | undefined {
   const machine = store.findMachine(machineId);
-  if (!machine?.profileFile) return undefined;
+  return machine ? (readProfileColumn(machine) ?? undefined) : undefined;
+}
 
-  const source = await Bun.file(
-    path.join(machineDirectory(paths, machineId), machine.profileFile),
-  ).text();
-  return parseMachineProfile(JSON.parse(source), `machine ${machineId}`);
+/**
+ * Parses a profile column.
+ *
+ * Everything in the column was validated before it was written, so a failure
+ * here means the row was edited outside the application. Reporting null rather
+ * than throwing keeps one bad row from taking down the machine list, and the
+ * form will show the machine as having no profile — which is visible, and
+ * fixable, in a way an exception on page load is not.
+ */
+function readProfileColumn(machine: MachineRecord): MachineProfile | null {
+  if (machine.profile === null) return null;
+  try {
+    return parseMachineProfile(
+      JSON.parse(machine.profile),
+      `machine ${machine.id}`,
+    );
+  } catch (error) {
+    console.error(
+      `[achar] machine ${machine.id} has an unreadable profile: ${messageOf(error)}`,
+    );
+    return null;
+  }
 }
 
 /**
@@ -355,17 +366,16 @@ async function readStoredProfile(
  * say, and making it the literal content of the profile means the shared
  * values have exactly one home, the one everybody already edits.
  */
-function machineResolver(
-  store: JobStore,
-  paths: DataPaths,
-): MachineProfileResolver {
-  return (reference) => readStoredProfile(store, paths, reference);
+function machineResolver(store: JobStore): MachineProfileResolver {
+  return (reference) => readStoredProfile(store, reference);
 }
 
 interface ProfileCheck {
   postId: string;
   /** The machine being edited, when there is one — it cannot extend itself. */
   selfId?: string;
+  /** The id and name the profile must carry. */
+  identity: { id: string; name: string };
   /** The VMID the machine will have, when it has one. */
   vmid?: VmidDefinition;
 }
@@ -387,22 +397,24 @@ async function resolveEffectiveVmid(
 }
 
 /**
- * Rejects a profile the given post cannot honour, or whose base is unusable.
+ * Validates a profile and returns the exact JSON to store, or null when the
+ * profile says nothing worth keeping.
  *
- * The dialect check needs the post, which is why this takes one: a dialect id
- * is meaningful only to the post that defines it, and a machine bound to a
- * post that has never heard of its dialect would otherwise fail at post time,
- * on a machinist's upload, instead of here on an admin's form.
+ * The identity is imposed rather than accepted. A machine's row already has an
+ * id and a name, and letting the document carry a second pair invites the two
+ * to disagree — which matters, because `extends` names machines by id and a
+ * profile whose id is someone else's machine is a trap nobody would see. A
+ * form has no business asking for either.
  *
- * The chain is walked rather than merely inspected, so a missing base or a
- * cycle is caught at the same moment, on the same form.
+ * The rest is checked exactly as an uploaded profile was: parsed, its chain
+ * walked, and run through the same compatibility function that gates
+ * generation, so the form and the posting path cannot drift.
  */
-async function assertMachineProfile(
+async function validatedProfile(
   store: JobStore,
-  paths: DataPaths,
   source: string,
   check: ProfileCheck,
-): Promise<void> {
+): Promise<string | null> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
@@ -412,11 +424,18 @@ async function assertMachineProfile(
 
   let profile: MachineProfile;
   try {
-    profile = parseMachineProfile(parsed, 'machineProfile');
+    profile = parseMachineProfile(
+      { ...(parsed as object), id: check.identity.id },
+      'machineProfile',
+    );
   } catch (error) {
     throw badRequest(messageOf(error));
   }
 
+  profile = { ...profile, name: check.identity.name };
+  if (!describesAnything(profile)) return null;
+
+  let resolved = profile;
   if (profile.extends !== undefined) {
     if (profile.extends === check.selfId) {
       throw badRequest('A machine cannot extend itself.');
@@ -427,9 +446,9 @@ async function assertMachineProfile(
       );
     }
     try {
-      profile = await resolveMachineProfileChain(
+      resolved = await resolveMachineProfileChain(
         profile,
-        machineResolver(store, paths),
+        machineResolver(store),
       );
     } catch (error) {
       throw badRequest(messageOf(error));
@@ -441,7 +460,7 @@ async function assertMachineProfile(
   // exactly as capable of being wrong as one written here, and a check that
   // only lived in this file would drift from the one that actually gates
   // generation.
-  const issues = validateMachineProfileCompatibility(profile, [], {
+  const issues = validateMachineProfileCompatibility(resolved, [], {
     vmid: check.vmid,
     post: resolveBuiltinPost(check.postId),
   });
@@ -449,6 +468,39 @@ async function assertMachineProfile(
   if (errors.length > 0) {
     throw badRequest(errors.map((issue) => issue.message).join(' '));
   }
+
+  return JSON.stringify(profile);
+}
+
+/**
+ * True when a profile states something the post could act on.
+ *
+ * Every machine has an id and a name whether it has a profile or not, so a
+ * document carrying only those two is an empty form, not a configuration.
+ * Storing it would make the machine list claim a profile that changes no
+ * output.
+ */
+function describesAnything(profile: MachineProfile): boolean {
+  return (
+    profile.controller !== undefined ||
+    profile.axes !== undefined ||
+    profile.extends !== undefined ||
+    profile.dialect !== undefined ||
+    Object.keys(profile.features ?? {}).length > 0 ||
+    hasCoordinate(profile.home) ||
+    hasCoordinate(profile.returnHome)
+  );
+}
+
+function hasCoordinate(
+  position: { x?: number; y?: number; z?: number } | undefined,
+): boolean {
+  if (!position) return false;
+  return (
+    position.x !== undefined ||
+    position.y !== undefined ||
+    position.z !== undefined
+  );
 }
 
 /**
@@ -456,17 +508,14 @@ async function assertMachineProfile(
  *
  * Used to refuse a delete that would leave a profile pointing at nothing.
  */
-async function dependentMachines(
-  store: JobStore,
-  paths: DataPaths,
-  machineId: string,
-): Promise<string[]> {
+function dependentMachines(store: JobStore, machineId: string): string[] {
   const dependents: string[] = [];
 
   for (const machine of store.listMachines()) {
     if (machine.id === machineId) continue;
-    const profile = await readStoredProfile(store, paths, machine.id);
-    if (profile?.extends === machineId) dependents.push(machine.name);
+    if (readProfileColumn(machine)?.extends === machineId) {
+      dependents.push(machine.name);
+    }
   }
 
   return dependents;

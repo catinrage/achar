@@ -380,3 +380,71 @@ function isToolUsed(event: EventData, used: Set<string>): boolean {
   const tool = readString(fieldsOf(event), 'tool_id_string');
   return tool === undefined || used.has(tool);
 }
+
+/**
+ * One setup as something to choose between, rather than as a slice.
+ *
+ * `SetupSpan` addresses events; this addresses a person. The extra fields are
+ * what an operator standing at the machine actually recognises a setup by —
+ * which fixture it is in, which part home it uses, how long it runs — and they
+ * come from the product profile rather than the partition.
+ */
+export interface SetupOverview {
+  /** 1-based, and the address `selectSetupEvents` expects. */
+  index: number;
+  name: string;
+  fixtureName?: string;
+  partHomeNumber?: number;
+  jobCount: number;
+  seconds: number;
+  duration: string;
+}
+
+/**
+ * Joins the span partition to the product profile.
+ *
+ * `extractProductProfile` already derives every fact worth showing about a
+ * setup, so this only has to line the two lists up. They agree on order and
+ * count except for the implicit leading setup the timing report synthesizes
+ * for jobs that run before the first `@setup`, which has no span of its own;
+ * aligning from the tail absorbs that offset.
+ *
+ * Lives here rather than in either caller because both the CLI's `setups`
+ * command and the workshop's trace analysis have to produce the same list —
+ * the indices are an address an operator types back, and two implementations
+ * of the alignment is two chances for them to mean different setups.
+ */
+export function describeSetups(
+  profile: { setups: readonly ProductSetupLike[] } | null | undefined,
+  spans: SetupSpan[],
+): SetupOverview[] {
+  const setups = profile?.setups ?? [];
+  const offset = setups.length - spans.length;
+
+  return spans.map((span, position) => {
+    const setup = offset >= 0 ? setups[position + offset] : undefined;
+    return {
+      index: span.index,
+      name: span.name,
+      fixtureName: setup?.fixtureName,
+      partHomeNumber: setup?.partHomeNumber,
+      jobCount: span.jobCount,
+      seconds: setup?.seconds ?? 0,
+      duration: setup?.duration ?? '-',
+    };
+  });
+}
+
+/**
+ * The part of `ProductSetup` this join reads.
+ *
+ * Structural rather than the type itself, so setup selection stays independent
+ * of the product-profile module: a caller that has already extracted a profile
+ * passes it straight in, and one that has not can pass nothing.
+ */
+interface ProductSetupLike {
+  fixtureName?: string;
+  partHomeNumber?: number;
+  seconds: number;
+  duration: string;
+}

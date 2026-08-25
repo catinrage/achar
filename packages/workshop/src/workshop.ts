@@ -14,6 +14,7 @@ import type { WorkshopServices } from './context';
 import { prepareDataPaths } from './data/paths';
 import { JobStore } from './data/store';
 import { JobRunner } from './jobs/runner';
+import { migrateWorkshopData } from './migrate';
 import { workshopRoutes } from './routes';
 import { serveStatic } from './static';
 
@@ -68,6 +69,12 @@ export async function startWorkshopServer(
     runner,
     webRoot: options.webRoot ?? resolveBundledWebRoot(),
   };
+
+  // Before anything can read either: the column is the only place this package
+  // looks for a profile, and the trace store the only place it looks for an
+  // upload, so a machine or a job left in the old layout would otherwise look
+  // like one that never had them.
+  await migrateWorkshopData(store, paths);
 
   runner.recover();
   runner.startRetentionSweep();

@@ -160,6 +160,23 @@ export function loadTraceInputsFrom(
 ): TraceInputs {
   const startedAt = performance.now();
   const events = parseTrace(documents.trace);
+  return validateTraceInputs(events, documents, postId, startedAt);
+}
+
+/**
+ * Validates already-parsed events against the companion documents.
+ *
+ * Split from the parse so a caller that narrows the event stream first — the
+ * `bundle` op, when the operator asked for a subset of the setups — validates
+ * what it is about to post rather than what was uploaded. A travel limit
+ * broken by a setup nobody selected is not that run's problem.
+ */
+export function validateTraceInputs(
+  events: EventData[],
+  documents: Omit<TraceDocuments, 'trace'>,
+  postId?: string,
+  startedAt = performance.now(),
+): TraceInputs {
   const vmid = readVmid(documents.vmid);
   const machineProfile = readMachineProfile(documents.machineProfile);
 

@@ -101,6 +101,43 @@ export interface ProductProfile {
   eventCount: number;
 }
 
+/** One setup, as the picker lists it. */
+export interface SetupOverview {
+  index: number;
+  name: string;
+  fixtureName?: string;
+  partHomeNumber?: number;
+  jobCount: number;
+  seconds: number;
+  duration: string;
+}
+
+export type TraceStatus = 'analyzing' | 'ready' | 'failed';
+
+/**
+ * An uploaded trace, before any machine is involved.
+ *
+ * The file is read once and the answers kept: which setups it contains, how
+ * long each runs, which tools it uses. That is what the operator chooses from,
+ * and none of it depends on which machine the program is eventually posted
+ * for — so it is a resource of its own, addressed by content hash.
+ */
+export interface Trace {
+  sha256: string;
+  name: string;
+  bytes: number;
+  status: TraceStatus;
+  setups: SetupOverview[];
+  hasImplicitSetup: boolean;
+  timing: TimingReport | null;
+  profile: ProductProfile | null;
+  diagnostics: Diagnostic[];
+  eventCount: number | null;
+  error: string | null;
+  purged: boolean;
+  createdAt: number;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
@@ -121,6 +158,30 @@ export interface Job {
   blocked: boolean;
   error: string | null;
   tracePurged: boolean;
+  traceSha256: string;
+  /** Selected setup indices, or null when the job covers the whole part. */
+  setups: number[] | null;
+  keepAllTools: boolean;
+  selectedSetups: SetupOverview[] | null;
+}
+
+/** A machine profile, as the form edits it. */
+export interface MachineProfile {
+  id: string;
+  name?: string;
+  controller?: string;
+  axes?: number;
+  extends?: string;
+  dialect?: string;
+  features?: Record<string, boolean | number | string>;
+  home?: MachineHome;
+  returnHome?: MachineHome;
+}
+
+export interface MachineHome {
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
 export interface Machine {
@@ -130,12 +191,38 @@ export interface Machine {
   postName: string;
   hasVmid: boolean;
   hasProfile: boolean;
+  profile: MachineProfile | null;
 }
 
 export interface Post {
   id: string;
   name: string;
+  controller: string;
+  dialects: string[];
 }
+
+/**
+ * One machine property, as core declares it.
+ *
+ * The form renders its inputs from this rather than hard-coding them, so a
+ * property added to the core table reaches the UI with the row that declares
+ * it — no form change, and no chance of the two disagreeing about a type.
+ */
+export type MachineFeatureSpec = {
+  key: string;
+  label: string;
+  description: string;
+} & (
+  | { kind: 'boolean' }
+  | {
+      kind: 'number';
+      min?: number;
+      max?: number;
+      integer?: boolean;
+      unit?: string;
+    }
+  | { kind: 'enum'; values: string[] }
+);
 
 /**
  * An API failure carrying the server's own `code`.
@@ -199,7 +286,9 @@ export const api = {
     request<{ machines: Machine[] }>('/api/machines').then((r) => r.machines),
 
   listPosts: () =>
-    request<{ posts: Post[] }>('/api/posts').then((r) => r.posts),
+    request<{ posts: Post[]; machineFeatures: MachineFeatureSpec[] }>(
+      '/api/posts',
+    ),
 
   createMachine: (form: FormData) =>
     request<{ machine: Machine }>('/api/machines', {
@@ -211,6 +300,32 @@ export const api = {
     request<{ deleted: string }>(`/api/machines/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
+
+  getTrace: (sha: string) =>
+    request<{ trace: Trace }>(`/api/traces/${encodeURIComponent(sha)}`).then(
+      (r) => r.trace,
+    ),
+
+  /** Queues generation for a trace that has already been analysed. */
+  createJob: (options: {
+    traceSha: string;
+    machineId: string;
+    programName?: string;
+    setups?: number[];
+    keepAllTools?: boolean;
+  }) => {
+    const query = new URLSearchParams({
+      traceSha: options.traceSha,
+      machineId: options.machineId,
+    });
+    if (options.programName) query.set('programName', options.programName);
+    if (options.setups) query.set('setups', options.setups.join(','));
+    if (options.keepAllTools) query.set('keepAllTools', 'true');
+
+    return request<{ job: Job; cached: boolean }>(`/api/jobs?${query}`, {
+      method: 'POST',
+    });
+  },
 
   listJobs: (limit = 25) =>
     request<{ jobs: Job[] }>(`/api/jobs?limit=${limit}`).then((r) => r.jobs),
@@ -249,22 +364,20 @@ export const api = {
  * takes long enough that a progress bar is the difference between "working"
  * and "frozen", and upload progress is still the one thing `fetch` cannot
  * report.
+ *
+ * The upload carries no machine and no program name. What comes back is the
+ * trace and its analysis; choosing what to do with it is the next step.
  */
-export function submitJob(
+export function uploadTrace(
   file: File,
-  options: { machineId: string; programName?: string },
   onProgress: (fraction: number) => void,
-): { promise: Promise<{ job: Job; cached: boolean }>; abort: () => void } {
-  const query = new URLSearchParams({
-    machineId: options.machineId,
-    filename: file.name,
-  });
-  if (options.programName) query.set('programName', options.programName);
+): { promise: Promise<{ trace: Trace; cached: boolean }>; abort: () => void } {
+  const query = new URLSearchParams({ filename: file.name });
 
   const xhr = new XMLHttpRequest();
-  const promise = new Promise<{ job: Job; cached: boolean }>(
+  const promise = new Promise<{ trace: Trace; cached: boolean }>(
     (resolve, reject) => {
-      xhr.open('POST', `/api/jobs?${query.toString()}`);
+      xhr.open('POST', `/api/traces?${query.toString()}`);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
       xhr.upload.addEventListener('progress', (event) => {
@@ -279,7 +392,7 @@ export function submitJob(
           // Falls through to the status check below.
         }
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(body as { job: Job; cached: boolean });
+          resolve(body as { trace: Trace; cached: boolean });
           return;
         }
         const error = (body as { error?: { code?: string; message?: string } })

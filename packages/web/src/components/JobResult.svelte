@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly, scale } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import Boxes from 'lucide-svelte/icons/boxes';
   import Check from 'lucide-svelte/icons/check';
   import CircleAlert from 'lucide-svelte/icons/circle-alert';
   import Clock from 'lucide-svelte/icons/clock';
@@ -33,6 +34,11 @@
 
   const pending = $derived(job.status === 'queued' || job.status === 'running');
   const toolCount = $derived(job.profile?.tools?.length ?? 0);
+  /**
+   * A partial program carries the same filenames a full one does, so saying so
+   * is not a nicety: two of these in one folder overwrite each other silently.
+   */
+  const partial = $derived(job.setups !== null && job.setups.length > 0);
 
   const tabs = $derived<
     Array<{ id: Tab; label: string; count?: number; icon: typeof Files }>
@@ -119,6 +125,20 @@
 
   {#if cached}
     <p class="note">{m.cachedNotice}</p>
+  {/if}
+
+  {#if partial}
+    <p class="partial">
+      <Boxes size={15} />
+      <span>
+        <strong>{m.setupsPartial}</strong>
+        {fill(m.setupsPartialBody, {
+          setups: (job.selectedSetups ?? [])
+            .map((setup) => `${faDigits(setup.index)} (${setup.name})`)
+            .join('، ') || (job.setups ?? []).map(faDigits).join('، '),
+        })}
+      </span>
+    </p>
   {/if}
 
   {#if job.status === 'queued' || job.status === 'running'}
@@ -284,6 +304,29 @@
   .chip.muted {
     opacity: 0.5;
     cursor: default;
+  }
+
+  .partial {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    margin: 0 0 1rem;
+    padding: 0.8rem 1rem;
+    color: var(--muted);
+    font-size: 0.86rem;
+    background: var(--warning-soft);
+    border-radius: var(--radius-sm);
+  }
+
+  .partial :global(svg) {
+    flex: none;
+    margin-top: 0.15rem;
+    color: var(--warning);
+  }
+
+  .partial strong {
+    margin-inline-end: 0.3rem;
+    color: var(--warning);
   }
 
   .note {

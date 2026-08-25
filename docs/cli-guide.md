@@ -709,6 +709,12 @@ the reliable address. A trace whose jobs start before its first `@setup` gets a
 note: those jobs belong to the shared prologue and are posted with every
 selection.
 
+`--json` prints the same objects the workshop UI lists in its setup picker —
+`index`, `name`, `fixtureName`, `partHomeNumber`, `jobCount`, `seconds`,
+`duration` — because both come from one function in core. Two implementations
+of that alignment would be two chances for the indices to mean different
+setups, and the index is what a person types back.
+
 ## Posting a Subset of Setups
 
 A setup is one physical fixturing of the part, and the operator runs one at a
@@ -734,6 +740,11 @@ is byte-identical to before.
 one setup posts. It is deliberately **not** available on `parity` or `test`:
 those compare against a reference for the whole program, so a subset has
 nothing to match.
+
+The [workshop UI](workshop-ui.md) offers the same choice as checkboxes, keyed
+on the same indices. It takes indices only — names and ranges are a
+convenience for a person typing at a shell, and the browser sends back the
+numbers the analysis showed it.
 
 ### Tool pruning
 

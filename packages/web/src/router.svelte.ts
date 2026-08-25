@@ -12,6 +12,14 @@
 
 export type Route =
   | { name: 'generate' }
+  /**
+   * An uploaded trace, by content hash.
+   *
+   * Worth an address of its own because the analysis outlives the choice made
+   * from it: coming back tomorrow to post the next setup is a link, not a
+   * second three-hundred-megabyte upload.
+   */
+  | { name: 'trace'; sha: string }
   | { name: 'job'; id: string }
   | { name: 'history' }
   | { name: 'machines' };
@@ -20,6 +28,9 @@ function parseRoute(pathname: string): Route {
   const segments = pathname.split('/').filter(Boolean);
   if (segments[0] === 'jobs' && segments[1]) {
     return { name: 'job', id: decodeURIComponent(segments[1]) };
+  }
+  if (segments[0] === 'traces' && segments[1]) {
+    return { name: 'trace', sha: decodeURIComponent(segments[1]) };
   }
   if (segments[0] === 'history') return { name: 'history' };
   if (segments[0] === 'machines') return { name: 'machines' };
@@ -30,6 +41,8 @@ export function routeHref(route: Route): string {
   switch (route.name) {
     case 'job':
       return `/jobs/${encodeURIComponent(route.id)}`;
+    case 'trace':
+      return `/traces/${encodeURIComponent(route.sha)}`;
     case 'history':
       return '/history';
     case 'machines':
