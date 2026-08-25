@@ -1,9 +1,14 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { HttpError } from '@achar/server';
 import type { DataPaths } from './data/paths';
-import { prepareDataPaths } from './data/paths';
+import {
+  legacyJobTracePath,
+  prepareDataPaths,
+  traceFilePath,
+} from './data/paths';
 import { JobStore } from './data/store';
 import {
   createMachine,
@@ -11,6 +16,7 @@ import {
   loadMachineDocuments,
   updateMachine,
 } from './machines';
+import { migrateWorkshopData } from './migrate';
 
 const FIXTURES = path.resolve(
   import.meta.dir,
@@ -338,3 +344,168 @@ describe('machine profile inheritance', () => {
     expect(store.findMachine(base.id)).toBeUndefined();
   });
 });
+
+describe('machine profiles as records', () => {
+  it('stores the profile in the database, not as a file beside the VMID', async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Recorded',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({ id: 'ignored', axes: 4 }),
+    });
+
+    expect(store.findMachine(machine.id)?.profile).toContain('"axes":4');
+    expect(
+      await Bun.file(
+        path.join(paths.machines, machine.id, 'machine.json'),
+      ).exists(),
+    ).toBe(false);
+  });
+
+  it('returns the stored profile so the form can edit it', async () => {
+    // A form that cannot read the current values can only offer to replace
+    // them wholesale, which is the file upload this replaced.
+    const machine = await createMachine(store, paths, {
+      name: 'Editable',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({
+        id: 'editable',
+        axes: 4,
+        features: { maxSpindleSpeed: 8000 },
+        home: { x: -465, y: 190, z: 0 },
+      }),
+    });
+
+    expect(machine.profile).toMatchObject({
+      axes: 4,
+      features: { maxSpindleSpeed: 8000 },
+      home: { x: -465, y: 190, z: 0 },
+    });
+  });
+
+  it("imposes the machine's own id and name on the profile", async () => {
+    // `extends` names machines by id, so a profile carrying someone else's id
+    // would be a trap nobody could see from the form.
+    const machine = await createMachine(store, paths, {
+      name: 'Imposed Identity',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({
+        id: 'somebody-elses-id',
+        name: 'Some Other Name',
+        axes: 3,
+      }),
+    });
+
+    expect(machine.profile?.id).toBe(machine.id);
+    expect(machine.profile?.name).toBe('Imposed Identity');
+  });
+
+  it('treats a profile that states nothing as no profile at all', async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Empty Form',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({ id: 'empty' }),
+    });
+
+    expect(machine.hasProfile).toBe(false);
+    expect(machine.profile).toBeNull();
+  });
+
+  it("keeps the profile's name in step with a rename", async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Before',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({ id: 'x', axes: 3 }),
+    });
+
+    const renamed = await updateMachine(store, paths, machine.id, {
+      name: 'After',
+    });
+
+    expect(renamed.profile?.name).toBe('After');
+    expect(renamed.profile?.axes).toBe(3);
+  });
+
+  it('clears a profile when asked, leaving the machine', async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Cleared',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({ id: 'cleared', axes: 4 }),
+    });
+
+    const updated = await updateMachine(store, paths, machine.id, {
+      clearProfile: true,
+    });
+
+    expect(updated.hasProfile).toBe(false);
+    expect(
+      (await loadMachineDocuments(store, paths, machine.id)).machineProfile,
+    ).toBeUndefined();
+  });
+});
+
+describe('migrateWorkshopData', () => {
+  it('moves a profile still living in machines/<id>/machine.json', async () => {
+    const machine = await createMachine(store, paths, {
+      name: 'Legacy Machine',
+      postId: 'siemens-828d',
+    });
+    // The shape a pre-migration deployment leaves behind: a file on the volume
+    // and a row pointing at it by name.
+    const file = path.join(paths.machines, machine.id, 'machine.json');
+    await Bun.write(file, JSON.stringify({ id: machine.id, axes: 4 }));
+    legacyProfileFile(machine.id, 'machine.json');
+
+    await migrateWorkshopData(store, paths);
+
+    expect(store.findMachine(machine.id)?.profile).toContain('"axes":4');
+    expect(await Bun.file(file).exists()).toBe(false);
+  });
+
+  it('adopts a trace still living under its job id', async () => {
+    store.createJob({
+      id: 'legacy-job',
+      traceSha256: 'legacy-sha',
+      traceName: 'old.MPF',
+      traceBytes: 11,
+      machineId: 'gone',
+      programName: null,
+      setups: null,
+      keepAllTools: false,
+    });
+    await Bun.write(legacyJobTracePath(paths, 'legacy-job'), 'trace bytes');
+
+    await migrateWorkshopData(store, paths);
+
+    // Adopted rather than re-analysed: a deployment with hundreds of jobs must
+    // not spend its first minutes re-parsing every trace anyone uploaded.
+    expect(store.findTrace('legacy-sha')?.status).toBe('ready');
+    expect(await Bun.file(traceFilePath(paths, 'legacy-sha')).text()).toBe(
+      'trace bytes',
+    );
+    expect(
+      await Bun.file(legacyJobTracePath(paths, 'legacy-job')).exists(),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Recreates the `profile_file` column an older database still has, so the
+ * migration has something to find. Done over a second connection, because
+ * `JobStore` has no reason to be able to write a column it has replaced.
+ */
+function legacyProfileFile(machineId: string, filename: string): void {
+  const db = new Database(paths.database);
+  try {
+    const columns = db.query('PRAGMA table_info(machines)').all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === 'profile_file')) {
+      db.exec('ALTER TABLE machines ADD COLUMN profile_file TEXT');
+    }
+    db.query(
+      'UPDATE machines SET profile_file = ?, profile = NULL WHERE id = ?',
+    ).run(filename, machineId);
+  } finally {
+    db.close();
+  }
+}

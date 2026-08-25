@@ -1,7 +1,8 @@
-import type { ProductProfile, SetupSpan } from '@achar/core';
+import type { SetupOverview } from '@achar/core';
 import {
   createProductProfileConsumer,
   createSetupPartitionConsumer,
+  describeSetups,
   runConsumers,
   streamTraceFile,
 } from '@achar/core';
@@ -11,15 +12,6 @@ import { resolveTraceTarget } from '../inputs';
 import type { CliOptions } from '../options';
 import { runCommand } from '../runner';
 import { printData, printInfo } from '../ui';
-
-interface SetupRow {
-  index: number;
-  name: string;
-  fixture: string;
-  home: string;
-  jobs: number;
-  duration: string;
-}
 
 export function registerSetupsCommand(cli: Command): void {
   cli
@@ -76,45 +68,14 @@ export function registerSetupsCommand(cli: Command): void {
     );
 }
 
-/**
- * Joins the span partition to the product profile.
- *
- * `extractProductProfile` already derives every fact a machinist wants here —
- * fixture, part home, jobs, duration — so this only has to line the two up.
- * They agree on order and count except for the implicit leading setup the
- * timing report synthesizes for jobs that run before the first `@setup`, which
- * has no span; aligning from the tail absorbs that offset.
- */
-function describeSetups(
-  profile: ProductProfile,
-  spans: SetupSpan[],
-): SetupRow[] {
-  const offset = profile.setups.length - spans.length;
-
-  return spans.map((span, position) => {
-    const setup = offset >= 0 ? profile.setups[position + offset] : undefined;
-    return {
-      index: span.index,
-      name: span.name,
-      fixture: setup?.fixtureName ?? '-',
-      home:
-        setup?.partHomeNumber === undefined
-          ? '-'
-          : String(setup.partHomeNumber),
-      jobs: span.jobCount,
-      duration: setup?.duration ?? '-',
-    };
-  });
-}
-
-function renderTable(rows: SetupRow[]): string {
+function renderTable(rows: SetupOverview[]): string {
   const header = ['#', 'Setup', 'Fixture', 'Home', 'Jobs', 'Duration'];
   const body = rows.map((row) => [
     String(row.index),
     row.name,
-    row.fixture,
-    row.home,
-    String(row.jobs),
+    row.fixtureName ?? '-',
+    row.partHomeNumber === undefined ? '-' : String(row.partHomeNumber),
+    String(row.jobCount),
     row.duration,
   ]);
   const widths = header.map((cell, column) =>

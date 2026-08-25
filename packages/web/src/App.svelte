@@ -36,8 +36,11 @@
   ];
 
   const active = $derived(router.current.name);
-  // A job's results live inside the generate view, so its tab stays lit.
-  const activeTab = $derived(active === 'job' ? 'generate' : active);
+  // A job's results and a trace's analysis both live inside the generate view,
+  // so its tab stays lit for either.
+  const activeTab = $derived(
+    active === 'job' || active === 'trace' ? 'generate' : active,
+  );
 
   /**
    * Intercepts a left-click on an in-app link.
@@ -90,10 +93,13 @@
 <main class="shell">
   {#key activeTab}
     <div in:fade={{ duration: 140 }}>
-      {#if active === 'generate' || active === 'job'}
+      {#if active === 'generate' || active === 'job' || active === 'trace'}
         <GenerateView
           {machines}
           jobId={router.current.name === 'job' ? router.current.id : undefined}
+          traceSha={router.current.name === 'trace'
+            ? router.current.sha
+            : undefined}
         />
       {:else if active === 'history'}
         <HistoryView />

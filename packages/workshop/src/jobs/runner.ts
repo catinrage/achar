@@ -1,9 +1,13 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { BundleOutcome, WorkerPool } from '@achar/server';
+import type { AnalyzeOutcome, BundleOutcome, WorkerPool } from '@achar/server';
 import { messageOf } from '@achar/server';
 import type { DataPaths } from '../data/paths';
-import { jobOutputDirectory, jobTracePath } from '../data/paths';
+import {
+  jobOutputDirectory,
+  traceDirectory,
+  traceFilePath,
+} from '../data/paths';
 import type { JobFileRecord, JobRecord, JobStore } from '../data/store';
 import { loadMachineDocuments } from '../machines';
 
@@ -57,6 +61,35 @@ export class JobRunner {
       );
     }
     for (const job of pending) this.submit(job.id);
+
+    // An upload whose analysis was interrupted is a trace the operator is
+    // still staring at a spinner for. Same argument as a job: analysis is a
+    // pure function of the file, so re-running it is safe.
+    const analyzing = this.store.listAnalyzingTraces();
+    if (analyzing.length > 0) {
+      console.log(`[achar] resuming ${analyzing.length} trace analysis(es)`);
+    }
+    for (const trace of analyzing) this.analyze(trace.sha256);
+  }
+
+  /** Starts the machine-independent analysis of an upload. Returns at once. */
+  analyze(sha256: string): void {
+    void this.runAnalysis(sha256);
+  }
+
+  private async runAnalysis(sha256: string): Promise<void> {
+    try {
+      const outcome = await this.pool.run<AnalyzeOutcome>({
+        op: 'analyze',
+        tracePath: traceFilePath(this.paths, sha256),
+      });
+      this.store.markTraceReady(sha256, outcome);
+    } catch (error) {
+      this.store.markTraceFailed(sha256, {
+        code: statusOf(error),
+        message: messageOf(error),
+      });
+    }
   }
 
   /** Hands a queued job to the pool. Returns immediately. */
@@ -78,11 +111,13 @@ export class JobRunner {
       const outcome = await this.pool.run<BundleOutcome>(
         {
           op: 'bundle',
-          tracePath: jobTracePath(this.paths, jobId),
+          tracePath: traceFilePath(this.paths, job.traceSha256),
           postId: machine.postId,
           vmid: machine.vmid,
           machineProfile: machine.machineProfile,
           programName: job.programName ?? undefined,
+          setups: parseSetupsColumn(job.setups),
+          keepAllTools: job.keepAllTools,
         },
         { onStart: () => this.store.markRunning(jobId) },
       );
@@ -99,14 +134,11 @@ export class JobRunner {
         diagnostics: outcome.diagnostics,
         timing: outcome.timing,
         profile: outcome.profile,
+        selectedSetups: outcome.selectedSetups,
       });
     } catch (error) {
-      const status =
-        typeof error === 'object' && error !== null && 'status' in error
-          ? String((error as { status: unknown }).status)
-          : 'internal';
       this.store.markFailed(jobId, {
-        code: status,
+        code: statusOf(error),
         message: messageOf(error),
       });
     }
@@ -152,22 +184,27 @@ export class JobRunner {
   /**
    * Deletes uploaded traces past the retention window.
    *
-   * Only the trace goes. The job row and its generated output are kilobytes
+   * Only the trace goes. Job rows and their generated output are kilobytes
    * against the trace's hundreds of megabytes, so history costs almost nothing
-   * to keep and is the only record of what was posted for which machine.
+   * to keep and is the only record of what was posted for which machine. The
+   * trace's analysis stays too: the setup list and cycle time of a file nobody
+   * has the bytes of any more are still worth reading.
    */
   async purgeExpiredTraces(): Promise<number> {
     const expired = this.store.findTracesToPurge(this.retentionMs);
     let purged = 0;
 
-    for (const job of expired) {
+    for (const trace of expired) {
       try {
-        await rm(jobTracePath(this.paths, job.id), { force: true });
-        this.store.markTracePurged(job.id);
+        await rm(traceDirectory(this.paths, trace.sha256), {
+          recursive: true,
+          force: true,
+        });
+        this.store.markTracePurged(trace.sha256);
         purged += 1;
       } catch (error) {
         console.error(
-          `[achar] could not purge the trace for job ${job.id}: ${messageOf(error)}`,
+          `[achar] could not purge trace ${trace.sha256}: ${messageOf(error)}`,
         );
       }
     }
@@ -175,6 +212,22 @@ export class JobRunner {
     if (purged > 0) console.log(`[achar] purged ${purged} expired trace(s)`);
     return purged;
   }
+}
+
+/** An `HttpError`'s status when the failure carries one, else 'internal'. */
+function statusOf(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'status' in error
+    ? String((error as { status: unknown }).status)
+    : 'internal';
+}
+
+/** The stored `1,3` selection as the indices the worker expects. */
+function parseSetupsColumn(setups: string | null): number[] | undefined {
+  if (setups === null) return undefined;
+  return setups
+    .split(',')
+    .map((index) => Number(index))
+    .filter((index) => Number.isInteger(index) && index > 0);
 }
 
 /** The shape the browser polls. */
@@ -200,11 +253,19 @@ export interface JobView {
   error: string | null;
   /** True once the uploaded trace has been deleted by the retention sweep. */
   tracePurged: boolean;
+  /** Content hash of the trace, which is also its address for a re-post. */
+  traceSha256: string;
+  /** Selected setup indices, or null when the job covers the whole part. */
+  setups: number[] | null;
+  keepAllTools: boolean;
+  /** What the finished program covers, once it is known. */
+  selectedSetups: unknown;
 }
 
 export function describeJob(store: JobStore, job: JobRecord): JobView {
   const files = job.status === 'done' ? store.listFiles(job.id) : [];
   const diagnostics = parseJson(job.diagnostics) ?? [];
+  const trace = store.findTrace(job.traceSha256);
 
   return {
     id: job.id,
@@ -227,7 +288,13 @@ export function describeJob(store: JobStore, job: JobRecord): JobView {
     // A finished job with diagnostics but no files was refused on content.
     blocked: job.status === 'done' && files.length === 0,
     error: job.errorMessage,
-    tracePurged: job.tracePurgedAt !== null,
+    // No row at all means the trace predates the store or was swept with it;
+    // either way the bytes are not there to hand back.
+    tracePurged: trace === undefined || trace.purgedAt !== null,
+    traceSha256: job.traceSha256,
+    setups: parseSetupsColumn(job.setups) ?? null,
+    keepAllTools: job.keepAllTools,
+    selectedSetups: parseJson(job.selectedSetups),
   };
 }
 

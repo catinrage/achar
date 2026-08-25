@@ -132,6 +132,7 @@ export {
 export { Program } from './lib/program';
 export type {
   SelectSetupEventsOptions,
+  SetupOverview,
   SetupPartition,
   SetupSelectionResult,
   SetupSpan,
@@ -139,6 +140,7 @@ export type {
 export {
   availableSetups,
   createSetupPartitionConsumer,
+  describeSetups,
   parseSetupSelection,
   partitionSetups,
   selectSetupEvents,
