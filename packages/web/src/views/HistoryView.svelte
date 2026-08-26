@@ -6,13 +6,17 @@
   import Clock from 'lucide-svelte/icons/clock';
   import Inbox from 'lucide-svelte/icons/inbox';
   import RefreshCw from 'lucide-svelte/icons/refresh-cw';
-  import { api, type Job } from '../api';
+  import Trash2 from 'lucide-svelte/icons/trash-2';
+  import { api, ApiError, type Job } from '../api';
   import { faDigits, formatBytes, formatWhen } from '../format';
   import { m } from '../messages/fa';
   import { router, routeHref } from '../router.svelte';
 
   let jobs = $state<Job[]>([]);
   let loading = $state(true);
+  let error = $state<string | null>(null);
+  /** Ids with a delete in flight, so a row cannot be submitted twice. */
+  let deleting = $state<string[]>([]);
 
   async function load() {
     loading = true;
@@ -36,6 +40,34 @@
     return job.blocked ? m.statusFailed : m.statusDone;
   }
 
+  /** Still the queue's, so the server will refuse to delete it. */
+  function busy(job: Job): boolean {
+    return job.status === 'queued' || job.status === 'running';
+  }
+
+  /**
+   * Removes one entry, output and all.
+   *
+   * The list is updated from the response rather than optimistically: a
+   * delete the server refused — an unfinished job — must leave the row where
+   * it is, because it is still going to produce something.
+   */
+  async function remove(job: Job) {
+    if (deleting.includes(job.id)) return;
+    if (!confirm(m.historyDeleteConfirm)) return;
+
+    deleting = [...deleting, job.id];
+    error = null;
+    try {
+      await api.deleteJob(job.id);
+      jobs = jobs.filter((entry) => entry.id !== job.id);
+    } catch (caught) {
+      error = caught instanceof ApiError ? caught.message : m.errorGeneric;
+    } finally {
+      deleting = deleting.filter((id) => id !== job.id);
+    }
+  }
+
   /** Plain clicks route in-app; modified clicks stay the browser's. */
   function open(event: MouseEvent, id: string) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
@@ -54,6 +86,10 @@
       {m.refresh}
     </button>
   </header>
+
+  {#if error}
+    <p class="error" role="alert">{error}</p>
+  {/if}
 
   {#if jobs.length === 0}
     <p class="empty">
@@ -106,6 +142,18 @@
               {formatWhen(job.createdAt)}
             </time>
           </a>
+          <!-- Outside the anchor: a button cannot be nested in a link, and
+               deleting must never be one stray click away from opening. -->
+          <button
+            class="delete"
+            type="button"
+            title={busy(job) ? m.historyDeleteBusy : m.historyDelete}
+            aria-label={m.historyDelete}
+            disabled={busy(job) || deleting.includes(job.id)}
+            onclick={() => remove(job)}
+          >
+            <Trash2 size={16} />
+          </button>
         </li>
       {/each}
     </ul>
@@ -182,16 +230,26 @@
     border-radius: var(--radius);
   }
 
+  li {
+    display: flex;
+    align-items: center;
+  }
+
   li + li {
     border-top: 1px solid var(--border);
   }
 
+  li:has(.delete:hover) .row {
+    background: none;
+  }
+
   .row {
     display: flex;
+    flex: 1;
     flex-wrap: wrap;
     gap: 0.6rem 1rem;
     align-items: center;
-    width: 100%;
+    min-width: 0;
     min-height: 64px;
     padding: 0.7rem 1rem;
     color: inherit;
@@ -202,6 +260,41 @@
 
   .row:hover {
     background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  }
+
+  .delete {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    align-self: stretch;
+    width: 48px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-inline-start: 1px solid var(--border);
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background var(--duration-fast) var(--ease-out);
+  }
+
+  .delete:hover:not(:disabled) {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  .delete:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .error {
+    margin-bottom: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    color: var(--danger);
+    font-size: 0.88rem;
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
   }
 
   .badge {

@@ -335,6 +335,12 @@ export const api = {
       (r) => r.job,
     ),
 
+  /** Removes a finished job from history, output and all. */
+  deleteJob: (id: string) =>
+    request<{ deleted: string }>(`/api/jobs/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+
   fileUrl: (jobId: string, name: string) =>
     `/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(name)}`,
 

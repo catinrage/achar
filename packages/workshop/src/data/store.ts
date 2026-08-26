@@ -723,6 +723,26 @@ export class JobStore {
     return result.changes;
   }
 
+  /**
+   * Forgets a job: the row, its file index, and nothing else.
+   *
+   * The output on the volume is the caller's to remove, for the same reason
+   * writing it was — this class has no filesystem access, deliberately. The
+   * trace is untouched: it is content-addressed and shared by every job posted
+   * from it, so deleting one job's history must not take another job's input
+   * with it.
+   *
+   * Returns false when there was no such job, which is how the route tells a
+   * bad id from a successful delete rather than reporting both as done.
+   */
+  deleteJob(id: string): boolean {
+    const remove = this.db.transaction(() => {
+      this.db.query('DELETE FROM job_files WHERE job_id = ?').run(id);
+      return this.db.query('DELETE FROM jobs WHERE id = ?').run(id).changes;
+    });
+    return remove() > 0;
+  }
+
   listFiles(jobId: string): JobFileRecord[] {
     return this.db
       .query<JobFileRecord, [string]>(

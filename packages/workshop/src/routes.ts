@@ -1,4 +1,4 @@
-import { mkdir, rename } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { listBuiltinPosts, machineFeatureSchema } from '@achar/core';
 import type { Route, RouteContext } from '@achar/server';
@@ -11,7 +11,7 @@ import {
   spoolToFile,
 } from '@achar/server';
 import type { WorkshopServices } from './context';
-import { jobOutputDirectory, traceFilePath } from './data/paths';
+import { jobDirectory, jobOutputDirectory, traceFilePath } from './data/paths';
 import type { TraceRecord } from './data/store';
 import { describeJob } from './jobs/runner';
 import {
@@ -168,6 +168,37 @@ export const workshopRoutes: Array<Route<WorkshopServices>> = [
       json({
         job: describeJob(services.store, requireJob(services, params.id)),
       }),
+  },
+  {
+    method: 'DELETE',
+    path: '/api/jobs/:id',
+    gated: false,
+    handle: async ({ params, services }) => {
+      const job = requireJob(services, params.id);
+
+      // A job the queue still owns is not history yet. Deleting the row from
+      // under a worker would leave it writing output into a directory nothing
+      // refers to, and the operator watching a spinner would see it vanish
+      // with no result either way. Removing it has to mean cancelling it, and
+      // cancellation is a feature with its own questions — so this refuses
+      // rather than half-implementing one.
+      if (job.status === 'queued' || job.status === 'running') {
+        throw badRequest(
+          'This job has not finished yet. Wait for it to finish, then delete it.',
+        );
+      }
+
+      // Order matters: the row goes first, so a failure to remove the
+      // directory leaves orphaned bytes the retention sweep can be taught to
+      // find, rather than a history entry whose files are already gone.
+      services.store.deleteJob(job.id);
+      await rm(jobDirectory(services.paths, job.id), {
+        recursive: true,
+        force: true,
+      });
+
+      return json({ deleted: job.id });
+    },
   },
   {
     method: 'GET',

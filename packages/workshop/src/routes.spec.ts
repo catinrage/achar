@@ -1,4 +1,6 @@
+import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -514,6 +516,95 @@ describe('downloads', () => {
 
   it('404s an unknown job', async () => {
     expect((await fetch(`${base}/api/jobs/does-not-exist`)).status).toBe(404);
+  });
+});
+
+describe('DELETE /api/jobs/:id', () => {
+  /**
+   * Forces a job's status through a second connection.
+   *
+   * The guard being tested only fires while the queue still owns the job, and
+   * a real one settles in milliseconds — racing it would make the test flaky
+   * about the exact thing it is checking. Writing the state directly is the
+   * deterministic way to ask "what does the route do with a running job?".
+   */
+  function forceStatus(jobId: string, status: string): void {
+    const db = new Database(path.join(dataDir, 'achar.sqlite'));
+    try {
+      db.query('UPDATE jobs SET status = ? WHERE id = ?').run(status, jobId);
+    } finally {
+      db.close();
+    }
+  }
+
+  it('removes the row, its files and its output directory', async () => {
+    const { job } = await generate(TIMED_TRACE, {
+      filename: 'delete-me.MPF',
+      programName: 'DELETEME',
+    });
+    const settled = await settle(job.id);
+    expect(settled.files.length).toBeGreaterThan(0);
+
+    const directory = path.join(dataDir, 'jobs', job.id);
+    expect(existsSync(directory)).toBe(true);
+
+    const response = await fetch(`${base}/api/jobs/${job.id}`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).deleted).toBe(job.id);
+    expect((await fetch(`${base}/api/jobs/${job.id}`)).status).toBe(404);
+    expect(existsSync(directory)).toBe(false);
+
+    const { jobs } = await (await fetch(`${base}/api/jobs?limit=100`)).json();
+    expect(jobs.map((entry: { id: string }) => entry.id)).not.toContain(job.id);
+  });
+
+  it('leaves the uploaded trace alone', async () => {
+    // The trace is content-addressed and shared by every job posted from it,
+    // so forgetting one job must not take another job's input with it.
+    const analysis = await analyze(TIMED_TRACE, 'shared.MPF');
+    const first = await (
+      await submit(analysis.sha256, {
+        programName: 'FIRST',
+      })
+    ).json();
+    await settle(first.job.id);
+
+    await fetch(`${base}/api/jobs/${first.job.id}`, { method: 'DELETE' });
+
+    expect((await fetch(`${base}/api/traces/${analysis.sha256}`)).status).toBe(
+      200,
+    );
+    const again = await submit(analysis.sha256, { programName: 'SECOND' });
+    expect(again.status).toBe(202);
+  });
+
+  it('refuses a job the queue still owns', async () => {
+    const { job } = await generate(TIMED_TRACE, {
+      filename: 'busy.MPF',
+      programName: 'BUSY',
+    });
+    await settle(job.id);
+    forceStatus(job.id, 'running');
+
+    const response = await fetch(`${base}/api/jobs/${job.id}`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.message).toContain('not finished');
+    // Still there, because a worker may still be about to write into it.
+    expect((await fetch(`${base}/api/jobs/${job.id}`)).status).toBe(200);
+  });
+
+  it('404s an unknown job', async () => {
+    const response = await fetch(`${base}/api/jobs/does-not-exist`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(404);
   });
 });
 

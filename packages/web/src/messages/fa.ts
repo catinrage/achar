@@ -145,6 +145,10 @@ export const m = {
   historyStatus: 'وضعیت',
   historyFiles: 'فایل‌ها',
   historyOpen: 'مشاهده',
+  historyDelete: 'حذف از تاریخچه',
+  historyDeleteConfirm:
+    'این مورد از تاریخچه حذف شود؟ فایل‌های تولیدشده آن نیز پاک می‌شوند.',
+  historyDeleteBusy: 'این کار هنوز تمام نشده است؛ پس از پایان آن را حذف کنید.',
   refresh: 'به‌روزرسانی',
   tracePurged: 'فایل تریس اصلی پاک شده است',
 

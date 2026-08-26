@@ -67,7 +67,7 @@ export function prepareDataPaths(explicit?: string): DataPaths {
 }
 
 /** Directory holding one job's generated output. */
-function jobDirectory(paths: DataPaths, jobId: string): string {
+export function jobDirectory(paths: DataPaths, jobId: string): string {
   return path.join(paths.jobs, jobId);
 }
 
