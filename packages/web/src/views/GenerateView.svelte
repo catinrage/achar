@@ -45,6 +45,20 @@
 
   let { machines, jobId, traceSha }: Props = $props();
 
+  /**
+   * A job's own address is a place to read a finished program, not to start
+   * another one.
+   *
+   * The composer above the results — the drop zone, the setup picker, the
+   * machine and program-name fields — is for deciding what to generate, and
+   * that decision has already been made by the time a job exists. Leaving it
+   * on screen invited the one thing the address exists to avoid: re-uploading
+   * a file the server already has, to re-run a job whose output is right
+   * there. Generating again starts from the trace, which keeps its own
+   * address for exactly that.
+   */
+  const viewingJob = $derived(jobId !== undefined);
+
   let file = $state<File | null>(null);
   let uploading = $state(false);
   let uploadFraction = $state(0);
@@ -63,8 +77,6 @@
   let generating = $state(false);
   let error = $state<string | null>(null);
   let loading = $state(false);
-  let results = $state<HTMLDivElement | undefined>(undefined);
-  let scrolledTo = $state<string | null>(null);
 
   /** Poll interval while an analysis or a job is in flight. */
   const POLL_MS = 1000;
@@ -198,9 +210,6 @@
         job = loaded;
         cached = false;
         error = null;
-        // Opening a job cold should still show what it was posted from, so
-        // the setup picker beside it is loaded and set to that job's choice.
-        void adoptJobTrace(loaded);
       })
       .catch(() => (error = m.errorJobMissing))
       .finally(() => (loading = false));
@@ -219,45 +228,6 @@
       })
       .catch(() => (error = m.errorTraceMissing))
       .finally(() => (loading = false));
-  });
-
-  /** Loads the trace behind a job opened from a link, if it is still known. */
-  async function adoptJobTrace(opened: Job) {
-    if (trace?.sha256 === opened.traceSha256) return;
-    try {
-      const loaded = await api.getTrace(opened.traceSha256);
-      adopt(loaded);
-      if (opened.setups) selectedSetups = opened.setups;
-      keepAllTools = opened.keepAllTools;
-      machineId = opened.machineId;
-      // The job's own name, not the one the file name implies: reopening a
-      // link should show what was generated, and generating again from here
-      // should not quietly rename the output.
-      if (opened.programName) programName = opened.programName;
-    } catch {
-      // A purged or unknown trace is not an error here: the job's own results
-      // are what the link was for, and they are already on screen.
-    }
-  }
-
-  /**
-   * Brings a newly shown job into view.
-   *
-   * The picker stays on the page above it, so a job opened from a link — or a
-   * second one generated after the first — would otherwise appear below the
-   * fold with nothing on screen to say anything had happened. Keyed on the id,
-   * not the object, so the once-a-second poll does not fight the scroll.
-   */
-  $effect(() => {
-    const id = job?.id;
-    if (!id || id === scrolledTo || !results) return;
-    scrolledTo = id;
-    results.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'auto'
-        : 'smooth',
-      block: 'start',
-    });
   });
 
   /** Polls until the analysis settles. */
@@ -331,158 +301,163 @@
 </script>
 
 <div class="layout">
-  <section class="card">
-    {#if machines.length === 0}
-      <p class="notice">{m.noMachines}</p>
-    {/if}
-
-    {#if !trace}
-      <DropZone
-        {file}
-        disabled={uploading || machines.length === 0}
-        onselect={chooseFile}
-      />
-    {:else}
-      <div class="trace-head">
-        <span class="trace-name">
-          <FileText size={17} />
-          <strong class="ltr">{trace.name}</strong>
-          <small>{formatBytes(trace.bytes)}</small>
-        </span>
-        <button class="chip" onclick={restart} disabled={generating}>
-          <RotateCcw size={15} />
-          {m.changeFile}
-        </button>
-      </div>
-    {/if}
-
-    {#if uploading}
-      <div
-        class="upload"
-        role="status"
-        transition:fly={{ y: -8, duration: 180, easing: cubicOut }}
-      >
-        <div class="track">
-          <div
-            class="fill"
-            style:width={`${Math.round(uploadFraction * 100)}%`}
-          ></div>
-        </div>
-        <span>
-          {m.uploadProgress} — {faDigits(Math.round(uploadFraction * 100))}٪
-        </span>
-      </div>
-    {/if}
-
-    {#if trace?.status === 'analyzing'}
-      <div class="analyzing" role="status" transition:fly={{ y: -6, duration: 180 }}>
-        <Spinner running={true} />
-        <div>
-          <strong>{m.analyzing}</strong>
-          <small>{m.analyzingHint}</small>
-        </div>
-      </div>
-    {/if}
-
-    {#if trace?.status === 'failed'}
-      <div class="failure">
-        <strong><CircleAlert size={17} /> {m.analysisFailed}</strong>
-        {#if trace.error}<span class="ltr detail">{trace.error}</span>{/if}
-      </div>
-    {/if}
-
-    {#if ready && trace}
-      {#if traceCached}
-        <p class="note">{m.traceCached}</p>
+  {#if !viewingJob}
+    <section class="card">
+      {#if machines.length === 0}
+        <p class="notice">{m.noMachines}</p>
       {/if}
 
-      <div class="summary">
-        {#if trace.profile?.part.name}
-          <span><FileText size={15} /> {m.tracePart}: <strong class="ltr">{trace.profile.part.name}</strong></span>
-        {/if}
-        {#if trace.timing}
-          <span><Clock size={15} /> {m.traceTotal}: <strong>{formatCycleTime(trace.timing.duration)}</strong></span>
-        {/if}
-        {#if hasSetups}
-          <span><Boxes size={15} /> {fill(m.traceSetupsCount, { n: faDigits(trace.setups.length) })}</span>
-        {/if}
-        {#if trace.profile}
-          <span><Wrench size={15} /> {fill(m.traceToolsCount, { n: faDigits(trace.profile.tools.length) })}</span>
-        {/if}
-      </div>
-
-      <Diagnostics diagnostics={trace.diagnostics} blocked={false} />
-
-      {#if hasSetups}
-        <SetupPicker
-          setups={trace.setups}
-          selected={selectedSetups}
-          hasImplicitSetup={trace.hasImplicitSetup}
-          {keepAllTools}
-          disabled={generating}
-          onchange={(next) => (selectedSetups = next)}
-          onkeepalltools={(keep) => (keepAllTools = keep)}
+      {#if !trace}
+        <DropZone
+          {file}
+          disabled={uploading || machines.length === 0}
+          onselect={chooseFile}
         />
       {:else}
-        <p class="note">{m.setupsNoneInTrace}</p>
+        <div class="trace-head">
+          <span class="trace-name">
+            <FileText size={17} />
+            <strong class="ltr">{trace.name}</strong>
+            <small>{formatBytes(trace.bytes)}</small>
+          </span>
+          <button class="chip" onclick={restart} disabled={generating}>
+            <RotateCcw size={15} />
+            {m.changeFile}
+          </button>
+        </div>
       {/if}
 
-      <div class="fields">
-        <div class="field">
-          <span class="field-label" id="machine-label">{m.machineLabel}</span>
-          <Select
-            value={machineId}
-            options={machineOptions}
-            placeholder={m.machinePlaceholder}
-            disabled={generating || machines.length === 0}
-            label={m.machineLabel}
-            onchange={(next) => (machineId = next)}
-          />
+      {#if uploading}
+        <div
+          class="upload"
+          role="status"
+          transition:fly={{ y: -8, duration: 180, easing: cubicOut }}
+        >
+          <div class="track">
+            <div
+              class="fill"
+              style:width={`${Math.round(uploadFraction * 100)}%`}
+            ></div>
+          </div>
+          <span>
+            {m.uploadProgress} — {faDigits(Math.round(uploadFraction * 100))}٪
+          </span>
+        </div>
+      {/if}
+
+      {#if trace?.status === 'analyzing'}
+        <div class="analyzing" role="status" transition:fly={{ y: -6, duration: 180 }}>
+          <Spinner running={true} />
+          <div>
+            <strong>{m.analyzing}</strong>
+            <small>{m.analyzingHint}</small>
+          </div>
+        </div>
+      {/if}
+
+      {#if trace?.status === 'failed'}
+        <div class="failure">
+          <strong><CircleAlert size={17} /> {m.analysisFailed}</strong>
+          {#if trace.error}<span class="ltr detail">{trace.error}</span>{/if}
+        </div>
+      {/if}
+
+      {#if ready && trace}
+        {#if traceCached}
+          <p class="note">{m.traceCached}</p>
+        {/if}
+
+        <div class="summary">
+          {#if trace.profile?.part.name}
+            <span><FileText size={15} /> {m.tracePart}: <strong class="ltr">{trace.profile.part.name}</strong></span>
+          {/if}
+          {#if trace.timing}
+            <span><Clock size={15} /> {m.traceTotal}: <strong>{formatCycleTime(trace.timing.duration)}</strong></span>
+          {/if}
+          {#if hasSetups}
+            <span><Boxes size={15} /> {fill(m.traceSetupsCount, { n: faDigits(trace.setups.length) })}</span>
+          {/if}
+          {#if trace.profile}
+            <span><Wrench size={15} /> {fill(m.traceToolsCount, { n: faDigits(trace.profile.tools.length) })}</span>
+          {/if}
         </div>
 
-        <label class="field">
-          <span class="field-label">{m.programNameLabel}</span>
-          <input
-            class="ltr"
-            type="text"
-            bind:value={programName}
+        <Diagnostics diagnostics={trace.diagnostics} blocked={false} />
+
+        {#if hasSetups}
+          <SetupPicker
+            setups={trace.setups}
+            selected={selectedSetups}
+            hasImplicitSetup={trace.hasImplicitSetup}
+            {keepAllTools}
             disabled={generating}
-            placeholder="—"
+            onchange={(next) => (selectedSetups = next)}
+            onkeepalltools={(keep) => (keepAllTools = keep)}
           />
-          <small>
-            {programName === inferredName && inferredName !== ''
-              ? m.programNameInferred
-              : m.programNameHint}
-          </small>
-        </label>
-      </div>
+        {:else}
+          <p class="note">{m.setupsNoneInTrace}</p>
+        {/if}
 
-      {#if hasSetups && selectedSetups.length === 0}
-        <p class="notice">{m.setupsSelectAtLeastOne}</p>
+        <div class="fields">
+          <div class="field">
+            <span class="field-label" id="machine-label">{m.machineLabel}</span>
+            <Select
+              value={machineId}
+              options={machineOptions}
+              placeholder={m.machinePlaceholder}
+              disabled={generating || machines.length === 0}
+              label={m.machineLabel}
+              onchange={(next) => (machineId = next)}
+            />
+          </div>
+
+          <label class="field">
+            <span class="field-label">{m.programNameLabel}</span>
+            <input
+              class="ltr"
+              type="text"
+              bind:value={programName}
+              disabled={generating}
+              placeholder="—"
+            />
+            <small>
+              {programName === inferredName && inferredName !== ''
+                ? m.programNameInferred
+                : m.programNameHint}
+            </small>
+          </label>
+        </div>
+
+        {#if hasSetups && selectedSetups.length === 0}
+          <p class="notice">{m.setupsSelectAtLeastOne}</p>
+        {/if}
       {/if}
-    {/if}
 
-    {#if error}
-      <p class="error" role="alert" transition:fly={{ y: -8, duration: 180 }}>
-        {error}
-      </p>
-    {/if}
+      {#if error}
+        <p class="error" role="alert" transition:fly={{ y: -8, duration: 180 }}>
+          {error}
+        </p>
+      {/if}
 
-    {#if ready}
-      <button class="submit" disabled={!canSubmit} onclick={start}>
-        {generating ? m.submitting : m.submit}
-      </button>
-    {/if}
-  </section>
+      {#if ready}
+        <button class="submit" disabled={!canSubmit} onclick={start}>
+          {generating ? m.submitting : m.submit}
+        </button>
+      {/if}
+    </section>
+  {:else if error}
+    <!-- The composer normally carries the error line; on a job's own page
+         there is no composer, and "this job does not exist" still has to
+         reach the person who followed the link. -->
+    <p class="error" role="alert">{error}</p>
+  {/if}
 
   {#if loading && !job}
     <p class="loading">…</p>
   {/if}
 
   {#if job}
-    <div bind:this={results}>
-      <JobResult {job} {cached} />
-    </div>
+    <JobResult {job} {cached} />
   {/if}
 </div>
 
