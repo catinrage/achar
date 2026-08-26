@@ -5,12 +5,12 @@ import {
   listBuiltinPosts,
   parseVmid,
 } from '@achar/core';
-import type { RouteContext } from './context';
-import { badRequest } from './errors';
-import type { RouteResponse } from './http';
-import { json, plainText } from './http';
-import type { Route } from './kernel';
-import type { RequestBody } from './request';
+import type { RouteContext } from '../kernel/context';
+import { badRequest } from '../kernel/errors';
+import type { RouteResponse } from '../kernel/http';
+import { json, plainText } from '../kernel/http';
+import type { Route } from '../kernel/kernel';
+import type { RequestBody } from '../kernel/request';
 
 /**
  * The route table and its handlers.

@@ -1,7 +1,11 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { AnalyzeOutcome, BundleOutcome, WorkerPool } from '@achar/server';
-import { messageOf } from '@achar/server';
+import { messageOf } from '../../kernel/errors';
+import type { WorkerPool } from '../../kernel/parse/pool';
+import type {
+  AnalyzeOutcome,
+  BundleOutcome,
+} from '../../kernel/parse/protocol';
 import type { DataPaths } from '../data/paths';
 import {
   jobOutputDirectory,

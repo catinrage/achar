@@ -8,10 +8,10 @@ It is served by the same process as the [`/v1` API](http-server.md) — one
 container, one port, no separate web server. Open `http://<host>:7788/`.
 
 ```
-packages/server      packages/workshop            packages/web
-  /v1 · kernel   <—    /api · queue · SQLite   <—   the UI
-  parse workers        machines · retention        (static build)
-  stateless            stateful
+packages/server                                   packages/web
+  kernel/    HTTP, parse workers            <—      the UI
+  v1/        stateless API                          (static build)
+  workshop/  /api · queue · SQLite · machines
 
 achar container
 ├── GET  /                     web UI (static Svelte 5, Farsi/RTL)
@@ -21,11 +21,21 @@ achar container
    both dispatch every parse to the same worker pool
 ```
 
-The split is deliberate. `@achar/server` owns the HTTP kernel, the `/v1` table
-and the worker pool, and keeps its promise that nothing survives a request — no
-database, no volume. `@achar/workshop` builds this service on that kernel and
-is stateful by necessity. Everything below belongs to the second package; `/v1`
-is unaffected by any of it.
+The split is deliberate, and it is now a directory boundary rather than a
+package one. `kernel/` owns the HTTP layer and the worker pool. `v1/` is the
+stateless API and keeps its promise that nothing survives a request — no
+database, no volume. `workshop/` builds this service on the same kernel and is
+stateful by necessity. Everything below belongs to `workshop/`; `/v1` is
+unaffected by any of it.
+
+`v1/` may not import `workshop/`. That used to be enforced by npm, when the two
+were separate packages pointing one way; it is now a fallow boundary rule in
+[.fallowrc.json](../.fallowrc.json), checked with `fallow dead-code`. The
+enforcement changed, the guarantee did not.
+
+`packages/web` stays its own package: it is a browser build with its own
+toolchain, and keeping it separate is what lets the Dockerfile build the UI in
+one stage and ship the runtime image without svelte in it.
 
 ## Why it exists
 

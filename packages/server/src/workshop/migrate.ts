@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { parseMachineProfile } from '@achar/core';
-import { messageOf } from '@achar/server';
+import { messageOf } from '../kernel/errors';
 import type { DataPaths } from './data/paths';
 import { legacyJobTracePath, traceFilePath } from './data/paths';
 import type { JobStore } from './data/store';

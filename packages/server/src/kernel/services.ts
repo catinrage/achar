@@ -1,55 +1,17 @@
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Logger } from '@achar/core';
-import packageJson from '../package.json' with { type: 'json' };
 import type { ServerServices } from './context';
 import type { RunningServer } from './kernel';
-import { startKernel } from './kernel';
 import { WorkerPool } from './parse/pool';
-import { v1Routes } from './routes';
-
-export type { RouteContext, ServerServices, SpooledTrace } from './context';
-export * from './errors';
-export type { RouteResponse } from './http';
-export {
-  attachment,
-  byteLength,
-  bytes,
-  json,
-  plainText,
-  toResponse,
-} from './http';
-export type { KernelOptions, Route, RunningServer } from './kernel';
-export { startKernel } from './kernel';
-export { WorkerPool } from './parse/pool';
-export type {
-  AnalyzeOutcome,
-  BundledFile,
-  BundleOutcome,
-  WorkerTask,
-} from './parse/protocol';
-export { spoolToFile } from './parse/spool';
-export type { RequestBody } from './request';
-export { v1Routes } from './routes';
 
 /**
- * Stateless HTTP front end for `@achar/core`.
+ * Assembly shared by everything built on this kernel.
  *
- * Every request carries its own inputs and gets its results back in the
- * response: no workspace root, no database, no volume, and nothing retained
- * between requests. That is the difference from the MCP server, which runs
- * locally over stdio and can afford to be path-based — and from
- * `@achar/workshop`, which builds a multi-user service on this kernel and is
- * stateful by necessity.
- *
- * Traces are spooled to a scratch directory so a worker can read them by path
- * rather than receive a several-hundred-megabyte string across a thread
- * boundary. Those files are deleted as each request finishes; the promise is
- * that nothing survives a request, not that nothing is ever written.
- *
- * No trace is parsed on the HTTP thread. `Parser.parse()` is synchronous and
- * holds the loop for many seconds on a large file, so all of it happens on
- * worker threads; see {@link WorkerPool}.
+ * Both front ends in this package start the same way — silence the parser,
+ * build a worker pool and a scratch directory, wrap teardown — and neither
+ * owns those decisions. They live here so `/v1` and the workshop cannot drift
+ * on the size of an upload or the number of concurrent parses.
  */
 
 export interface AcharServerOptions {
@@ -109,39 +71,6 @@ export function createServerServices(
   };
 }
 
-export async function startAcharServer(
-  options: AcharServerOptions = {},
-): Promise<AcharServer> {
-  configureLogging(options.logs);
-  const services = createServerServices(options);
-
-  const server = startKernel({
-    routes: v1Routes,
-    services,
-    version: packageJson.version,
-    host: options.host ?? DEFAULT_HOST,
-    port: options.port ?? DEFAULT_PORT,
-    token: options.token?.trim() || undefined,
-  });
-
-  const stop = createStop(async () => {
-    await server.stop();
-    await services.pool.shutdown();
-  });
-  const onSignal = () => void stop();
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
-
-  return {
-    port: server.port,
-    stop: async () => {
-      process.off('SIGINT', onSignal);
-      process.off('SIGTERM', onSignal);
-      await stop();
-    },
-  };
-}
-
 /** Wraps a teardown so a second call — signal plus explicit — is harmless. */
 export function createStop(teardown: () => Promise<void>): () => Promise<void> {
   let stopped = false;
@@ -150,9 +79,4 @@ export function createStop(teardown: () => Promise<void>): () => Promise<void> {
     stopped = true;
     await teardown();
   };
-}
-
-if (import.meta.main) {
-  const { port } = await startAcharServer();
-  console.log(`[achar] listening on ${port}`);
 }

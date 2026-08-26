@@ -17,7 +17,6 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
-COPY packages/workshop/package.json packages/workshop/package.json
 
 RUN bun install --frozen-lockfile --filter @achar/web
 
@@ -43,18 +42,19 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
-COPY packages/workshop/package.json packages/workshop/package.json
 
 RUN bun install --production --frozen-lockfile --filter @achar/cli
 
-# The HTTP entry point is registered by the CLI. `server` holds the stateless
-# /v1 API and the parse workers; `workshop` adds the queue and the browser API
-# on top of it; all machining work lives in core.
+# The HTTP entry point is registered by the CLI. `server` holds all of it —
+# the kernel and parse workers, the stateless /v1 API, and the workshop's queue
+# and browser API on top of them; all machining work lives in core.
+#
+# `web` stays a separate package on purpose: it is a browser build with its own
+# toolchain, and the split is what keeps svelte out of the install below.
 COPY packages/cli/src packages/cli/src
 COPY packages/core/src packages/core/src
 COPY packages/mcp/src packages/mcp/src
 COPY packages/server/src packages/server/src
-COPY packages/workshop/src packages/workshop/src
 
 # Only the built assets, none of the toolchain that made them.
 COPY --from=web /app/packages/web/dist packages/web/dist

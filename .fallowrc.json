@@ -35,5 +35,35 @@
   "audit": {
     "gate": "new-only"
   },
-  "dynamicallyLoaded": ["packages/web/src/index.css"]
+  "dynamicallyLoaded": ["packages/web/src/index.css"],
+  "boundaries": {
+    "zones": [
+      {
+        "name": "kernel",
+        "patterns": ["packages/server/src/kernel/**"]
+      },
+      {
+        "name": "v1",
+        "patterns": ["packages/server/src/v1/**"]
+      },
+      {
+        "name": "workshop",
+        "patterns": ["packages/server/src/workshop/**"]
+      }
+    ],
+    "rules": [
+      {
+        "from": "kernel",
+        "allow": []
+      },
+      {
+        "from": "v1",
+        "allow": ["kernel"]
+      },
+      {
+        "from": "workshop",
+        "allow": ["kernel", "v1"]
+      }
+    ]
+  }
 }

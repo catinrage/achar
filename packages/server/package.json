@@ -5,7 +5,7 @@
   "type": "module",
   "module": "src/server.ts",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "serve": "bun src/server.ts"

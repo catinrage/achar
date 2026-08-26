@@ -7,10 +7,11 @@ One process serves two surfaces:
   file paths, no writes to disk, nothing retained between requests. This is
   what another application consumes, and what the rest of this document covers.
 - **`/` and `/api/*` — the workshop UI.** A browser front end where several
-  people share one job queue, served by `@achar/workshop`, a separate package
-  that mounts its routes on this one's kernel. It is stateful by necessity; see
-  [workshop-ui.md](workshop-ui.md). Nothing it does reaches `/v1`: this package
-  has no database and no volume of its own.
+  people share one job queue, served by `workshop/` in the same package,
+  mounting its routes on the same kernel. It is stateful by necessity; see
+  [workshop-ui.md](workshop-ui.md). Nothing it does reaches `/v1`: no handler
+  there can import the workshop, which is enforced as a boundary rule in
+  [.fallowrc.json](../.fallowrc.json) and checked by `fallow dead-code`.
 
 Both are the difference from the MCP server, which runs locally over stdio and
 is therefore path-based.

@@ -1,15 +1,16 @@
 import path from 'node:path';
-import type { AcharServerOptions, RunningServer } from '@achar/server';
+import packageJson from '../../package.json' with { type: 'json' };
+import type { RunningServer } from '../kernel/kernel';
+import { startKernel } from '../kernel/kernel';
+import type { AcharServerOptions } from '../kernel/services';
 import {
   configureLogging,
   createServerServices,
   createStop,
   DEFAULT_HOST,
   DEFAULT_PORT,
-  startKernel,
-  v1Routes,
-} from '@achar/server';
-import packageJson from '../package.json' with { type: 'json' };
+} from '../kernel/services';
+import { v1Routes } from '../v1/routes';
 import type { WorkshopServices } from './context';
 import { prepareDataPaths } from './data/paths';
 import { JobStore } from './data/store';
@@ -119,9 +120,13 @@ export async function startWorkshopServer(
 function resolveBundledWebRoot(): string | undefined {
   const configured = Bun.env.ACHAR_WEB_ROOT?.trim();
   if (configured) return configured;
+  // From `packages/server/src/workshop/` up to `packages/`, then into the web
+  // package's build output. `@achar/web` is deliberately still its own
+  // package — it is a browser build with its own toolchain, and keeping it out
+  // of this one is what keeps the Svelte compiler out of the runtime image.
   return path.resolve(
     path.dirname(Bun.fileURLToPath(import.meta.url)),
-    '../../web/dist',
+    '../../../web/dist',
   );
 }
 

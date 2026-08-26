@@ -1,4 +1,4 @@
-import { startWorkshopServer } from '@achar/workshop';
+import { startWorkshopServer } from '@achar/server';
 import type { Command } from 'commander';
 import type { CliOptions } from '../options';
 import { parsePositiveInteger } from '../options';

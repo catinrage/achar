@@ -19,7 +19,7 @@ import { RequestBody, readRequestBody } from './request';
  * The HTTP kernel: routing, decoding, limits, authentication, error mapping.
  *
  * Deliberately knows nothing about what it serves. `@achar/server` gives it
- * the stateless `/v1` table; `@achar/workshop` gives it that table plus its
+ * the stateless `/v1` table; the workshop gives it that table plus its
  * own, along with a fallback for serving a web UI. Keeping the two apart is
  * what lets `/v1` remain a package with no database and no volume.
  */
@@ -39,7 +39,7 @@ export interface Route<Services extends ServerServices = ServerServices> {
    * A method signature, not a property holding a function. TypeScript checks
    * method parameters bivariantly, which is what lets a table written against
    * the base `ServerServices` be served by a kernel running a widened one —
-   * `@achar/workshop` mounts `v1Routes` unchanged beside its own.
+   * The workshop mounts `v1Routes` unchanged beside its own.
    */
   handle(
     context: RouteContext<Services>,

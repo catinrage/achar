@@ -117,10 +117,11 @@ anyone in the shop uploads a Trace 5 file and gets G-code back, and the
 the stdio MCP server.
 
 `/v1` needs nothing persistent — every trace arrives in a request and every
-result is returned in the response, and `@achar/server` has no database or
-volume at all. The web UI does: `@achar/workshop` mounts its own routes on the
-same kernel and keeps a job queue, machine definitions and generated output on
-a volume. See [docs/workshop-ui.md](docs/workshop-ui.md).
+result is returned in the response, and nothing serving it touches a database
+or a volume. The web UI does: the workshop mounts its own routes on the same
+kernel and keeps a job queue, machine definitions and generated output on a
+volume. Both live in `@achar/server`, in directories a boundary rule keeps
+pointing one way. See [docs/workshop-ui.md](docs/workshop-ui.md).
 
 Create the local Compose environment and replace the example token with a long
 random value:

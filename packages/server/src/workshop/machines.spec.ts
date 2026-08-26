@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { HttpError } from '@achar/server';
+import { HttpError } from '../kernel/errors';
 import type { DataPaths } from './data/paths';
 import {
   legacyJobTracePath,
@@ -20,7 +20,7 @@ import { migrateWorkshopData } from './migrate';
 
 const FIXTURES = path.resolve(
   import.meta.dir,
-  '../../../fixtures/PROJECT_567_112250296390862_CAM_Milling',
+  '../../../../fixtures/PROJECT_567_112250296390862_CAM_Milling',
 );
 
 let paths: DataPaths;

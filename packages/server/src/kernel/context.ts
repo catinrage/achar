@@ -10,7 +10,7 @@ import type { RequestBody } from './request';
  *
  * `Services` is a type parameter so a package built on this kernel can add its
  * own dependencies without this one having to know about them. `@achar/server`
- * itself needs only {@link ServerServices}; `@achar/workshop` widens it.
+ * itself needs only {@link ServerServices}; the workshop widens it.
  */
 
 export interface ServerServices {

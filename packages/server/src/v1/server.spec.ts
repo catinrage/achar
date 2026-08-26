@@ -5,8 +5,8 @@ import {
   CONTRADICTORY_REPEAT_TRACE,
   TIMED_TRACE,
   UNTIMED_TRACE,
-} from './fixtures.spec-helper';
-import type { AcharServer } from './server';
+} from '../fixtures.spec-helper';
+import type { AcharServer } from '../kernel/services';
 import { startAcharServer } from './server';
 
 const TOKEN = 'test-token';

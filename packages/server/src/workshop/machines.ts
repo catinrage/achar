@@ -10,7 +10,7 @@ import {
   type VmidDefinition,
   validateMachineProfileCompatibility,
 } from '@achar/core';
-import { badRequest, messageOf } from '@achar/server';
+import { badRequest, messageOf } from '../kernel/errors';
 import type { DataPaths } from './data/paths';
 import type { JobStore, MachineDefinition, MachineRecord } from './data/store';
 

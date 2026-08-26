@@ -126,7 +126,9 @@ packages/core/src/posts/siemens-828d        Bundled Siemens 828D post
 packages/core/src/types.ts                  Trace event and command types
 packages/mcp/src/server.ts                  MCP stdio server
 packages/web/src                           Svelte workshop UI
-packages/workshop/src                      Job queue and machine registry
+packages/server/src/kernel                 HTTP kernel and parse workers
+packages/server/src/v1                     Stateless /v1 API
+packages/server/src/workshop               Job queue and machine registry
 fixtures/PROJECT_434_112466504665666_CAM_2_MILLING                     First real Siemens fixture
 fixtures/PROJECT_2551019_CAM_MILLING
                               Second, larger real Siemens fixture

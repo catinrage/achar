@@ -403,6 +403,9 @@ export class JobStore {
    * uploaded under. A file someone is still working from should not expire on
    * the schedule of the first time anyone touched it.
    */
+  // Reached through the store held by the route context, which fallow's
+  // syntactic member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   touchTrace(sha256: string, name: string): void {
     this.db
       .query('UPDATE traces SET created_at = ?, name = ? WHERE sha256 = ?')
@@ -735,6 +738,9 @@ export class JobStore {
    * Returns false when there was no such job, which is how the route tells a
    * bad id from a successful delete rather than reporting both as done.
    */
+  // Reached through the store held by the route context, which fallow's
+  // syntactic member analysis cannot follow back to this class.
+  // fallow-ignore-next-line unused-class-member
   deleteJob(id: string): boolean {
     const remove = this.db.transaction(() => {
       this.db.query('DELETE FROM job_files WHERE job_id = ?').run(id);

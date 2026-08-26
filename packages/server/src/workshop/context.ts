@@ -1,4 +1,4 @@
-import type { ServerServices } from '@achar/server';
+import type { ServerServices } from '../kernel/context';
 import type { DataPaths } from './data/paths';
 import type { JobStore } from './data/store';
 import type { JobRunner } from './jobs/runner';
