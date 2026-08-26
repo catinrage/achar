@@ -359,9 +359,13 @@ async function submitJob(context: RouteContext<WorkshopServices>) {
   const setups = readSetupSelection(body.option('setups'), trace);
   const keepAllTools = body.option('keepAllTools') === 'true';
 
+  // `machineRevision` is what makes this a cache of *configurations* rather
+  // than of machine names: edit the machine and every job posted against the
+  // version before the edit stops answering for it.
   const key = {
     traceSha256: traceSha,
     machineId,
+    machineRevision: machine.revision,
     programName,
     setups,
     keepAllTools,
@@ -381,6 +385,7 @@ async function submitJob(context: RouteContext<WorkshopServices>) {
     traceName: trace.name,
     traceBytes: trace.bytes,
     machineId,
+    machineRevision: machine.revision,
     programName,
     setups,
     keepAllTools,

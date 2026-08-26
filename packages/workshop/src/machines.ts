@@ -12,7 +12,7 @@ import {
 } from '@achar/core';
 import { badRequest, messageOf } from '@achar/server';
 import type { DataPaths } from './data/paths';
-import type { JobStore, MachineRecord } from './data/store';
+import type { JobStore, MachineDefinition, MachineRecord } from './data/store';
 
 /**
  * Centrally-owned machine configuration.
@@ -82,7 +82,7 @@ export function machineDirectory(paths: DataPaths, id: string): string {
   return path.join(paths.machines, id);
 }
 
-export function summarizeMachine(machine: MachineRecord): MachineSummary {
+export function summarizeMachine(machine: MachineDefinition): MachineSummary {
   const post = resolveBuiltinPost(machine.postId);
   return {
     id: machine.id,
@@ -136,7 +136,7 @@ export async function createMachine(
     await Bun.write(path.join(directory, VMID_FILENAME), draft.vmid);
   }
 
-  const record: MachineRecord = {
+  const record: MachineDefinition = {
     id,
     name,
     postId: draft.postId,
@@ -215,7 +215,7 @@ export async function updateMachine(
     patch.clearVmid,
   );
 
-  const record: MachineRecord = {
+  const record: MachineDefinition = {
     ...existing,
     name,
     postId,
@@ -343,7 +343,7 @@ function readStoredProfile(
  * form will show the machine as having no profile — which is visible, and
  * fixable, in a way an exception on page load is not.
  */
-function readProfileColumn(machine: MachineRecord): MachineProfile | null {
+function readProfileColumn(machine: MachineDefinition): MachineProfile | null {
   if (machine.profile === null) return null;
   try {
     return parseMachineProfile(

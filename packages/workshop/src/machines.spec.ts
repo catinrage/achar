@@ -443,6 +443,137 @@ describe('machine profiles as records', () => {
   });
 });
 
+/**
+ * The job cache keys on the machine's revision, not just its id.
+ *
+ * These are regression tests for a real incident: an operator set a machine's
+ * dialect to `poyakar-1160l`, re-posted the same trace, and got back the
+ * pre-edit G-code with its uncompacted coordinates. Nothing was broken in the
+ * post — `submitJob` matched the earlier job on `machine_id` alone and never
+ * ran the new configuration at all. The give-away was that no new job row
+ * appeared: a cache hit returns before one is written.
+ */
+describe('job cache invalidation', () => {
+  const seedTrace = (sha: string) => {
+    store.createTrace({ sha256: sha, name: `${sha}.MPF`, bytes: 10 });
+    store.markTraceReady(sha, {
+      setups: [],
+      hasImplicitSetup: false,
+      timing: null,
+      profile: null,
+      diagnostics: [],
+      eventCount: 1,
+    });
+  };
+
+  const postJob = (id: string, machineId: string, revision: number) => {
+    store.createJob({
+      id,
+      traceSha256: 'sha',
+      traceName: 'sha.MPF',
+      traceBytes: 10,
+      machineId,
+      programName: null,
+      setups: null,
+      keepAllTools: false,
+      machineRevision: revision,
+    });
+    store.markDone(id, {
+      files: [],
+      diagnostics: [],
+      timing: null,
+      profile: null,
+      selectedSetups: null,
+    });
+  };
+
+  const keyFor = (machineId: string, revision: number) => ({
+    traceSha256: 'sha',
+    machineId,
+    machineRevision: revision,
+    programName: null,
+    setups: null,
+    keepAllTools: false,
+  });
+
+  it('bumps the revision on every write to a machine', async () => {
+    const created = await createMachine(store, paths, {
+      name: 'Mill',
+      postId: 'siemens-828d',
+    });
+    expect(store.findMachine(created.id)?.revision).toBe(1);
+
+    await updateMachine(store, paths, created.id, {
+      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+    });
+
+    expect(store.findMachine(created.id)?.revision).toBe(2);
+  });
+
+  it('stops an edited machine from serving its pre-edit output', async () => {
+    seedTrace('sha');
+    const machine = await createMachine(store, paths, {
+      name: 'Mill',
+      postId: 'siemens-828d',
+    });
+    postJob('before-edit', machine.id, revisionOf(machine.id));
+
+    // Same trace, same machine, same everything the operator typed.
+    expect(
+      store.findCachedJob(keyFor(machine.id, revisionOf(machine.id)))?.id,
+    ).toBe('before-edit');
+
+    await updateMachine(store, paths, machine.id, {
+      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+    });
+
+    // The dialect decides how coordinates are written, so the earlier bytes
+    // are not the answer any more. Re-posting has to do the work again.
+    expect(
+      store.findCachedJob(keyFor(machine.id, revisionOf(machine.id))),
+    ).toBeUndefined();
+  });
+
+  it('still caches when the machine has not moved', async () => {
+    seedTrace('sha');
+    const machine = await createMachine(store, paths, {
+      name: 'Mill',
+      postId: 'siemens-828d',
+      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+    });
+    postJob('first', machine.id, revisionOf(machine.id));
+
+    // The point of the cache survives: an unchanged machine must not re-run a
+    // fifteen-second parse to reproduce bytes already on disk.
+    expect(
+      store.findCachedJob(keyFor(machine.id, revisionOf(machine.id)))?.id,
+    ).toBe('first');
+  });
+
+  it('never serves a job that predates the revision column', async () => {
+    seedTrace('sha');
+    const machine = await createMachine(store, paths, {
+      name: 'Mill',
+      postId: 'siemens-828d',
+    });
+    postJob('legacy', machine.id, revisionOf(machine.id));
+    clearMachineRevision('legacy');
+
+    // Which configuration that job used was never recorded, so no claim that
+    // it matches today's can be honest. It stays in history and out of the
+    // cache.
+    expect(
+      store.findCachedJob(keyFor(machine.id, revisionOf(machine.id))),
+    ).toBeUndefined();
+  });
+
+  function revisionOf(id: string): number {
+    const machine = store.findMachine(id);
+    if (!machine) throw new Error(`Unknown machine '${id}'`);
+    return machine.revision;
+  }
+});
+
 describe('migrateWorkshopData', () => {
   it('moves a profile still living in machines/<id>/machine.json', async () => {
     const machine = await createMachine(store, paths, {
@@ -471,6 +602,7 @@ describe('migrateWorkshopData', () => {
       programName: null,
       setups: null,
       keepAllTools: false,
+      machineRevision: 1,
     });
     await Bun.write(legacyJobTracePath(paths, 'legacy-job'), 'trace bytes');
 
@@ -505,6 +637,20 @@ function legacyProfileFile(machineId: string, filename: string): void {
     db.query(
       'UPDATE machines SET profile_file = ?, profile = NULL WHERE id = ?',
     ).run(filename, machineId);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Blanks a job's `machine_revision`, reproducing a row written before the
+ * column existed. Over a second connection for the same reason as
+ * {@link legacyProfileFile}: `JobStore` has no legitimate way to unset it.
+ */
+function clearMachineRevision(jobId: string): void {
+  const db = new Database(paths.database);
+  try {
+    db.query('UPDATE jobs SET machine_revision = NULL WHERE id = ?').run(jobId);
   } finally {
     db.close();
   }

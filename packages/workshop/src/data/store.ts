@@ -30,7 +30,33 @@ export interface MachineRecord {
    */
   profile: string | null;
   createdAt: number;
+  /**
+   * Bumped on every write to the machine, and the reason a cached job is
+   * still the right answer.
+   *
+   * A job's output is a function of the trace *and* the machine, but the
+   * machine is referenced by id, so the id alone cannot tell two runs apart
+   * once the machine has been edited underneath them. Editing a machine's
+   * dialect and re-posting the same trace used to hand back the pre-edit
+   * G-code. The revision closes that: it travels onto the job row, and a job
+   * posted against a configuration that no longer exists can no longer be
+   * served from cache.
+   *
+   * Owned by {@link JobStore.upsertMachine}, which is why it is absent from
+   * {@link MachineDefinition}. It counts writes rather than changes: a save
+   * that alters nothing still bumps it. That over-invalidates by one
+   * regeneration, which costs seconds; under-invalidating costs a wrong
+   * program on a machine, and the VMID — a file on the volume that this row
+   * only names — can change without any column here changing at all.
+   */
+  revision: number;
 }
+
+/**
+ * A machine as its callers state it: everything except the revision, which
+ * only the store is allowed to set.
+ */
+export type MachineDefinition = Omit<MachineRecord, 'revision'>;
 
 /**
  * An uploaded trace, independent of any job posted from it.
@@ -88,6 +114,11 @@ export interface JobRecord {
    */
   setups: string | null;
   keepAllTools: boolean;
+  /**
+   * The machine's `revision` when this job was posted, or null for a job that
+   * predates the column. Part of the cache key — see {@link MachineRecord.revision}.
+   */
+  machineRevision: number | null;
   /** JSON `SetupOverview[]` for what the finished program covers. */
   selectedSetups: string | null;
   status: JobStatus;
@@ -111,6 +142,7 @@ interface JobRow {
   program_name: string | null;
   setups: string | null;
   keep_all_tools: number | null;
+  machine_revision: number | null;
   selected_setups: string | null;
   status: JobStatus;
   error_code: string | null;
@@ -130,6 +162,7 @@ interface MachineRow {
   vmid_file: string | null;
   profile: string | null;
   created_at: number;
+  revision: number;
 }
 
 interface TraceRow {
@@ -156,7 +189,8 @@ CREATE TABLE IF NOT EXISTS machines (
   post_id       TEXT NOT NULL,
   vmid_file     TEXT,
   profile       TEXT,
-  created_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL,
+  revision      INTEGER NOT NULL DEFAULT 1
 );
 
 -- Uploads, keyed by content. One row per distinct file, however many jobs
@@ -187,6 +221,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   program_name    TEXT,
   setups          TEXT,
   keep_all_tools  INTEGER NOT NULL DEFAULT 0,
+  machine_revision INTEGER,
   selected_setups TEXT,
   status          TEXT NOT NULL,
   error_code      TEXT,
@@ -207,7 +242,9 @@ CREATE TABLE IF NOT EXISTS job_files (
   PRIMARY KEY (job_id, name)
 );
 
--- The cache key: same trace, same machine, same selection, same output.
+-- The cache key: same trace, same machine *version*, same selection, same
+-- output. Only the selective columns are indexed; findCachedJob filters the
+-- rest of the key off the handful of rows this leaves.
 CREATE INDEX IF NOT EXISTS jobs_cache
   ON jobs (trace_sha256, machine_id, status);
 
@@ -243,6 +280,13 @@ export class JobStore {
     this.addColumn('jobs', 'setups', 'TEXT');
     this.addColumn('jobs', 'keep_all_tools', 'INTEGER NOT NULL DEFAULT 0');
     this.addColumn('jobs', 'selected_setups', 'TEXT');
+    this.addColumn('machines', 'revision', 'INTEGER NOT NULL DEFAULT 1');
+    // Deliberately nullable, and deliberately not backfilled. A job written
+    // before this column existed was posted against a configuration nobody
+    // recorded, so there is no value that would be true. NULL says so, and
+    // `findCachedJob` refuses to serve those rows rather than assume they
+    // match whatever the machine says today.
+    this.addColumn('jobs', 'machine_revision', 'INTEGER');
   }
 
   private addColumn(table: string, column: string, type: string): void {
@@ -295,14 +339,22 @@ export class JobStore {
     return row ? toMachine(row) : undefined;
   }
 
-  upsertMachine(machine: MachineRecord): void {
+  /**
+   * Writes a machine and advances its revision.
+   *
+   * The revision is set here rather than taken from the caller so that no
+   * write path can forget to move it — every edit reaches this one statement,
+   * including the ones whose only effect is on the VMID file beside the row.
+   */
+  upsertMachine(machine: MachineDefinition): void {
     this.db
       .query(
-        `INSERT INTO machines (id, name, post_id, vmid_file, profile, created_at)
-         VALUES ($id, $name, $postId, $vmidFile, $profile, $createdAt)
+        `INSERT INTO machines (id, name, post_id, vmid_file, profile, created_at, revision)
+         VALUES ($id, $name, $postId, $vmidFile, $profile, $createdAt, 1)
          ON CONFLICT(id) DO UPDATE SET
            name = $name, post_id = $postId,
-           vmid_file = $vmidFile, profile = $profile`,
+           vmid_file = $vmidFile, profile = $profile,
+           revision = machines.revision + 1`,
       )
       .run({
         $id: machine.id,
@@ -467,14 +519,16 @@ export class JobStore {
     programName: string | null;
     setups: string | null;
     keepAllTools: boolean;
+    machineRevision: number;
   }): void {
     this.db
       .query(
         `INSERT INTO jobs
            (id, trace_sha256, trace_name, trace_bytes, machine_id,
-            program_name, setups, keep_all_tools, status, created_at)
+            program_name, setups, keep_all_tools, machine_revision,
+            status, created_at)
          VALUES ($id, $sha, $name, $bytes, $machine, $program, $setups,
-                 $keepAllTools, 'queued', $now)`,
+                 $keepAllTools, $revision, 'queued', $now)`,
       )
       .run({
         $id: job.id,
@@ -485,6 +539,7 @@ export class JobStore {
         $program: job.programName,
         $setups: job.setups,
         $keepAllTools: job.keepAllTools ? 1 : 0,
+        $revision: job.machineRevision,
         $now: Date.now(),
       });
   }
@@ -497,12 +552,18 @@ export class JobStore {
   }
 
   /**
-   * The most recent successful job for this exact trace and machine.
+   * The most recent successful job for this exact trace and machine *version*.
    *
    * Generation is deterministic, so re-running it would burn 15 seconds to
    * reproduce bytes that are already on disk. Returning the earlier job also
    * makes "two people uploaded the same file" provably identical rather than
    * merely expected to match.
+   *
+   * Determinism is what the cache rests on, and it only holds while the inputs
+   * hold. The machine is one of those inputs and it is mutable, so the match
+   * is against `machine_revision` and not against `machine_id` alone —
+   * otherwise editing a machine and re-posting hands back the pre-edit
+   * program, which is a wrong answer delivered instantly.
    */
   findCachedJob(key: {
     traceSha256: string;
@@ -510,6 +571,13 @@ export class JobStore {
     programName: string | null;
     setups: string | null;
     keepAllTools: boolean;
+    /**
+     * The machine's revision *now*. A job posted against an earlier one used
+     * a configuration that has since been edited, so its output is no longer
+     * the answer to this request even though every other part of the key
+     * matches.
+     */
+    machineRevision: number;
   }): JobRecord | undefined {
     const row = this.db
       .query<JobRow, Record<string, string | number | null>>(
@@ -520,6 +588,7 @@ export class JobStore {
             AND jobs.program_name IS $program
             AND jobs.setups IS $setups
             AND jobs.keep_all_tools = $keepAllTools
+            AND jobs.machine_revision IS $revision
             AND traces.purged_at IS NULL
           ORDER BY jobs.created_at DESC LIMIT 1`,
       )
@@ -529,6 +598,7 @@ export class JobStore {
         $program: key.programName,
         $setups: key.setups,
         $keepAllTools: key.keepAllTools ? 1 : 0,
+        $revision: key.machineRevision,
       });
     return row ? toJob(row) : undefined;
   }
@@ -702,6 +772,7 @@ function toMachine(row: MachineRow): MachineRecord {
     vmidFile: row.vmid_file,
     profile: row.profile,
     createdAt: row.created_at,
+    revision: row.revision,
   };
 }
 
@@ -734,6 +805,7 @@ function toJob(row: JobRow): JobRecord {
     programName: row.program_name,
     setups: row.setups,
     keepAllTools: row.keep_all_tools === 1,
+    machineRevision: row.machine_revision,
     selectedSetups: row.selected_setups,
     status: row.status,
     errorCode: row.error_code,

@@ -60,6 +60,13 @@ function seedMachine(id = 'm1') {
   });
 }
 
+/** The revision a job posted right now would carry. */
+function revisionOf(id = 'm1'): number {
+  const machine = store.findMachine(id);
+  if (!machine) throw new Error(`seed machine '${id}' first`);
+  return machine.revision;
+}
+
 /** Creates a finished job with its trace and one output file on disk. */
 async function seedFinishedJob(id: string, createdAt?: number) {
   seedMachine();
@@ -82,6 +89,7 @@ async function seedFinishedJob(id: string, createdAt?: number) {
     programName: null,
     setups: null,
     keepAllTools: false,
+    machineRevision: revisionOf(),
   });
   await Bun.write(traceFilePath(paths, sha), 'trace bytes');
   await Bun.write(
@@ -122,6 +130,7 @@ function cacheKey(id: string) {
   return {
     traceSha256: `sha-${id}`,
     machineId: 'm1',
+    machineRevision: revisionOf(),
     programName: null,
     setups: null,
     keepAllTools: false,
@@ -196,6 +205,7 @@ describe('recovery', () => {
       programName: null,
       setups: null,
       keepAllTools: false,
+      machineRevision: revisionOf(),
     });
     store.markRunning('interrupted');
 
@@ -227,6 +237,7 @@ describe('describeJob', () => {
       programName: null,
       setups: null,
       keepAllTools: false,
+      machineRevision: revisionOf(),
     });
     await Bun.sleep(2);
     store.createJob({
@@ -238,6 +249,7 @@ describe('describeJob', () => {
       programName: null,
       setups: null,
       keepAllTools: false,
+      machineRevision: revisionOf(),
     });
 
     expect(describeJob(store, requireJob('first')).position).toBe(1);
@@ -270,6 +282,7 @@ describe('describeJob', () => {
       programName: null,
       setups: '1,3',
       keepAllTools: true,
+      machineRevision: revisionOf(),
     });
 
     const view = describeJob(store, requireJob('partial-job'));
