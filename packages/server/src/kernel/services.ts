@@ -50,9 +50,11 @@ export const DEFAULT_MAX_CONCURRENT_PARSES = 1;
 /**
  * Silences the parser's logging unless it was asked for.
  *
- * It emits hundreds of "Unknown event type for validation" warnings per trace,
- * which on a server is noise that would drown the access log. Exported because
- * anything embedding this kernel wants the same default.
+ * Not a workaround any more — the "Unknown event type for validation" flood it
+ * was written for is gone, and the default level is now `warn`. It stays
+ * because a server's own access log should be the only thing on its stderr by
+ * default, and a malformed upload should not be able to write to it. Exported
+ * because anything embedding this kernel wants the same default.
  */
 export function configureLogging(logs: boolean | undefined): void {
   if (logs !== true) Logger.setGlobalOptions({ enabled: false });

@@ -986,6 +986,65 @@ export type EventsType = {
   };
 };
 
+/**
+ * Every event name the parser can produce, as a runtime value.
+ *
+ * `EventsType` is erased at build time, so nothing at runtime could answer
+ * "is this a name we know?" — which is why the parser's validation switch
+ * treated every event without special handling as unknown and warned about
+ * it, roughly 98% of the events in a real trace.
+ *
+ * Typed `Record<keyof EventsType, true>` rather than declared with
+ * `satisfies`: this direction makes a *missing* key an error, so adding an
+ * event to `EventsType` fails the build until it is listed here too.
+ * `satisfies` would only reject extra keys and let a new event slip through
+ * silently. Keep it next to the type it mirrors.
+ */
+export const EVENT_NAMES: Record<keyof EventsType, true> = {
+  StartOfFile: true,
+  VmidInfo: true,
+  DefTool: true,
+  AbsoluteMode: true,
+  MachinePlane: true,
+  StartProgram: true,
+  Setup: true,
+  HomeNumber: true,
+  Tmatrix: true,
+  ChangeTool: true,
+  Compensation: true,
+  ToolChange: true,
+  OffsetChange: true,
+  StartOfJob: true,
+  JobPlane: true,
+  ToolPathInfo: true,
+  Message: true,
+  MFeedSpin: true,
+  Line: true,
+  Move5x: true,
+  Line5x: true,
+  Arc: true,
+  RapidMove: true,
+  EndOfJob: true,
+  Drill: true,
+  DrillPoint: true,
+  EndDrill: true,
+  EndProgram: true,
+  HomeData: true,
+  LoopMatrixInfo: true,
+  PlaneData: true,
+  RotaryInfo: true,
+  FourthAxis: true,
+  RotateToPlane: true,
+  ToolBreakage: true,
+  EndOfFile: true,
+  ChangeRefPoint: true,
+};
+
+/** Whether a parsed event name is one this build knows about. */
+export function isKnownEventName(name: string): name is keyof EventsType {
+  return Object.hasOwn(EVENT_NAMES, name);
+}
+
 export type CommandsType = {
   Rapid: {
     x?: number;

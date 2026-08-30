@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { Logger } from '@achar/core';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import packageJson from '../package.json' with { type: 'json' };
@@ -18,8 +17,6 @@ import { registerTestCommand } from './commands/test';
 import { registerTimingCommand } from './commands/timing';
 import { registerValidateCommand } from './commands/validate';
 import { registerVmidCommands } from './commands/vmid';
-
-Logger.setGlobalOptions({ enabled: false });
 
 const cli = new Command();
 

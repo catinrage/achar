@@ -8,7 +8,7 @@ import {
   wrapError,
 } from './errors';
 import { Event, type EventListener, type EventListenerMetadata } from './event';
-import { createLogger, LogLevel } from './logger';
+import { createLogger, type LogLevel } from './logger';
 import type { EventData } from './parser';
 import { assert, InputValidators } from './validation';
 
@@ -125,7 +125,7 @@ export class Program {
     maxErrors: 50,
     validateEvents: true,
     logProgress: true,
-    logLevel: LogLevel.INFO,
+    // No logLevel; see MachineStateOptions for why.
   };
 
   /**
@@ -641,6 +641,9 @@ export class Program {
    */
   public setExecutionOptions(options: Partial<ProgramExecutionOptions>): void {
     this._executionOptions = { ...this._executionOptions, ...options };
-    this._logger.setLevel(this._executionOptions.logLevel || LogLevel.INFO);
+    // Only when the caller named one; see ParseOptions.logLevel.
+    if (this._executionOptions.logLevel !== undefined) {
+      this._logger.setLevel(this._executionOptions.logLevel);
+    }
   }
 }

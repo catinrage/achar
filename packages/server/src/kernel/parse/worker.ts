@@ -53,9 +53,9 @@ import type {
  * the worker rather than the server.
  */
 
-// The parser emits hundreds of "Unknown event type for validation" warnings
-// per trace. Workers inherit none of the host's configuration, so this has to
-// be set here as well as in the server.
+// Workers inherit none of the host's configuration, so the server's quiet
+// default has to be repeated here; see `configureLogging` for why a server
+// keeps stderr to itself.
 Logger.setGlobalOptions({ enabled: false });
 
 declare const self: Worker;

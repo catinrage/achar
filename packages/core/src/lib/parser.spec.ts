@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { EVENT_NAMES, isKnownEventName } from '../types';
+import { Logger, LogLevel } from './logger';
 import { type EventData, Parser } from './parser';
 
 describe('Parser', () => {
@@ -416,5 +418,129 @@ job_name : 'Rough'
       expect(result[0].after).toBe(1);
       expect(result[0].last).toBe('two');
     });
+  });
+});
+
+describe('unmodelled event reporting', () => {
+  /**
+   * Captures what the parser writes to stderr.
+   *
+   * The parser builds its own logger internally, so there is nothing to inject;
+   * the output stream is the seam. Logging is off under NODE_ENV=test, so the
+   * capture turns it on for the duration and restores both afterwards.
+   */
+  function captureParserLogs(trace: string): string[] {
+    const lines: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const originalOptions = { ...Logger.globalOptions };
+
+    Logger.setGlobalOptions({ enabled: true, level: LogLevel.WARN });
+    process.stderr.write = ((chunk: string) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      new Parser(trace).parse();
+    } finally {
+      process.stderr.write = originalWrite;
+      Logger.setGlobalOptions(originalOptions);
+    }
+
+    return lines.filter((line) => line.includes('Unknown event type'));
+  }
+
+  it('says nothing about a modelled event that needs no special validation', () => {
+    // StartOfJob has no case in the validation switch, which used to be
+    // reported as "unknown" — roughly 98% of a real trace's events.
+    const warnings = captureParserLogs(
+      "(1)@start_of_job ==> job_name:'a'\n(1)@end_of_job ==> \n",
+    );
+
+    expect(warnings).toEqual([]);
+  });
+
+  it('reports an unmodelled top-level event once, not once per occurrence', () => {
+    const warnings = captureParserLogs(
+      '(1)@not_a_real_event ==> x:1\n'.repeat(50),
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('NotARealEvent');
+  });
+
+  it('says nothing about an unmodelled GPP-internal callback', () => {
+    // Depth above 1 is a `@usr_*` callback the post ignores by design. Every
+    // fixture carries 36-37 distinct ones and zero unmodelled top-level
+    // events, so warning on these fires on every healthy trace.
+    const warnings = captureParserLogs('(2)@usr_coolant_output ==> x:1\n');
+
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe('EVENT_NAMES', () => {
+  it('mirrors every key of EventsType', () => {
+    // The type annotation is the real guarantee — dropping a name fails the
+    // build. This pins the runtime shape so the value cannot drift into
+    // something truthy-but-wrong.
+    const names = Object.keys(EVENT_NAMES);
+
+    expect(names.length).toBeGreaterThan(30);
+    expect(new Set(names).size).toBe(names.length);
+    expect(Object.values(EVENT_NAMES).every((value) => value === true)).toBe(
+      true,
+    );
+  });
+
+  it('recognises a parsed event name and rejects an invented one', () => {
+    expect(isKnownEventName('StartOfJob')).toBe(true);
+    expect(isKnownEventName('UsrCoolantOutput')).toBe(false);
+  });
+});
+
+describe('emitted G-code lines', () => {
+  // A trace interleaves the legacy post's own output with event parameters.
+  // Only `==>` and `..>` lines carry parameters; a bare `>` is emitted G-code.
+  const trace = [
+    "(1)@start_of_job    ==> job_name:'D-drill4' safety:1.000",
+    '                    ..> job_clearance_plane:160.000',
+    '                      > N30 ; Date \t\t: JUL-12-2026-6:08:16PM',
+    '                      > N202250 MSG("D-drill4 , Tool : BN1.5Z2D6L50")',
+    '   beforecodes        > N10 ; COMPENSATION-WEAR',
+  ].join('\n');
+
+  it('keeps parameters from the declaration and its continuation lines', () => {
+    const [event] = new Parser(trace).parse();
+
+    expect(event.job_name).toBe('D-drill4');
+    expect(event.safety).toBe(1);
+    expect(event.job_clearance_plane).toBe(160);
+  });
+
+  it('takes no key-value pairs from emitted output', () => {
+    const [event] = new Parser(trace).parse();
+
+    // '6:08:16PM' in a date comment used to parse as key '6', raising a
+    // ParseError on every trace; 'Tool : BN1.5Z2D6L50' in an MSG comment used
+    // to attach a phantom `Tool` property to the open StartOfJob.
+    expect(event['6']).toBeUndefined();
+    expect(event.Tool).toBeUndefined();
+    expect(Object.keys(event).filter((key) => /^\d+$/.test(key))).toEqual([]);
+  });
+
+  it('still reads cycle arguments out of emitted output', () => {
+    // The retroactive `cycle_*_precise` write is a deliberate read of the
+    // emitted G-code, and has to survive the key-value exclusion.
+    const [drill] = new Parser(
+      [
+        '(1)@drill           ==> drill_depth:1.400',
+        '                      > N202440 CYCLE81(160,140,1,139.6,,0,0,1,12)',
+      ].join('\n'),
+    ).parse();
+
+    expect(drill.cycle_clearance_z_precise).toBe(160);
+    expect(drill.cycle_upper_z_precise).toBe(140);
+    expect(drill.cycle_lower_z_precise).toBe(139.6);
   });
 });

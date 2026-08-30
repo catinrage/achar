@@ -1,12 +1,13 @@
 import { DirectionEnum, PlaneEnum, StateEnum } from '../common/enums';
 import type { EventsType } from '../types';
+import { isKnownEventName } from '../types';
 import {
   createErrorContext,
   ErrorCollector,
   ParseError,
   wrapError,
 } from './errors';
-import { createLogger, LogLevel, measurePerformance } from './logger';
+import { createLogger, type LogLevel, measurePerformance } from './logger';
 import { assert, InputValidators, Validator } from './validation';
 
 /**
@@ -79,6 +80,36 @@ function toPascalCase(str: string): string {
     .join('');
 }
 
+/**
+ * Whether a trace line carries G-code the legacy post emitted, rather than
+ * event parameters.
+ *
+ * A trace interleaves three line shapes, told apart by what precedes the
+ * first `>`:
+ *
+ * ```text
+ * (1)@start_of_job    ==> job_name:'F-contour2'   parameters
+ *                     ..> safety:1.000            parameters, continued
+ *                       > N30 ; Date : JUL-12-2026-6:08:16PM   emitted G-code
+ * ```
+ *
+ * Only the first two are `key:value` bearing. Scanning the third for pairs
+ * finds whatever punctuation happens to look like one — a timestamp in a date
+ * comment parses as `key '6'`, value `'08:16PM'` — which raised a `ParseError`
+ * on every trace and, worse, could attach a junk property to whichever event
+ * was open.
+ *
+ * Emitted lines are still read for `CYCLE...(...)` arguments, which is a
+ * deliberate lookup done before this test.
+ */
+function isEmittedOutputLine(line: string): boolean {
+  const marker = line.indexOf('>');
+  if (marker < 0) return false;
+  // charCodeAt(-1) is NaN, so a line starting with `>` reads as emitted.
+  const preceding = line.charCodeAt(marker - 1);
+  return preceding !== 0x2e /* . */ && preceding !== 0x3d /* = */;
+}
+
 /** Counters a streaming parse accumulates for `ParseResult.statistics`. */
 interface ParseStatisticsAccumulator {
   totalLines: number;
@@ -108,9 +139,13 @@ export interface ParseOptions {
    */
   maxErrors?: number;
   /**
-   * Log level for parsing operations
+   * Log level for parsing operations.
+   *
+   * Absent means "whatever the process is configured for". A component that
+   * pins its own level silently overrides the global default, which is how a
+   * `warn` default still produced `info` output from every parse.
    */
-  logLevel: LogLevel;
+  logLevel?: LogLevel;
 }
 
 /**
@@ -176,6 +211,14 @@ export class Parser {
   private _errorCollector = new ErrorCollector();
 
   /**
+   * @private
+   * @property _warnedUnknownEvents
+   * @description Event names already reported as unmodelled by this parser,
+   * so each is warned about once rather than once per occurrence.
+   */
+  private readonly _warnedUnknownEvents = new Set<string>();
+
+  /**
    * @constructor
    * @param {string} input - The raw string data to be parsed.
    * @param {ParseOptions} options - Parsing options
@@ -185,11 +228,12 @@ export class Parser {
       continueOnError: true,
       validateParsedData: true,
       maxErrors: 100,
-      logLevel: LogLevel.INFO,
       ...options,
     };
 
-    this._logger.setLevel(this._options.logLevel);
+    if (this._options.logLevel !== undefined) {
+      this._logger.setLevel(this._options.logLevel);
+    }
 
     try {
       // Validate input
@@ -419,15 +463,39 @@ export class Parser {
           break;
 
         default:
-          // For unknown event types, just log a warning
-          this._logger.warn(
-            `Unknown event type for validation: ${event._eventName}`,
-            {
-              eventName: event._eventName,
-              lineNumber,
-            },
-            '_validateEventTypeSpecificData',
-          );
+          // Reaching `default` means only that this event has no *extra*
+          // validation beyond the generic checks — which is true of most of
+          // them. Only a name this build has never heard of is worth a
+          // warning; treating the two as the same thing warned on ~98% of a
+          // real trace's events, and that noise is why every entry point
+          // used to switch logging off.
+          if (
+            !isKnownEventName(event._eventName) &&
+            (event._depth === undefined || event._depth <= 1) &&
+            !this._warnedUnknownEvents.has(event._eventName)
+          ) {
+            // Two narrowings, both needed for this to stay a signal:
+            //
+            // Depth — an unmodelled name below level 1 is a GPP-internal
+            // callback (`@usr_*`), which Achar ignores by design. All eight
+            // fixtures carry 36-37 of those and *zero* unmodelled top-level
+            // events, so without the depth test this fires on every healthy
+            // trace. Same convention as `lintUnhandledEvents`, which owns the
+            // per-post version of this question.
+            //
+            // Once per name — "this trace has an event we do not model" is a
+            // fact about the trace, and one occurrence repeats tens of
+            // thousands of times.
+            this._warnedUnknownEvents.add(event._eventName);
+            this._logger.warn(
+              `Unknown event type for validation: ${event._eventName}`,
+              {
+                eventName: event._eventName,
+                lineNumber,
+              },
+              '_validateEventTypeSpecificData',
+            );
+          }
       }
     } catch (error) {
       const parseError = new ParseError(
@@ -714,7 +782,7 @@ export class Parser {
         }
 
         // Parse key-value pairs
-        if (currentEvent) {
+        if (currentEvent && !isEmittedOutputLine(line)) {
           const event = currentEvent;
           const keyValueMatch = line.match(keyValuePattern);
 

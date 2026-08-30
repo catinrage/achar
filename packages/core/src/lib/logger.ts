@@ -253,7 +253,11 @@ export class JSONFormatter implements LogFormatter {
 export class Logger {
   static globalOptions: LoggerOptions = {
     enabled: process.env.NODE_ENV !== 'test',
-    level: LogLevel.INFO,
+    // `warn` rather than `info`: a default-on logger has to be quiet on a
+    // healthy run, and `info` narrates every parse and file open. Everything
+    // goes to stderr (see ConsoleOutput), so raising the default cannot
+    // corrupt MCP JSON-RPC or CLI machine output on stdout.
+    level: LogLevel.WARN,
     includeTimestamp: true,
     includeStackTrace: true,
     maxLogEntries: 1000,
@@ -476,14 +480,15 @@ export class Logger {
  * @function createLogger
  * @description Factory function to create a logger with common configurations
  */
-export function createLogger(
-  component?: string,
-  level: LogLevel = LogLevel.INFO,
-): Logger {
+export function createLogger(component?: string, level?: LogLevel): Logger {
   const memoryOutput = new MemoryOutput();
 
   return new Logger({
-    level,
+    // Omitted rather than defaulted, because `Logger` builds its options as
+    // `{ ...globalOptions, ...passed }` — passing a level here would win over
+    // `setGlobalOptions` for every component in the process, which is why the
+    // global default had no effect on anything built through this factory.
+    ...(level === undefined ? {} : { level }),
     component,
     includeTimestamp: true,
     includeStackTrace: true,

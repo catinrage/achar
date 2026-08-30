@@ -16,7 +16,7 @@ import {
   ValidationError,
   wrapError,
 } from './errors';
-import { createLogger, LogLevel } from './logger';
+import { createLogger, type LogLevel } from './logger';
 import { assert } from './validation';
 
 interface MachinePropertyTypes {
@@ -189,7 +189,9 @@ export class Machine {
     validateTransitions: true,
     validateBounds: true,
     logStateChanges: true,
-    logLevel: LogLevel.INFO,
+    // No logLevel: absent means "use whatever the process is configured
+    // for". Naming one here would override `setGlobalOptions` for every
+    // machine, which is what kept a `warn` default from taking effect.
   };
 
   /**
@@ -211,7 +213,10 @@ export class Machine {
       );
 
       this._stateOptions = { ...this._stateOptions, ...options };
-      this._logger.setLevel(this._stateOptions.logLevel || LogLevel.INFO);
+      // Only when the caller named one; see ParseOptions.logLevel.
+      if (this._stateOptions.logLevel !== undefined) {
+        this._logger.setLevel(this._stateOptions.logLevel);
+      }
 
       this._logger.info(
         'Machine initialized',
