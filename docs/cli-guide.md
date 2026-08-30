@@ -380,6 +380,12 @@ Supported fields:
 | `Siemens_828D_Milling_4A` | `Siemens_828D_Milling_4A.gpp` output. The default. |
 | `Siemens_828D_Milling_3A` | The 3-axis post's output. Its file is named `PoyaKar_1160L_3A.gpp`, after the machine it was first deployed on. |
 
+A profile's dialect is checked against the VMID its trace declares. Each
+dialect advertises the VMIDs it is known to serve — the 3-axis one serves
+`PoyaKar_1160L_3A`, since that post's traces name the machine rather than the
+post — and naming a dialect that belongs to a different machine is an error.
+A VMID no dialect claims raises nothing, so a new machine is not a mismatch.
+
 A dialect is named for the **post** whose output it reproduces, not for a
 machine. The two were previously called `siemens-828d` and `poyakar-1160l`,
 which read as machine names and — worse, in the first case — collided with the

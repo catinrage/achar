@@ -162,6 +162,8 @@ export interface MachineProfilePostBinding {
   id: string;
   controller?: string;
   dialects?: readonly string[];
+  /** VMIDs each dialect is known to serve, keyed by dialect id. */
+  dialectVmids?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface MachineProfileValidationOptions {
@@ -214,6 +216,7 @@ export function validateMachineProfileCompatibility(
 
   issues.push(...spindleSpeedIssues(profile, events));
   issues.push(...postBindingIssues(profile, post));
+  issues.push(...dialectVmidIssues(profile, events, post));
   issues.push(...homeReachIssues(profile, vmid));
 
   return issues;
@@ -477,6 +480,57 @@ function mergeSection<T extends object>(
     }
   }
   return merged;
+}
+
+/**
+ * Flags a profile whose dialect belongs to a different machine than the one
+ * the trace was posted for.
+ *
+ * A dialect is an output convention and a VMID is a machine, so the two are
+ * not the same fact — but a shop posts a given machine through one GPP, and
+ * the post advertises which pairings it has seen. Getting this wrong produces
+ * a file that is subtly wrong everywhere rather than one that fails: a job
+ * posted under the wrong dialect came back missing its start-position blocks
+ * with every block number shifted, and nothing objected.
+ *
+ * Silent unless the trace's VMID is one the post positively assigns to
+ * another dialect. An unrecognised VMID is a machine nobody has recorded yet,
+ * not a mismatch.
+ */
+function dialectVmidIssues(
+  profile: MachineProfile,
+  events: EventData[],
+  post: MachineProfilePostBinding | undefined,
+): VmidValidationIssue[] {
+  const table = post?.dialectVmids;
+  const dialect = profile.dialect;
+  if (!table || dialect === undefined) return [];
+
+  const declared = events.find(
+    (event) => event._eventName === 'StartOfFile',
+  )?.VMID_file;
+  if (typeof declared !== 'string' || declared.length === 0) return [];
+
+  const normalized = normalizeVmidName(declared);
+  const owner = Object.entries(table).find(([, vmids]) =>
+    vmids.some((name) => normalizeVmidName(name) === normalized),
+  )?.[0];
+
+  if (owner === undefined || owner === dialect) return [];
+
+  return [
+    {
+      severity: 'error',
+      event: 'StartOfFile',
+      key: 'VMID_file',
+      message: `Machine profile ${profile.id} names dialect '${dialect}', but the trace was posted for VMID ${declared}, which belongs to dialect '${owner}'.`,
+    },
+  ];
+}
+
+/** Drops a file extension and case, matching how `vmid.ts` compares names. */
+function normalizeVmidName(value: string): string {
+  return value.replace(/\.[^.]+$/, '').toLowerCase();
 }
 
 function traceAxisCount(events: EventData[]): number | undefined {

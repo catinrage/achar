@@ -112,6 +112,32 @@ export const SIEMENS_828D_DIALECTS: Readonly<
 export const DEFAULT_SIEMENS_828D_DIALECT_ID = 'Siemens_828D_Milling_4A';
 
 /**
+ * VMIDs each dialect is known to serve, by the name a trace declares in
+ * `StartOfFile.VMID_file`.
+ *
+ * A dialect and a VMID answer different questions — which post wrote the file,
+ * and which machine it runs on — but the pairing is not free: a shop posts a
+ * given machine through one GPP. When a trace names a VMID this table assigns
+ * to a *different* dialect, the machine profile is pointed at the wrong output
+ * convention, and the result is a plausible file that is wrong throughout.
+ *
+ * Note the 3-axis entry is not its own dialect id: that post's traces declare
+ * `PoyaKar_1160L_3A`, the machine it runs on. The two namespaces genuinely
+ * differ, which is why this is a table rather than a string comparison.
+ *
+ * Deliberately a list of what is *known*, not a rule. A VMID absent from it
+ * raises nothing — a shop's next machine is not a mismatch — so the check only
+ * ever fires on a positive contradiction. Add a name here when a fixture or a
+ * real posting proves the pairing.
+ */
+export const SIEMENS_828D_DIALECT_VMIDS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  Siemens_828D_Milling_4A: ['Siemens_828D_Milling_4A'],
+  Siemens_828D_Milling_3A: ['PoyaKar_1160L_3A'],
+};
+
+/**
  * Dialect ids that were renamed, and what they are now.
  *
  * The old pair — `siemens-828d` and `poyakar-1160l` — named machines rather

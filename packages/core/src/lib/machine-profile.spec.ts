@@ -10,6 +10,7 @@ import {
   resolveMachineProfileChain,
   validateMachineProfileCompatibility,
 } from './machine-profile';
+import type { EventData } from './parser';
 
 describe('machine profiles', () => {
   it('parses machine properties and the named dialect', () => {
@@ -437,5 +438,81 @@ describe('loadMachineProfile', () => {
     await expect(
       loadMachineProfile(path.join(root, 'cells/a.machine.json')),
     ).rejects.toThrow('circular extends chain');
+  });
+});
+
+/**
+ * Regression cover for a real incident: a B0577 job posted through the web UI
+ * came back missing every job-start position block, because the machine it ran
+ * against named the 3-axis dialect. Its trace declares the 4-axis VMID, and
+ * nothing related the two.
+ */
+describe('dialect against the VMID a trace declares', () => {
+  const POST = {
+    id: 'siemens-828d',
+    dialects: ['Siemens_828D_Milling_4A', 'Siemens_828D_Milling_3A'],
+    dialectVmids: {
+      Siemens_828D_Milling_4A: ['Siemens_828D_Milling_4A'],
+      // Not the dialect's own id: this post's traces name the machine.
+      Siemens_828D_Milling_3A: ['PoyaKar_1160L_3A'],
+    },
+  };
+
+  const traceFor = (vmid: string): EventData[] => [
+    { _eventName: 'StartOfFile', _index: 0, VMID_file: vmid },
+  ];
+
+  const check = (dialect: string, vmid: string) =>
+    validateMachineProfileCompatibility(
+      parseMachineProfile({ id: 'm1', dialect }),
+      traceFor(vmid),
+      { post: POST },
+    ).filter((issue) => issue.key === 'VMID_file');
+
+  it('refuses a dialect that belongs to another machine', () => {
+    const issues = check('Siemens_828D_Milling_3A', 'Siemens_828D_Milling_4A');
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe('error');
+    expect(issues[0]?.message).toContain('belongs to dialect');
+  });
+
+  it('accepts each dialect against the VMID it serves', () => {
+    expect(check('Siemens_828D_Milling_4A', 'Siemens_828D_Milling_4A')).toEqual(
+      [],
+    );
+    expect(check('Siemens_828D_Milling_3A', 'PoyaKar_1160L_3A')).toEqual([]);
+  });
+
+  it('ignores the file extension a VMID name may carry', () => {
+    expect(
+      check('Siemens_828D_Milling_4A', 'Siemens_828D_Milling_4A.vmid'),
+    ).toEqual([]);
+  });
+
+  it('says nothing about a VMID no dialect claims', () => {
+    // A shop's next machine is not a mismatch. The check only ever fires on a
+    // positive contradiction, so an unrecorded VMID has to stay silent.
+    expect(check('Siemens_828D_Milling_4A', 'Some_New_Machine')).toEqual([]);
+  });
+
+  it('says nothing when the profile names no dialect', () => {
+    expect(
+      validateMachineProfileCompatibility(
+        parseMachineProfile({ id: 'm1' }),
+        traceFor('PoyaKar_1160L_3A'),
+        { post: POST },
+      ).filter((issue) => issue.key === 'VMID_file'),
+    ).toEqual([]);
+  });
+
+  it('says nothing when the post advertises no pairings', () => {
+    expect(
+      validateMachineProfileCompatibility(
+        parseMachineProfile({ id: 'm1', dialect: 'Siemens_828D_Milling_3A' }),
+        traceFor('Siemens_828D_Milling_4A'),
+        { post: { id: 'siemens-828d' } },
+      ).filter((issue) => issue.key === 'VMID_file'),
+    ).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import {
   listSiemens828dDialectIds,
   registerSiemens828dPost,
+  SIEMENS_828D_DIALECT_VMIDS,
 } from '../posts/siemens-828d';
 import type { RegisterPost } from './post-loader';
 
@@ -24,6 +25,14 @@ export interface BuiltInPost {
    * time. The first entry is the default.
    */
   dialects: string[];
+  /**
+   * VMIDs each dialect is known to serve, keyed by dialect id.
+   *
+   * Lets a profile's dialect be checked against the VMID a trace declares,
+   * without `machine-profile.ts` having to know what any post's dialects mean.
+   * Absent for a post that has not established the pairing.
+   */
+  dialectVmids?: Readonly<Record<string, readonly string[]>>;
   registerPost: RegisterPost;
 }
 
@@ -34,6 +43,7 @@ export const builtinPosts: BuiltInPost[] = [
     aliases: ['default'],
     controller: 'siemens-828d',
     dialects: listSiemens828dDialectIds(),
+    dialectVmids: SIEMENS_828D_DIALECT_VMIDS,
     registerPost: (program, context) =>
       registerSiemens828dPost(program, {
         machineProfile: context?.machineProfile,
