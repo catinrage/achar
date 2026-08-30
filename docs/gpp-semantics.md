@@ -42,7 +42,25 @@ trace, for two different reasons with opposite file semantics:
 - **Re-posts / translate patterns** — `used_in_transform_4x: 0`, usually
   `used_in_transform_translate: 1`. SolidCAM re-emits the whole job.
 
-Rule 4 covers what legacy GPP does with the output file in each case.
+The distinction matters for the A word (rule 5) but **not** for what
+happens to the output file: every repeat rewrites it (rule 4).
+
+### File directives
+
+A trace carries the legacy post's own file operations, as output lines:
+
+```
+> !! delete file = D_drill4.SPF !!
+> !! open file = D_drill4.SPF !!
+> !! close file = D_drill4.SPF !!
+```
+
+A `delete` immediately before an `open` means that open starts from empty.
+These are the one part of a trace's `>` lines achar reads: they describe what
+legacy did with *files*, not what it emitted, so using them checks structure
+without handing the post its own answer. `readTraceFileLifecycle` in
+`lib/post-test.ts` parses them and `achar test` compares them against the
+post's own opens — see rule 4.
 
 In both cases the `job_time` / `job_cutting_time` / `job_linking_time` stamps
 carry the total for the whole pattern, repeated verbatim on every instance —
@@ -110,49 +128,101 @@ current position numerically but is flagged `T` (rounding differences —
 axis guard has the shape
 `changed === true || (changed !== false && !sameNumber(...))`.
 The `apos` guard follows the same shape (previously numeric-only).
+`runtime.ts` exposes it as `changedOrDifferent`; use that rather than a bare
+`sameNumber` in any new position guard. `drilling.ts` `DrillPoint` was the
+last site still comparing numerically, which showed up as a stray `Y0`
+against a `Y0.00001` approach — flagged `F`, so legacy printed nothing.
 
-### Rule 4 — File reopen: rotary patterns append, everything else replaces (N-numbers stay consumed)
+### Rule 4 — A repeated job rewrites its subprogram from empty
 
-**Statement.** When a job with the same file name starts again:
+**Statement.** When a job with the same file name starts again — rotary
+pattern, translate pattern or plain re-post — the new instance **replaces**
+the file's content. Only the last write survives on disk. The discarded
+writes still consume their N-numbers: numbering is a single global monotonic
+counter, so the final file starts at whatever N the *last* write began at,
+and there is a hole in the global sequence where the discarded content was.
 
-- `used_in_transform_4x: 1` → the new instance **appends** to the same
-  SPF; the file accumulates one section per rotary position.
-- otherwise (re-posts, translate patterns) → the new instance **replaces**
-  the file's content. Crucially, the discarded first write's N-numbers
-  remain consumed: numbering is a single global monotonic counter, so the
-  final file starts at whatever N the *last* write began at, and there is
-  a hole in the global N-sequence where the discarded content used to be.
+`used_in_transform_4x` does not enter into it. The GPP condition is on
+`used_in_transform_translate or used_in_transform_4x`, which is every repeat
+this project has seen.
+
+**Why it matters more than a normal parity rule.** Appending instead
+produces a file holding one body per repeat, each ending in `RET`. `EXTCALL`
+returns at the first `RET`, so all N calls run body one and every rotary
+position is cut at the first angle. The file looks plausible and the machine
+scraps the part.
 
 **Evidence.**
-- Replace: `fixtures/PROJECT_434.../reference/HSS_PC_Lin_faces2.SPF`
-  starts at `N74680`; N1960–N74670 exist in **no** reference file — they
-  were burned by the discarded first write. The MPF still EXTCALLs the
-  file twice.
-- Append: `fixtures/PROJECT_2541021.../reference/iRough_faces.SPF` and
-  `F_contour6.SPF` contain every pattern instance back-to-back (2,618 and
-  2,220 more lines than a single instance).
+- Replace: `fixtures/PROJECT_434.../reference/HSS_PC_Lin_faces2.SPF` starts
+  at `N74680`; N1960–N74670 exist in **no** reference file — burned by the
+  discarded first write. The MPF still EXTCALLs the file twice.
+- Rotary: `PROJECT_B0577` `D_drill4.SPF` is one 17-line body called 8 times,
+  written 8 times (trace `!! delete file !!` before each open), numbered from
+  the eighth write's position in the global sequence.
 
-**Implementation.** `post.ts`, StartOfJob:
-`fileMode = jobFiles.has(name) && used_in_transform_4x ? 'append' : 'replace'`.
-The Builder's global line counter provides the burned-numbers behavior
-for free.
+**GPP history — read this before trusting an old fixture.** Until 2026-07 the
+condition was `used_in_transform_translate` alone, so a rotary pattern
+appended. `PROJECT_2541021`'s original reference was posted that way:
+`iRough_faces.SPF` held 8 bodies with 8 `RET`s and the MPF called it 8 times,
+i.e. legacy emitted a program that cut all 8 positions at A22. The fixture
+was re-posted 2026-08-30 with the corrected GPP. If a fixture reference ever
+shows stacked bodies again, it was cut with the old post — re-post it rather
+than teaching achar to reproduce it.
+
+**Implementation.** `job-lifecycle.ts` `openJobFile`: unconditional
+`OpenFile(jobFile, 'SPF', 'replace')`. The Builder's global line counter
+provides the burned-numbers behaviour for free. `achar test` additionally
+checks the post's opens against the trace's file directives and reports a
+mismatch ahead of the line diff, because this failure cascades into every
+downstream N-number and the diff alone points nowhere useful.
 
 ### Rule 5 — 4x-transform jobs keep the A-word out of the subprogram
 
-**Statement.** For `used_in_transform_4x` jobs, the job-start block in the
-SPF omits the A-word; the rotary position is emitted in the **main file**
-(before the EXTCALL, at EndOfJob) and per-hole by drill-cycle blocks
-(`G0 A..`). Non-transform jobs with a rotary axis emit A in the SPF
-job-start block (and in approach repeats, per rule 1).
+**Statement.** For `used_in_transform_4x` jobs the rotary position belongs to
+the **caller**: the main file emits `A<anext>` immediately before each
+`EXTCALL`, and the subprogram body carries no A word at all — job-start
+block, approach, or drill point. It has to be absent, because one body is
+shared by every angle (rule 4).
 
-**Evidence.** Compare `4X_PC_faces1.SPF` (A only via main-file/`G0 A..`
-lines) with `Debur_target.SPF` (`X183 Y0 A61.915` inside the SPF) in
-`PROJECT_434`.
+That caller-side A is emitted **unconditionally**. Legacy writes
+`{nb, 'A'anext}` with no modal check, so the word is restated before every
+call even when the axis is already there. Guarding it on the last emitted A
+drops it exactly when the body has already moved the axis, which is every
+instance of a rotary drill pattern.
 
-**Implementation.** `post.ts`: StartOfJob `emitStartPosition` block
-(`!params.used_in_transform_4x` guard on the A word), EndOfJob A-word
-emission before `callSubprogram`, and the `!used_in_transform_4x` guard
-on the A word in Move5x branch 1.
+Non-transform jobs with a rotary axis do emit A inside the SPF (job-start
+block, and approach repeats per rule 1).
+
+**Evidence.** GPP `@end_of_job` (~line 1592):
+
+```gpp
+if used_in_transform_4x
+  {nb, 'A'anext}
+endif
+{nb, 'EXTCALL "'parsed_name'.SPF"'}
+```
+
+`PROJECT_B0577` main file: `A0 / EXTCALL / A-45 / EXTCALL / …` around a
+`D_drill4.SPF` whose only motion line is a bare `G0`. Contrast
+`Debur_target.SPF` in `PROJECT_434` (`X183 Y0 A61.915` inside the SPF), a
+job with a rotary axis and no 4x transform.
+
+Note `@fourth_axis` prints nothing for these jobs (`if used_in_transform_4x
+eq 0`) while SolidCAM's own `apos` still advances — which is why legacy's
+body sees "A unchanged" and prints a bare `G0`.
+
+**Coverage caution.** Only `PROJECT_2541021` and `PROJECT_B0577` contain any
+`used_in_transform_4x: 1` job; the other six fixtures have zero. Every 4x
+branch in the post rests on those two. An earlier version of this rule cited
+`4X_PC_faces1.SPF` in `PROJECT_434` as evidence — that is a
+`job_type: '4x_parallel_cuts'` job, which is unrelated to the
+`used_in_transform_4x` transform flag. Do not confuse the two.
+
+**Implementation.** `job-lifecycle.ts`: `emitStartPosition`
+(`!used_in_transform_4x` guard on the A word) and `restoreJobRotaryPosition`
+(emits before `callSubprogram`, with no modal guard). `drilling.ts`
+`DrillPoint` carries the same `!used_in_transform_4x` guard, as does Move5x
+branch 1 in `post.ts`.
 
 ### Rule 6 — A same-tool "tool change" repeats the modal spindle speed
 
@@ -290,6 +360,79 @@ exactly.
 on. This rule is the clearest case for the dialect split: the statement above
 is literally "two GPPs, two rules", with no machine involved.
 
+### Rule 12 — Coolant is modal for the whole program, cleared only by a tool-change block
+
+**Statement.** `M8` is emitted when the coolant state *changes*, and the
+state is program-global — not per job, not per file. It is cleared in exactly
+one place during a program: the modal reset inside an emitted tool-change
+block. That reset is **silent** — it assigns the variable without producing
+`M9` — which is why a program has roughly one `M8` per tool change and only a
+single `M9`, at the end.
+
+Two consequences that are easy to get wrong:
+
+- A run of jobs sharing one tool emits `M8` once, on the first of them.
+- What clears the state is *writing the tool-change block*, not the trace's
+  `ChangeTool` event. A translate pattern re-emits one tool change for every
+  instance off a single event, and each of those blocks resets modality.
+
+**Evidence.** GPP `@usr_coolant_output` (~line 1290) gates every coolant
+M-code on `change(iCoolantM<n>)`. `@usr_ct_init_gmstates` (~line 1134) sets
+`iCoolantM1 = iCoolantM1OFF` in both branches without calling
+`@usr_coolant_output`. Note `bCoolofftc = false` in this GPP, so the
+*explicit* between-tools coolant-off at ~line 871 never runs — the modal
+reset is doing all the work. Reference counts: `M8` 15 / `M9` 1 in
+`PROJECT_B0577` against 14 tool changes; `M8` 16 / `M9` 1 in `PROJECT_434`.
+`D_drill3.SPF` in B0577 has no `M8` (same `DRILL2.5C` as the preceding
+`D_drill.SPF`, which does); `D_drill1_1.SPF` in 434 does, because its
+surviving write re-emits the tool change.
+
+**Not a dialect.** An earlier `retainCoolantAcrossJobs` dialect trait made
+this machine-dependent. It cannot be: all fixtures share one byte-identical
+GPP, and `change()` is unconditional GPP logic. The trait is removed; the key
+stays in `DIALECT_FEATURE_KEYS` so an old profile naming it gets a targeted
+error.
+
+**Implementation.** `drilling.ts` Drill handler gates on `state.coolantActive`
+alone; `job-lifecycle.ts` `emitToolChange` clears it as the block is written.
+
+### Rule 13 — A zero tool-change park coordinate means "unset"
+
+**Statement.** A job's `nTC_XSUPA` / `nTC_YSUPA` carry the tool-change park
+position, and legacy reads a **zero as "not set"**, substituting its own pair
+— X `-465`, Y `140` — before emitting anything. The substitution happens once
+at the top of the tool-change handler, so both the park move and the `iM1`
+operator-prompt block read the resolved values.
+
+This pair is its own constant, distinct from `GPX_XHOME`/`GPX_YHOME`
+(`-465`/`190`, the machine home) and `GPX_XHOMEND`/`GPX_YHOMEND`
+(`260`/`190`, the program-end park). It coincides with home in X only, which
+is exactly what makes reusing home look correct until a job leaves Y at zero.
+
+**Evidence.** GPP `@usr_ct_toolchange` (~line 918):
+
+```gpp
+if nTC_YSUPA eq 0
+  nTC_YSUPA = 140
+endif
+if nTC_XSUPA eq 0
+  nTC_XSUPA = -465.000
+endif
+```
+
+`PROJECT_B0577` has two jobs at `iTC_SUPA_MODE : 3` with
+`nTC_XSUPA : -465, nTC_YSUPA : 0`; the reference emits
+`G0 SUPA X-465 Y140` in `F_contour.SPF` and `F_contour2.SPF`. Only
+`iTC_SUPA_MODE` other than 0 reaches this path, and only 2541021 (Y `50`,
+non-zero) and B0577 have such jobs at all — which is why the missing
+substitution went unseen.
+
+**Implementation.** `machine.ts` `toolChangePark` (a post constant with an
+override hook, not a `MachineProfile` field, because legacy hardcodes it);
+`job-lifecycle.ts` `parkCoordinate` treats `0` and `undefined` alike. Note
+`??` cannot express this — a job that names no park position carries `0`, not
+nothing.
+
 ---
 
 ## Comparison normalizations (what parity ignores)
@@ -338,7 +481,15 @@ actually the Siemens machine, not PoyaKar. Confirmed (2026-07-13): the job
 really was posted on the PoyaKar 3-axis machine, so the wrong files were
 simply swapped for the correct `PoyaKar_1160L_3A.gpp`/`.vmid`/`.machine.json`
 (copied from `PROJECT_567_...`, the other fixture on the same physical
-machine) and the manifest points at its own local copies. **Always
+machine) and the manifest points at its own local copies. The same caution applies to the `.gpp` copy. `PROJECT_B0577` shipped the
+July GPP whose `!! delete file !!` condition contradicts its own trace,
+which sent an investigation down the wrong path until the production copy
+was compared (2026-08-30). The copies in `PROJECT_2541021` and
+`PROJECT_B0577` are now the current post; the other fixtures still carry the
+July one, which is correct — that is what posted them. A fixture's `.gpp` is
+evidence, so it has to be the revision that produced the reference.
+
+**Always
 cross-check a new fixture's trace `VMID_file` against the VMID file
 actually shipped with it** before trusting parity results — a mismatched
 VMID produces validation errors and, more dangerously, silently wrong
@@ -349,9 +500,15 @@ valid-looking G-code.
 
 ## Debugging a parity failure
 
+0. Read the file-lifecycle report if there is one. It prints above the diff
+   table and names a structural mismatch against the trace's own
+   `!! open / delete file !!` directives — a cause, where everything below it
+   is cascade.
 1. `bun run achar test <fixture>` — get the failing file list. Files
    `different` at line 1 with `(numbering)` are cascade, not cause; find
-   the first file with a real content diff.
+   the first file with a real content diff. A quick way to separate the two:
+   compare with N-numbers, `\r` and trailing spaces stripped, and only the
+   files that still differ have a real content diff.
 2. `bun run achar explain <fixture> --file <name>.SPF` — maps every
    emitted block to the trace event and handler that produced it.
 3. Dump the suspect event's parsed fields (values + `__changed` flags)
@@ -365,3 +522,10 @@ valid-looking G-code.
 Rules 1–4 and 6 above were found with exactly this loop (session of 2026-07-11,
 commit `122be8e`), including two false starts that broke passing fixtures
 — which is why step 4 says all fixtures, not just the failing one.
+
+Rules 12–13 and the rewrites of 4 and 5 came from `PROJECT_B0577`
+(2026-08-30). That round added step 0 and one more habit worth keeping: when
+a rule has exactly one witness, **read the GPP source before generalising
+from it**. Rule 4 had been inferred from a single fixture and stated the
+opposite of what the post's own `@start_of_job` says; the fixture it was
+inferred from turned out to be legacy output from a since-fixed GPP bug.

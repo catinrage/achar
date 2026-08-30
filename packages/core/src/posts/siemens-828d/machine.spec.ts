@@ -13,6 +13,7 @@ describe('siemens 828d machine settings', () => {
     expect(resolveSiemens828dMachine(undefined)).toEqual({
       home: { x: -465, y: 190, z: 0 },
       returnHome: { x: 260, y: 190, z: 0 },
+      toolChangePark: { x: -465, y: 140 },
       measureTools: true,
       dwellAfterCoolantOn: false,
       dwellAfterCoolantOff: false,

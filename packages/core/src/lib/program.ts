@@ -1,5 +1,5 @@
 import type { DeepPartial, EventsType } from '../types';
-import { Builder } from './builder';
+import { Builder, type BuilderFileOperation } from './builder';
 import {
   ConfigurationError,
   createErrorContext,
@@ -588,6 +588,16 @@ export class Program {
       this._logger.logError(wrappedError, 'generate');
       throw wrappedError;
     }
+  }
+
+  /**
+   * @method fileOperations
+   * @description Every file this program opened, in order, with the mode.
+   *
+   * Empty before `process`/`generate` has built a builder.
+   */
+  public get fileOperations(): readonly BuilderFileOperation[] {
+    return this._builder?.fileOperations ?? [];
   }
 
   /**

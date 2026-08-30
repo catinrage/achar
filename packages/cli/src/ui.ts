@@ -1,5 +1,13 @@
-import type { CompareResult, VmidValidationIssue } from '@achar/core';
-import { formatCompareResults, formatVmidValidation } from '@achar/core';
+import type {
+  CompareResult,
+  FileLifecycleIssue,
+  VmidValidationIssue,
+} from '@achar/core';
+import {
+  formatCompareResults,
+  formatFileLifecycleIssues,
+  formatVmidValidation,
+} from '@achar/core';
 import chalk from 'chalk';
 import cliSpinners from 'cli-spinners';
 
@@ -95,4 +103,16 @@ export function printVmidValidation(
   const errors = issues.filter((issue) => issue.severity === 'error');
   const color = errors.length > 0 ? chalk.red : chalk.yellow;
   printInfo(color(formatVmidValidation(issues)));
+}
+
+/**
+ * Reports a post whose file open/truncate pattern disagrees with the trace.
+ *
+ * Printed before the line diff because it names a cause: a mismatch here
+ * cascades into every N-number downstream, so the table under it is symptom,
+ * not evidence.
+ */
+export function printFileLifecycleIssues(issues: FileLifecycleIssue[]): void {
+  if (issues.length === 0) return;
+  printInfo(chalk.red(formatFileLifecycleIssues(issues)));
 }

@@ -23,6 +23,7 @@ import { runCommand } from '../runner';
 import {
   printCompareResults,
   printData,
+  printFileLifecycleIssues,
   printInfo,
   printVmidValidation,
 } from '../ui';
@@ -86,7 +87,9 @@ export function registerTestCommand(cli: Command): void {
           const failed =
             result.results.some(
               (compareResult) => compareResult.status !== 'match',
-            ) || vmidExitCode(result.vmidIssues, options) !== 0;
+            ) ||
+            result.fileLifecycleIssues.length > 0 ||
+            vmidExitCode(result.vmidIssues, options) !== 0;
 
           await maybeWriteReport(options, result.results);
 
@@ -100,6 +103,7 @@ export function registerTestCommand(cli: Command): void {
             printData(JSON.stringify({ fixtures: [report], failed }, null, 2));
           } else {
             printVmidValidation(result.vmidIssues, Boolean(input.vmid));
+            printFileLifecycleIssues(result.fileLifecycleIssues);
             printCompareResults(result.results);
           }
 
@@ -168,6 +172,7 @@ async function runAllFixtures(
     } else {
       printData(chalk.cyan(`\n${fixture.name}`));
       printVmidValidation(result.vmidIssues, Boolean(input.vmid));
+      printFileLifecycleIssues(result.fileLifecycleIssues);
       printCompareResults(result.results);
     }
 

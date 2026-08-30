@@ -28,11 +28,6 @@ export interface Siemens828dDialect {
    * Never applies to CYCLE84 — see gpp-semantics rule 8.
    */
   drillApproachZBeforeCoolant: boolean;
-  /**
-   * Treat coolant as still running across a job boundary, suppressing the
-   * repeated coolant-on block that would otherwise open the next job.
-   */
-  retainCoolantAcrossJobs: boolean;
   /** Emit `CANCEL(1..3)` cleanup before `M9` when a job used air coolant. */
   cancelAirCoolantSchedule: boolean;
   /**
@@ -72,7 +67,6 @@ export interface Siemens828dDialect {
  */
 export const SIEMENS_828D_STOCK_DIALECT: Siemens828dDialect = {
   drillApproachZBeforeCoolant: false,
-  retainCoolantAcrossJobs: false,
   cancelAirCoolantSchedule: true,
   lineFeedFromChangeFlag: false,
   trackArcFeedRate: false,
@@ -93,7 +87,6 @@ export const SIEMENS_828D_STOCK_DIALECT: Siemens828dDialect = {
  */
 export const POYAKAR_1160L_DIALECT: Siemens828dDialect = {
   drillApproachZBeforeCoolant: true,
-  retainCoolantAcrossJobs: true,
   cancelAirCoolantSchedule: false,
   lineFeedFromChangeFlag: true,
   trackArcFeedRate: true,

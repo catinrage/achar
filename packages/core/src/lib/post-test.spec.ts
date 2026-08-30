@@ -10,8 +10,10 @@ import type { CompareOptions, CompareResult, GeneratedFile } from './post-test';
 import {
   assertPostMatchesReference,
   compareAgainstReference,
+  compareFileLifecycle,
   compareGeneratedFiles,
   formatCompareResults,
+  readTraceFileLifecycle,
   resolveGeneratedFilePath,
   summarizeCompareResults,
   testPost,
@@ -342,8 +344,16 @@ const parityBaseline: Record<
     missingReference: number;
   }
 > = {
+  // Re-posted 2026-08-30 with the current GPP, which deletes a repeated
+  // subprogram file for 4x patterns as well as translate ones.
   'siemens-828d-2541021-cam-milling': {
     match: 38,
+    different: 0,
+    missingGenerated: 0,
+    missingReference: 0,
+  },
+  'siemens-828d-b0577-cam-milling': {
+    match: 34,
     different: 0,
     missingGenerated: 0,
     missingReference: 0,
@@ -421,4 +431,73 @@ describe('real Siemens fixture parity', () => {
   if (realFixtures.length === 0) {
     it.skip('has no fixture manifests under fixtures/', () => {});
   }
+});
+
+describe('trace file lifecycle', () => {
+  const trace = [
+    "(1)@start_of_job    ==> job_name:'a'",
+    '                      > !! open file = A.SPF !!',
+    '                      > !! close file = A.SPF !!',
+    "(1)@start_of_job    ==> job_name:'b'",
+    '                      > !! delete file = B.SPF !!',
+    '                      > !! open file = B.SPF !!',
+    '                      > !! close file = B.SPF !!',
+    "(1)@start_of_job    ==> job_name:'b'",
+    '                      > !! delete file = B.SPF !!',
+    '                      > !! open file = B.SPF !!',
+    '                      > !! close file = B.SPF !!',
+    '                      > !! open file = Tools.MPF !!',
+    '                      > !! open file = Tools.MPF !!',
+  ].join('\n');
+
+  it('reads a delete-before-open as a truncating open', () => {
+    expect(readTraceFileLifecycle(trace)).toEqual([
+      { file: 'A.SPF', opens: ['append'] },
+      { file: 'B.SPF', opens: ['replace', 'replace'] },
+      { file: 'Tools.MPF', opens: ['append', 'append'] },
+    ]);
+  });
+
+  it('finds nothing in a trace that records no file directives', () => {
+    expect(readTraceFileLifecycle("(1)@start_of_job ==> job_name:'a'")).toEqual(
+      [],
+    );
+    // No directives means no expectation, not a mismatch against every file.
+    expect(
+      compareFileLifecycle([], [{ file: 'B.SPF', mode: 'append' }]),
+    ).toEqual([]);
+  });
+
+  it('reports a post that appends where the trace truncates', () => {
+    const issues = compareFileLifecycle(readTraceFileLifecycle(trace), [
+      { file: 'A.SPF', mode: 'replace' },
+      { file: 'B.SPF', mode: 'replace' },
+      { file: 'B.SPF', mode: 'append' },
+    ]);
+
+    expect(issues).toEqual([
+      {
+        file: 'B.SPF',
+        traceOpens: 2,
+        postOpens: 2,
+        traceTruncates: true,
+        postTruncates: false,
+      },
+    ]);
+  });
+
+  it('ignores open counts on a file no one truncates', () => {
+    // Identical bytes can come from a different number of appends, so
+    // counting opens would fail output the reference already proves correct.
+    expect(
+      compareFileLifecycle(readTraceFileLifecycle(trace), [
+        { file: 'A.SPF', mode: 'append' },
+        { file: 'B.SPF', mode: 'replace' },
+        { file: 'B.SPF', mode: 'replace' },
+        { file: 'Tools.MPF', mode: 'append' },
+        { file: 'Tools.MPF', mode: 'append' },
+        { file: 'Tools.MPF', mode: 'append' },
+      ]),
+    ).toEqual([]);
+  });
 });

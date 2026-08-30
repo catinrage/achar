@@ -21,7 +21,6 @@ export interface SiemensPostContextState {
   /** Resolved machine settings. Always present, always complete. */
   machine: Siemens828dMachineSettings;
   tools: Map<string, SiemensToolDefinition>;
-  jobFiles: Set<string>;
   toolIndex: number;
   currentDrill: EventsType['Drill'] | null;
   emittedToolList: boolean;
@@ -78,7 +77,6 @@ export function createSiemensPostContext(
     dialect,
     machine,
     tools: new Map(),
-    jobFiles: new Set(),
     toolIndex: 0,
     currentDrill: null,
     emittedToolList: false,

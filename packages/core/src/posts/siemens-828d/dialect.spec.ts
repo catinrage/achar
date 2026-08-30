@@ -52,7 +52,6 @@ describe('siemens 828d dialects', () => {
     // no dialect.
     expect(SIEMENS_828D_STOCK_DIALECT).toEqual({
       drillApproachZBeforeCoolant: false,
-      retainCoolantAcrossJobs: false,
       cancelAirCoolantSchedule: true,
       lineFeedFromChangeFlag: false,
       trackArcFeedRate: false,
@@ -68,7 +67,6 @@ describe('siemens 828d dialects', () => {
   it('reproduces the PoyaKar flags the machine profile used to carry', () => {
     expect(POYAKAR_1160L_DIALECT).toEqual({
       drillApproachZBeforeCoolant: true,
-      retainCoolantAcrossJobs: true,
       cancelAirCoolantSchedule: false,
       lineFeedFromChangeFlag: true,
       trackArcFeedRate: true,

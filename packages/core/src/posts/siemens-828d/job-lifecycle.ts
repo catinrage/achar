@@ -15,6 +15,7 @@ interface Position {
 export interface SiemensJobLifecycleSettings {
   home: Position;
   returnHome: Position;
+  toolChangePark: Pick<Position, 'x' | 'y'>;
   cancelAirCoolantSchedule: boolean;
   startPositionRequiresToolChange: boolean;
 }
@@ -24,24 +25,18 @@ interface JobToolChange {
   resolved: EventsType['ChangeTool'] | null;
 }
 
-function openJobFile(
-  builder: Builder,
-  state: SiemensPostContextState,
-  params: EventsType['StartOfJob'],
-): void {
+function openJobFile(builder: Builder, params: EventsType['StartOfJob']): void {
   const jobFile = siemens828dPolicy.jobFileName(params);
-  // Rotary-pattern (4x transform) repeats accumulate in one subprogram;
-  // any other re-post of the same job replaces the earlier content while
-  // its burned line numbers stay consumed, matching legacy GPP output.
-  const fileMode =
-    state.jobFiles.has(jobFile) && params.used_in_transform_4x
-      ? 'append'
-      : 'replace';
-  state.jobFiles.add(jobFile);
-  builder.OpenFile(jobFile, 'SPF', fileMode);
-  if (fileMode === 'append') {
-    builder.RemoveTrailingBlankLine();
-  }
+  // A job posted more than once — a rotary pattern, a translate pattern, a
+  // plain re-post — rewrites its subprogram from empty every time. Only the
+  // last write survives on disk; the discarded ones still consume their
+  // line numbers, which the Builder's global counter gives us for free.
+  //
+  // Appending instead would be actively dangerous, not merely wrong: an
+  // EXTCALL returns at the first RET, so a file holding N stacked bodies
+  // runs body one on all N calls, and every rotary position gets cut at the
+  // first angle. See docs/gpp-semantics.md rule 4.
+  builder.OpenFile(jobFile, 'SPF', 'replace');
 }
 
 function resolveJobToolChange(
@@ -113,6 +108,13 @@ function emitJobHeader(
   }
 }
 
+function parkCoordinate(
+  fromJob: number | undefined,
+  fallback: number | undefined,
+): number | undefined {
+  return fromJob === undefined || fromJob === 0 ? fallback : fromJob;
+}
+
 function emitToolChangePosition(
   builder: Builder,
   runtime: SiemensPostRuntime,
@@ -122,8 +124,12 @@ function emitToolChangePosition(
   const positionMode = params.iTC_SUPA_MODE ?? 0;
   if (positionMode === 0) return;
   runtime.controller(builder).ToolChangePosition(positionMode, {
-    x: params.nTC_XSUPA ?? settings.home.x,
-    y: params.nTC_YSUPA ?? settings.home.y,
+    // A zero coordinate means "unset", not "park at zero" — the legacy post
+    // substitutes its own pair before emitting. `??` cannot express that: it
+    // only catches an absent value, and a job that names no park position
+    // carries 0, not nothing.
+    x: parkCoordinate(params.nTC_XSUPA, settings.toolChangePark.x),
+    y: parkCoordinate(params.nTC_YSUPA, settings.toolChangePark.y),
     z: settings.returnHome.z,
   });
 }
@@ -138,8 +144,11 @@ function emitToolChangePrompt(
   runtime
     .controller(builder)
     .ToolChangePrompt(params.iM1, params.sM1_MSG ?? '', {
-      x: params.nTC_XSUPA === 0 ? settings.home.x : params.nTC_XSUPA,
-      y: params.nTC_YSUPA === 0 ? settings.home.y : params.nTC_YSUPA,
+      // Same substituted pair the tool-change park uses: legacy resolves the
+      // zeros once, at the top of the tool-change handler, and both blocks
+      // read the resolved values.
+      x: parkCoordinate(params.nTC_XSUPA, settings.toolChangePark.x),
+      y: parkCoordinate(params.nTC_YSUPA, settings.toolChangePark.y),
       z: settings.returnHome.z,
     });
 }
@@ -172,6 +181,12 @@ function emitToolChange(
 ): void {
   if (!toolChange.resolved) return;
 
+  // Writing the tool-change block is what clears the modal coolant state,
+  // not the trace event that supplied the tool: a translate pattern re-emits
+  // one tool change for every instance off a single event, and each of those
+  // blocks resets modality the same way. Silent — legacy resets the variable
+  // here without emitting M9.
+  runtime.state.coolantActive = false;
   emitToolChangePosition(builder, runtime, settings, params);
   builder
     .SelectTool(toolChange.resolved.tool_id_string, {
@@ -325,7 +340,7 @@ function startJob(
   settings: SiemensJobLifecycleSettings,
 ): void {
   const { state } = runtime;
-  openJobFile(builder, state, params);
+  openJobFile(builder, params);
   const toolChange = resolveJobToolChange(state, params);
   const jobTolerance = initializeJobState(state, params, toolChange.resolved);
   emitJobHeader(
@@ -374,13 +389,14 @@ function restoreJobRotaryPosition(
   startOfJob: EventsType['StartOfJob'],
 ): void {
   const { state } = runtime;
-  if (
-    !startOfJob.used_in_transform_4x ||
-    startOfJob.anext === undefined ||
-    siemens828dPolicy.sameNumber(startOfJob.anext, state.lastPosition.a)
-  ) {
+  if (!startOfJob.used_in_transform_4x || startOfJob.anext === undefined) {
     return;
   }
+  // Unconditional, deliberately: the legacy post writes this word with no
+  // modal check, so the rotary position is restated before every call even
+  // when the machine is already there. Guarding it on the last emitted A
+  // drops the word exactly when the subprogram body already moved the axis
+  // — which is every instance of a rotary drill pattern.
   builder.Word('A', siemens828dPolicy.formatNumber(startOfJob.anext));
   state.lastPosition.a = startOfJob.anext;
 }

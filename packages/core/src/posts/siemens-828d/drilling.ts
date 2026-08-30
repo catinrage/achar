@@ -10,6 +10,7 @@ export function registerDrillingHandlers(
 ): void {
   const {
     state,
+    changedOrDifferent,
     controller,
     emitCoolantOn,
     formatCoordinate,
@@ -35,7 +36,11 @@ export function registerDrillingHandlers(
       $.Word('Z', formatCoordinate(params.zpos));
       state.lastPosition.z = params.zpos;
     }
-    if (!state.dialect.retainCoolantAcrossJobs || !state.coolantActive) {
+    // Coolant is modal for the whole program, not per job and not per file.
+    // Legacy only ever flips the state back to off in the tool-change modal
+    // reset — silently, without an M9 — so a run of jobs sharing a tool
+    // emits one M8 between them, not one each.
+    if (!state.coolantActive) {
       emitCoolantOn($);
       state.coolantActive = true;
     }
@@ -50,13 +55,22 @@ export function registerDrillingHandlers(
 
     $.Block([
       'G0',
-      !sameNumber(params.xpos, state.lastPosition.x)
+      // The trace's change flag decides, and numeric comparison only fills in
+      // where there is no flag — rule 3. A drill point can sit a rounding
+      // step from the approach it was reached by (`Y0` against a `Y0.00001`
+      // start) and still be flagged unchanged, and legacy prints no word.
+      changedOrDifferent(params, 'xpos', params.xpos, state.lastPosition.x)
         ? { letter: 'X', value: formatCoordinate(params.xpos) }
         : undefined,
-      !sameNumber(params.ypos, state.lastPosition.y)
+      changedOrDifferent(params, 'ypos', params.ypos, state.lastPosition.y)
         ? { letter: 'Y', value: formatCoordinate(params.ypos) }
         : undefined,
+      // A 4x-transform job's rotary position belongs to the caller, which
+      // indexes the axis before each EXTCALL; the body is one shared
+      // subprogram and must read the same at every angle. The other motion
+      // paths already carry this guard — see docs/gpp-semantics.md rule 5.
       state.numberOfAxes !== 3 &&
+      !state.currentJob?.used_in_transform_4x &&
       params.apos !== undefined &&
       !sameNumber(params.apos, state.lastPosition.a)
         ? { letter: 'A', value: formatRotary(params.apos) }

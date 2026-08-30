@@ -64,6 +64,11 @@ export interface PostTestResult {
   results: CompareResult[];
   summary: CompareSummary;
   vmidIssues: VmidValidationIssue[];
+  /**
+   * Where the post's file open/truncate pattern disagrees with the one the
+   * trace recorded. Empty when the trace carries no file directives.
+   */
+  fileLifecycleIssues: FileLifecycleIssue[];
 }
 
 export interface PostTestConfig {
@@ -171,11 +176,17 @@ export function resolveGeneratedFilePath(
 export async function testPost(
   config: PostTestConfig,
 ): Promise<PostTestResult> {
-  const events = await parseTraceFile(config.trace);
-  const files = generatePostFiles(
+  const traceSource = await readFile(config.trace, 'utf-8');
+  const events = new Parser(traceSource).parse();
+  const program = generatePostProgram(
     events,
     config.programName ?? deriveProgramName(config.trace),
     config.registerPost,
+  );
+  const files = program.generate();
+  const fileLifecycleIssues = compareFileLifecycle(
+    readTraceFileLifecycle(traceSource),
+    program.fileOperations,
   );
   const vmidIssues = config.vmid
     ? validateTraceAgainstVmid(events, config.vmid)
@@ -206,6 +217,7 @@ export async function testPost(
     results,
     summary: summarizeCompareResults(results),
     vmidIssues,
+    fileLifecycleIssues,
   };
 }
 
@@ -417,10 +429,15 @@ export function assertPostMatchesReference(result: PostTestResult): void {
     (issue) => issue.severity === 'error',
   );
 
-  if (hasDifferences || vmidErrors.length > 0) {
+  const lifecycleIssues = result.fileLifecycleIssues ?? [];
+
+  if (hasDifferences || vmidErrors.length > 0 || lifecycleIssues.length > 0) {
     throw new Error(
       [
         vmidErrors.length > 0 ? formatVmidValidation(vmidErrors) : '',
+        // Ahead of the line diff on purpose: when it fires it names the
+        // cause, and the diff below it is the downstream noise.
+        formatFileLifecycleIssues(lifecycleIssues),
         hasDifferences ? formatCompareResults(result.results) : '',
       ]
         .filter(Boolean)
@@ -564,4 +581,138 @@ function displayComparedFile(
   return referenceFile === generatedFile
     ? referenceFile
     : `${referenceFile} <- ${generatedFile}`;
+}
+
+/**
+ * The subprogram file lifecycle a trace records, per file.
+ *
+ * SolidCAM's trace carries the legacy post's own file directives —
+ * `!! delete file = X !!`, `!! open file = X !!` — and a delete immediately
+ * before an open means that open starts from empty. That is ground truth for
+ * something a line diff explains badly: a post that appends where legacy
+ * truncates produces a file holding one body per repeat, and since EXTCALL
+ * returns at the first RET, every call runs the first body. The program looks
+ * plausible and cuts every rotary position at the same angle.
+ *
+ * Unlike the `>` output lines in a trace, these are not G-code — reading them
+ * tells us what the legacy post *did with files*, not what it emitted, so a
+ * fixture can check structure without the post being handed its own answer.
+ */
+export interface TraceFileLifecycle {
+  file: string;
+  /** One entry per open, in order: did that open start from empty? */
+  opens: ('append' | 'replace')[];
+}
+
+const FILE_DIRECTIVE =
+  /^\s*(?:>\s*)?!!\s*(delete|open|close)\s*file\s*=\s*(\S+?)\s*!!\s*$/;
+
+/**
+ * Reads the file directives a trace recorded, grouped by file.
+ *
+ * Returns an empty array for a trace that carries no directives — a post that
+ * writes one file, or a trace taken with file tracing off. Absence is not a
+ * finding, so callers should skip the check rather than report a mismatch.
+ */
+export function readTraceFileLifecycle(
+  traceSource: string,
+): TraceFileLifecycle[] {
+  const byFile = new Map<string, ('append' | 'replace')[]>();
+  let pendingDelete: string | undefined;
+
+  for (const line of traceSource.split('\n')) {
+    const match = FILE_DIRECTIVE.exec(line);
+    if (!match) continue;
+    const [, verb, file] = match as unknown as [string, string, string];
+
+    if (verb === 'delete') {
+      pendingDelete = file;
+      continue;
+    }
+    if (verb === 'open') {
+      const opens = byFile.get(file) ?? [];
+      opens.push(pendingDelete === file ? 'replace' : 'append');
+      byFile.set(file, opens);
+    }
+    pendingDelete = undefined;
+  }
+
+  return [...byFile].map(([file, opens]) => ({ file, opens }));
+}
+
+export interface FileLifecycleIssue {
+  file: string;
+  traceOpens: number;
+  postOpens: number;
+  /** Did a re-open of this file start from empty? */
+  traceTruncates: boolean;
+  postTruncates: boolean;
+}
+
+/**
+ * Compares a post's file operations against the lifecycle a trace recorded.
+ *
+ * Only one question is asked, per file: when this file was opened again, did
+ * the content so far survive? Open *counts* are deliberately not compared —
+ * a post may split an append-only file across more opens than the legacy one
+ * did and produce identical bytes, so counting would raise noise on output
+ * that is already proven correct by the reference. Truncation is different:
+ * it decides whether the file ends up holding one body or N, and nothing in
+ * a line diff says so plainly.
+ */
+export function compareFileLifecycle(
+  traceLifecycle: TraceFileLifecycle[],
+  operations: readonly { file: string; mode: 'append' | 'replace' }[],
+): FileLifecycleIssue[] {
+  if (traceLifecycle.length === 0) return [];
+
+  const actualByFile = new Map<string, ('append' | 'replace')[]>();
+  for (const operation of operations) {
+    const modes = actualByFile.get(operation.file) ?? [];
+    modes.push(operation.mode);
+    actualByFile.set(operation.file, modes);
+  }
+
+  // The first open of a name truncates nothing, so it carries no signal.
+  const truncatesOnRepeat = (modes: ('append' | 'replace')[]): boolean =>
+    modes.slice(1).includes('replace');
+
+  const issues: FileLifecycleIssue[] = [];
+  for (const { file, opens } of traceLifecycle) {
+    const actual = actualByFile.get(file) ?? [];
+    const traceTruncates = truncatesOnRepeat(opens);
+    const postTruncates = truncatesOnRepeat(actual);
+    if (traceTruncates === postTruncates) continue;
+    issues.push({
+      file,
+      traceOpens: opens.length,
+      postOpens: actual.length,
+      traceTruncates,
+      postTruncates,
+    });
+  }
+  return issues;
+}
+
+function traceTruncatingIssue(issues: FileLifecycleIssue[]): boolean {
+  return issues.some((issue) => issue.traceTruncates && !issue.postTruncates);
+}
+
+export function formatFileLifecycleIssues(
+  issues: FileLifecycleIssue[],
+): string {
+  if (issues.length === 0) return '';
+  return [
+    'File lifecycle differs from the trace (open/delete directives):',
+    ...issues.map(
+      ({ file, traceOpens, postOpens, traceTruncates }) =>
+        `  ${file}: trace opens ${traceOpens}x and ${traceTruncates ? 'truncates' : 'appends'} on re-open; ` +
+        `post opens ${postOpens}x and ${traceTruncates ? 'appends' : 'truncates'}`,
+    ),
+    traceTruncatingIssue(issues)
+      ? '  A file holding one body per repeat runs only its first body: EXTCALL returns at the first RET.'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }

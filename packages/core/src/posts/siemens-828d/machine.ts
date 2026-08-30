@@ -16,6 +16,13 @@ import type { MachineProfile } from '../../lib/machine-profile';
 export interface Siemens828dMachineSettings {
   home: Required<Position>;
   returnHome: Required<Position>;
+  /**
+   * Where a tool change parks when the job asks for one but names no
+   * position. A job carries `nTC_XSUPA`/`nTC_YSUPA`, and the legacy post
+   * reads a zero there as "unset" and substitutes these — they are their own
+   * pair, not `home`, which they only coincide with in X.
+   */
+  toolChangePark: Required<Pick<Position, 'x' | 'y'>>;
   /** Emit `Tools_Length_Measurement.MPF` for this machine. */
   measureTools: boolean;
   /** Coolant needs a dwell after `M8` before cutting starts. */
@@ -43,6 +50,7 @@ interface Position {
 export const SIEMENS_828D_MACHINE_DEFAULTS: Siemens828dMachineSettings = {
   home: { x: -465, y: 190, z: 0 },
   returnHome: { x: 260, y: 190, z: 0 },
+  toolChangePark: { x: -465, y: 140 },
   measureTools: true,
   dwellAfterCoolantOn: false,
   dwellAfterCoolantOff: false,
@@ -52,6 +60,7 @@ export const SIEMENS_828D_MACHINE_DEFAULTS: Siemens828dMachineSettings = {
 export interface Siemens828dMachineOverrides {
   home?: Position;
   returnHome?: Position;
+  toolChangePark?: Pick<Position, 'x' | 'y'>;
   measureTools?: boolean;
 }
 
@@ -87,6 +96,13 @@ export function resolveSiemens828dMachine(
       profile?.returnHome,
       overrides.returnHome,
     ),
+    // Not a profile field: the legacy post hardcodes this pair, so it is a
+    // post constant with an override hook, not something a machine states.
+    // Promote it to `MachineProfile` if a machine ever parks elsewhere.
+    toolChangePark: {
+      x: overrides.toolChangePark?.x ?? defaults.toolChangePark.x,
+      y: overrides.toolChangePark?.y ?? defaults.toolChangePark.y,
+    },
     measureTools:
       overrides.measureTools ??
       features?.toolMeasurementProgram ??

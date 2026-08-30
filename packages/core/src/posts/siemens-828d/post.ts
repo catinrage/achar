@@ -60,7 +60,7 @@ export function registerSiemens828dPost(
   const callMode = options.callMode ?? 'extcall';
   // Both `machine` and `dialect` arrive fully resolved: what this machine is,
   // and how its G-code is written. Nothing below re-decides a default.
-  const { home, measureTools, returnHome } = machine;
+  const { home, measureTools, returnHome, toolChangePark } = machine;
 
   const measurementTools: string[] = [];
 
@@ -101,6 +101,7 @@ export function registerSiemens828dPost(
   registerJobLifecycleHandlers(post, runtime, {
     home,
     returnHome,
+    toolChangePark,
     cancelAirCoolantSchedule: dialect.cancelAirCoolantSchedule,
     startPositionRequiresToolChange: dialect.startPositionRequiresToolChange,
   });
@@ -127,7 +128,6 @@ export function registerSiemens828dPost(
     state.currentHomeNumber = params.home_number;
   });
   post.on('ChangeTool', ($, params, metadata) => {
-    state.coolantActive = false;
     state.lastToolChange = params;
     state.pendingToolChange = params;
     const nextJob = metadata.findNearestEvent('StartOfJob')?.data;

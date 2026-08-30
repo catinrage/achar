@@ -26,6 +26,12 @@ export interface CommandOptions {
   reason?: string;
 }
 
+/** One `OpenFile`, as the post issued it. */
+export interface BuilderFileOperation {
+  file: string;
+  mode: 'append' | 'replace';
+}
+
 export interface EmissionDiagnostic {
   file: string;
   command: string;
@@ -146,6 +152,18 @@ export class Builder {
 
   /**
    * @private
+   * @property _fileOperations
+   * @description Every `OpenFile` in order, with the mode it used.
+   *
+   * Kept so a fixture can check the post's file lifecycle against the one
+   * the trace records, rather than inferring it from the diff. Getting
+   * append and replace backwards produces a file that looks plausible and
+   * runs wrong, which is the failure a line diff explains worst.
+   */
+  private readonly _fileOperations: BuilderFileOperation[] = [];
+
+  /**
+   * @private
    * @property _currentLineNumber
    * @description Shared N-word counter used across every file emitted by this builder.
    */
@@ -229,6 +247,14 @@ export class Builder {
       file: file.name,
       code: file.gcode,
     }));
+  }
+
+  /**
+   * @method fileOperations
+   * @description Every `OpenFile` this builder performed, in order.
+   */
+  public get fileOperations(): readonly BuilderFileOperation[] {
+    return this._fileOperations;
   }
 
   /**
@@ -452,6 +478,7 @@ export class Builder {
     mode: 'append' | 'replace' = 'append',
   ): Builder {
     const newFileName = `${name}.${extension}`;
+    this._fileOperations.push({ file: newFileName, mode });
     // If builder is not currently in the main file, throw and error as its only possible to create new files in the main file
     if (this.currentFile !== this.mainFile) {
       if (this.currentFile.name === newFileName) {
