@@ -261,7 +261,7 @@ describe('machine profile inheritance', () => {
     id: 'poyakar-1160l-3a',
     controller: 'siemens-828d',
     axes: 3,
-    dialect: 'poyakar-1160l',
+    dialect: 'Siemens_828D_Milling_3A',
     features: { dwellAfterCoolantOn: true, tapCycleOptionalStop: true },
     home: { x: -465, y: 190, z: 0 },
   });
@@ -289,7 +289,7 @@ describe('machine profile inheritance', () => {
     const profile = JSON.parse(documents.machineProfile ?? '{}');
 
     expect(profile.axes).toBe(4);
-    expect(profile.dialect).toBe('poyakar-1160l');
+    expect(profile.dialect).toBe('Siemens_828D_Milling_3A');
     expect(profile.features).toEqual({
       dwellAfterCoolantOn: true,
       tapCycleOptionalStop: true,
@@ -447,7 +447,7 @@ describe('machine profiles as records', () => {
  * The job cache keys on the machine's revision, not just its id.
  *
  * These are regression tests for a real incident: an operator set a machine's
- * dialect to `poyakar-1160l`, re-posted the same trace, and got back the
+ * dialect to `Siemens_828D_Milling_3A`, re-posted the same trace, and got back the
  * pre-edit G-code with its uncompacted coordinates. Nothing was broken in the
  * post — `submitJob` matched the earlier job on `machine_id` alone and never
  * ran the new configuration at all. The give-away was that no new job row
@@ -504,7 +504,7 @@ describe('job cache invalidation', () => {
     expect(store.findMachine(created.id)?.revision).toBe(1);
 
     await updateMachine(store, paths, created.id, {
-      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+      machineProfile: JSON.stringify({ dialect: 'Siemens_828D_Milling_3A' }),
     });
 
     expect(store.findMachine(created.id)?.revision).toBe(2);
@@ -524,7 +524,7 @@ describe('job cache invalidation', () => {
     ).toBe('before-edit');
 
     await updateMachine(store, paths, machine.id, {
-      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+      machineProfile: JSON.stringify({ dialect: 'Siemens_828D_Milling_3A' }),
     });
 
     // The dialect decides how coordinates are written, so the earlier bytes
@@ -539,7 +539,7 @@ describe('job cache invalidation', () => {
     const machine = await createMachine(store, paths, {
       name: 'Mill',
       postId: 'siemens-828d',
-      machineProfile: JSON.stringify({ dialect: 'poyakar-1160l' }),
+      machineProfile: JSON.stringify({ dialect: 'Siemens_828D_Milling_3A' }),
     });
     postJob('first', machine.id, revisionOf(machine.id));
 
@@ -655,3 +655,61 @@ function clearMachineRevision(jobId: string): void {
     db.close();
   }
 }
+
+/**
+ * A machine stored before dialect ids were renamed must keep posting.
+ *
+ * `resolveSiemens828dDialect` refuses an id it does not know, so leaving an
+ * old id in the database would turn a rename into an outage for every machine
+ * that named one.
+ */
+describe('renamed dialect ids', () => {
+  const machineNaming = (dialect: unknown) => {
+    store.upsertMachine({
+      id: 'm1',
+      name: 'Mill',
+      postId: 'siemens-828d',
+      vmidFile: null,
+      profile: JSON.stringify({ id: 'm1', dialect }),
+      createdAt: Date.now(),
+    });
+  };
+
+  const storedDialect = (): unknown =>
+    JSON.parse(store.findMachine('m1')?.profile ?? '{}').dialect;
+
+  it('rewrites an old id to its replacement', async () => {
+    machineNaming('poyakar-1160l');
+
+    await migrateWorkshopData(store, paths);
+
+    expect(storedDialect()).toBe('Siemens_828D_Milling_3A');
+  });
+
+  it('rewrites the id that collided with the post id', async () => {
+    machineNaming('siemens-828d');
+
+    await migrateWorkshopData(store, paths);
+
+    expect(storedDialect()).toBe('Siemens_828D_Milling_4A');
+  });
+
+  it('leaves an already-current id alone, and runs twice safely', async () => {
+    machineNaming('Siemens_828D_Milling_3A');
+
+    await migrateWorkshopData(store, paths);
+    await migrateWorkshopData(store, paths);
+
+    expect(storedDialect()).toBe('Siemens_828D_Milling_3A');
+  });
+
+  it('does not guess at a dialect it does not recognise', async () => {
+    // Left for the resolver to reject: inventing a replacement here is how a
+    // job gets posted with the wrong output convention.
+    machineNaming('something-else');
+
+    await migrateWorkshopData(store, paths);
+
+    expect(storedDialect()).toBe('something-else');
+  });
+});

@@ -142,7 +142,7 @@ describe('machines', () => {
       id: 'siemens-828d',
       name: 'Siemens 828D Milling 4A',
       controller: 'siemens-828d',
-      dialects: ['siemens-828d', 'poyakar-1160l'],
+      dialects: ['Siemens_828D_Milling_4A', 'Siemens_828D_Milling_3A'],
     });
   });
 

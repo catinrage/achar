@@ -18,7 +18,7 @@ describe('machine profiles', () => {
       name: 'PoyaKar 1160L 3A',
       controller: 'siemens-828d',
       axes: 3,
-      dialect: 'poyakar-1160l',
+      dialect: 'Siemens_828D_Milling_3A',
       features: {
         toolMeasurementProgram: true,
         dwellAfterCoolantOn: true,
@@ -34,7 +34,7 @@ describe('machine profiles', () => {
       name: 'PoyaKar 1160L 3A',
       controller: 'siemens-828d',
       axes: 3,
-      dialect: 'poyakar-1160l',
+      dialect: 'Siemens_828D_Milling_3A',
       features: {
         toolMeasurementProgram: true,
         dwellAfterCoolantOn: true,
@@ -170,7 +170,7 @@ describe('machine profiles', () => {
     const issues = validateMachineProfileCompatibility(
       parseMachineProfile({ id: 'typo', dialect: 'poyakar-1160' }),
       [],
-      { post: { id: 'siemens-828d', dialects: ['siemens-828d'] } },
+      { post: { id: 'siemens-828d', dialects: ['Siemens_828D_Milling_4A'] } },
     );
 
     expect(issues).toHaveLength(1);
@@ -261,7 +261,7 @@ describe('machine profile inheritance', () => {
     name: 'Shop Base',
     controller: 'siemens-828d',
     axes: 3,
-    dialect: 'poyakar-1160l',
+    dialect: 'Siemens_828D_Milling_3A',
     features: { dwellAfterCoolantOn: true, tapCycleOptionalStop: true },
     home: { x: -465, y: 190, z: 0 },
   });
@@ -285,7 +285,7 @@ describe('machine profile inheritance', () => {
       name: 'Shop Base',
       controller: 'siemens-828d',
       axes: 4,
-      dialect: 'poyakar-1160l',
+      dialect: 'Siemens_828D_Milling_3A',
       features: { dwellAfterCoolantOn: true, tapCycleOptionalStop: true },
       home: { x: -465, y: 190, z: 0 },
       returnHome: undefined,

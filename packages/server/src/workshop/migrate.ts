@@ -1,6 +1,9 @@
 import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { parseMachineProfile } from '@achar/core';
+import {
+  parseMachineProfile,
+  RENAMED_SIEMENS_828D_DIALECT_IDS,
+} from '@achar/core';
 import { messageOf } from '../kernel/errors';
 import type { DataPaths } from './data/paths';
 import { legacyJobTracePath, traceFilePath } from './data/paths';
@@ -21,7 +24,55 @@ export async function migrateWorkshopData(
   paths: DataPaths,
 ): Promise<void> {
   await migrateMachineProfiles(store, paths);
+  migrateRenamedDialectIds(store);
   await migrateLegacyTraces(store, paths);
+}
+
+/**
+ * Rewrites machine profiles that still name a dialect by its old id.
+ *
+ * The rename is not cosmetic: `resolveSiemens828dDialect` refuses an id it
+ * does not know, so a machine left naming `poyakar-1160l` would stop posting
+ * rather than post differently. Doing it here means a shop upgrades without
+ * opening every machine to re-pick a value it never chose to change.
+ *
+ * Only the `dialect` field is touched, and only when its value is one of the
+ * known renames — a profile naming something else is left exactly as it is
+ * for the resolver to reject, because guessing at an unrecognised dialect is
+ * how a job gets posted with the wrong output convention.
+ */
+function migrateRenamedDialectIds(store: JobStore): number {
+  let rewritten = 0;
+
+  for (const machine of store.listMachines()) {
+    if (!machine.profile) continue;
+
+    try {
+      const profile = JSON.parse(machine.profile) as Record<string, unknown>;
+      const current = profile.dialect;
+      if (typeof current !== 'string') continue;
+
+      const renamed = RENAMED_SIEMENS_828D_DIALECT_IDS[current];
+      if (!renamed) continue;
+
+      store.upsertMachine({
+        ...machine,
+        profile: JSON.stringify({ ...profile, dialect: renamed }, null, 2),
+      });
+      rewritten += 1;
+    } catch (error) {
+      console.error(
+        `[achar] could not update the dialect for machine ${machine.id}: ${messageOf(error)}`,
+      );
+    }
+  }
+
+  if (rewritten > 0) {
+    console.log(
+      `[achar] renamed the dialect on ${rewritten} machine profile(s)`,
+    );
+  }
+  return rewritten;
 }
 
 /**

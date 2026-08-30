@@ -182,6 +182,7 @@ export {
   parseVmidFile,
   validateTraceAgainstVmid,
 } from './lib/vmid';
+export { RENAMED_SIEMENS_828D_DIALECT_IDS } from './posts/siemens-828d/dialect';
 export type {
   CommandsType,
   DeepPartial,

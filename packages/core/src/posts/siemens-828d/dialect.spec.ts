@@ -15,7 +15,7 @@ describe('siemens 828d dialects', () => {
   });
 
   it('resolves a named dialect', () => {
-    expect(resolveSiemens828dDialect('poyakar-1160l')).toBe(
+    expect(resolveSiemens828dDialect('Siemens_828D_Milling_3A')).toBe(
       POYAKAR_1160L_DIALECT,
     );
   });

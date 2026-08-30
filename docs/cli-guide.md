@@ -334,7 +334,7 @@ Schema:
   "name": "PoyaKar 1160L 3A",
   "controller": "siemens-828d",
   "axes": 3,
-  "dialect": "poyakar-1160l",
+  "dialect": "Siemens_828D_Milling_3A",
   "features": {
     "toolMeasurementProgram": true,
     "dwellAfterCoolantOn": true,
@@ -377,8 +377,16 @@ Supported fields:
 
 | Dialect | Matches |
 | --- | --- |
-| `siemens-828d` | Stock `Siemens_828D_Milling_4A.gpp` output. The default. |
-| `poyakar-1160l` | `PoyaKar_1160L_3A.gpp` output. |
+| `Siemens_828D_Milling_4A` | `Siemens_828D_Milling_4A.gpp` output. The default. |
+| `Siemens_828D_Milling_3A` | The 3-axis post's output. Its file is named `PoyaKar_1160L_3A.gpp`, after the machine it was first deployed on. |
+
+A dialect is named for the **post** whose output it reproduces, not for a
+machine. The two were previously called `siemens-828d` and `poyakar-1160l`,
+which read as machine names and — worse, in the first case — collided with the
+*post* id of the same spelling, so a machine could be pointed at the wrong
+output convention without it looking wrong. Profiles stored in the workshop
+are rewritten on startup; a profile file still naming an old id gets an error
+saying what to use instead.
 
 The traits a dialect fixes — modal `F` suppression, inline `G94`, coordinate
 compaction, the tool-list comment block, air-coolant `CANCEL` cleanup, the

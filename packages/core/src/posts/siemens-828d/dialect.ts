@@ -60,7 +60,7 @@ export interface Siemens828dDialect {
 }
 
 /**
- * The stock `Siemens_828D_Milling_4A.gpp` conventions.
+ * The `Siemens_828D_Milling_4A.gpp` conventions.
  *
  * These values are the defaults the post used before dialects existed, so a
  * machine that names no dialect keeps posting exactly as it did.
@@ -79,11 +79,15 @@ export const SIEMENS_828D_STOCK_DIALECT: Siemens828dDialect = {
 };
 
 /**
- * The `PoyaKar_1160L_3A.gpp` conventions.
+ * The 3-axis post's conventions.
+ *
+ * Its file is `PoyaKar_1160L_3A.gpp` — named for the machine it was first
+ * deployed on, and descended from a 2009 Haas 3-axis template — but what it
+ * emits is Siemens 828D milling, which is what the dialect id says.
  *
  * Proven against the `567` and `AG_BIG_SABET` fixtures. Every deviation from
- * stock here was root-caused against one of the two GPP sources rather than
- * guessed; see docs/gpp-semantics.md rules 8-11.
+ * the 4-axis post here was root-caused against one of the two GPP sources
+ * rather than guessed; see docs/gpp-semantics.md rules 8-11.
  */
 export const POYAKAR_1160L_DIALECT: Siemens828dDialect = {
   drillApproachZBeforeCoolant: true,
@@ -101,11 +105,31 @@ export const POYAKAR_1160L_DIALECT: Siemens828dDialect = {
 export const SIEMENS_828D_DIALECTS: Readonly<
   Record<string, Siemens828dDialect>
 > = {
-  'siemens-828d': SIEMENS_828D_STOCK_DIALECT,
-  'poyakar-1160l': POYAKAR_1160L_DIALECT,
+  Siemens_828D_Milling_4A: SIEMENS_828D_STOCK_DIALECT,
+  Siemens_828D_Milling_3A: POYAKAR_1160L_DIALECT,
 };
 
-export const DEFAULT_SIEMENS_828D_DIALECT_ID = 'siemens-828d';
+export const DEFAULT_SIEMENS_828D_DIALECT_ID = 'Siemens_828D_Milling_4A';
+
+/**
+ * Dialect ids that were renamed, and what they are now.
+ *
+ * The old pair — `siemens-828d` and `poyakar-1160l` — named machines rather
+ * than posts, which is what a dialect actually is. Worse, `siemens-828d` was
+ * also the *post* id, so the two namespaces read identically and a machine
+ * could be pointed at the wrong output convention without it looking wrong.
+ *
+ * Kept as data rather than as silent aliases: stored profiles are rewritten
+ * on startup, and anything still naming an old id gets an error that says
+ * what to use instead. An alias would leave the confusing name working, which
+ * is the thing being fixed.
+ */
+export const RENAMED_SIEMENS_828D_DIALECT_IDS: Readonly<
+  Record<string, string>
+> = {
+  'siemens-828d': 'Siemens_828D_Milling_4A',
+  'poyakar-1160l': 'Siemens_828D_Milling_3A',
+};
 
 export function listSiemens828dDialectIds(): string[] {
   return Object.keys(SIEMENS_828D_DIALECTS);
@@ -124,8 +148,11 @@ export function resolveSiemens828dDialect(id?: string): Siemens828dDialect {
 
   const dialect = SIEMENS_828D_DIALECTS[id];
   if (!dialect) {
+    const renamed = RENAMED_SIEMENS_828D_DIALECT_IDS[id];
     throw new Error(
-      `Unknown Siemens 828D dialect '${id}'. Available dialects: ${listSiemens828dDialectIds().join(', ')}.`,
+      renamed
+        ? `Siemens 828D dialect '${id}' was renamed to '${renamed}'. Update the machine profile that names it.`
+        : `Unknown Siemens 828D dialect '${id}'. Available dialects: ${listSiemens828dDialectIds().join(', ')}.`,
     );
   }
   return dialect;

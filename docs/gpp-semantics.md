@@ -354,7 +354,7 @@ where the reference prints `F753`; enabling the flag globally regressed
 exactly.
 
 **Implementation.** `Siemens828dDialect.lineFeedFromChangeFlag`
-(`posts/siemens-828d/dialect.ts`, set on the `poyakar-1160l` dialect that
+(`posts/siemens-828d/dialect.ts`, set on the `Siemens_828D_Milling_3A` dialect that
 `PoyaKar_1160L_3A.machine.json` names); `post.ts` Line handler adds
 `traceChanged(params, 'feed') === true` to `forceFeed` only when the trait is
 on. This rule is the clearest case for the dialect split: the statement above

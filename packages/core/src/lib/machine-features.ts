@@ -171,7 +171,7 @@ export function parseMachineFeatures(
     throw new Error(
       `${source}.features contains dialect traits that are no longer machine ` +
         `properties: ${moved.join(', ')}. Remove them and set a top-level ` +
-        `"dialect" instead (for legacy PoyaKar output, "poyakar-1160l").`,
+        `"dialect" instead (for the 3-axis post, "Siemens_828D_Milling_3A").`,
     );
   }
 
