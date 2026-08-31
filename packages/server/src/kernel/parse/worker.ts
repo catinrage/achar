@@ -9,6 +9,7 @@ import {
   extractTimingReport,
   Logger,
   partitionSetups,
+  readTracePostedAt,
   runConsumers,
   selectSetupEvents,
   summarizeCompareResults,
@@ -341,6 +342,7 @@ function analyzeTrace(trace: string): AnalyzeOutcome {
     hasImplicitSetup: partition.hasImplicitSetup,
     timing,
     profile,
+    postedAt: readTracePostedAt(trace) ?? null,
     diagnostics: profile?.diagnostics ?? [],
   };
 }

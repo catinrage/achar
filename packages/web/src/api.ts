@@ -129,6 +129,8 @@ export interface Trace {
   status: TraceStatus;
   setups: SetupOverview[];
   hasImplicitSetup: boolean;
+  /** When the post stamped the trace; null when it carries no stamp. */
+  postedAt: { raw: string; iso?: string } | null;
   timing: TimingReport | null;
   profile: ProductProfile | null;
   diagnostics: Diagnostic[];

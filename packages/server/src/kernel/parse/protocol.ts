@@ -4,6 +4,7 @@ import type {
   ProductProfile,
   SetupOverview,
   TimingReport,
+  TracePostedAt,
 } from '@achar/core';
 
 /**
@@ -132,6 +133,14 @@ export interface AnalyzeOutcome {
   hasImplicitSetup: boolean;
   timing: TimingReport | null;
   profile: ProductProfile | null;
+  /**
+   * When the post stamped this trace, or null when it carries no stamp.
+   *
+   * The one fact that tells an operator whether an upload still reflects the
+   * CAM project: a trace posted before an operation was added reports a setup
+   * count that is right for the file and wrong for the part.
+   */
+  postedAt: TracePostedAt | null;
   /**
    * Findings that belong to the trace itself rather than to any machine —
    * `no-timing-data` above all. Machine-dependent diagnostics stay on the job.

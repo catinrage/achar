@@ -389,6 +389,7 @@
             setups={trace.setups}
             selected={selectedSetups}
             hasImplicitSetup={trace.hasImplicitSetup}
+            postedAt={trace.postedAt}
             {keepAllTools}
             disabled={generating}
             onchange={(next) => (selectedSetups = next)}

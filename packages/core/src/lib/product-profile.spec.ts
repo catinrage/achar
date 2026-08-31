@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { EventData } from './parser';
 import type { ProductProfileDiagnosticCode } from './product-profile';
-import { extractProductProfile } from './product-profile';
+import { extractProductProfile, readTracePostedAt } from './product-profile';
 
 function makeEvents(list: Record<string, unknown>[]): EventData[] {
   return list as unknown as EventData[];
@@ -335,5 +335,56 @@ describe('extractProductProfile diagnostics', () => {
     expect(
       extractProductProfile(makeEvents(timedProgram())).diagnostics,
     ).toEqual([]);
+  });
+});
+
+describe('trace post timestamp', () => {
+  const header = (date: string) =>
+    [
+      '(1)@start_of_file   ==> build_revision:152076',
+      '(3)@usr_US_date     ==> ',
+      '                      > N20 ; Author \t\t: ABDOLLAH ',
+      `                      > N30 ; Date \t\t: ${date} `,
+    ].join('\n');
+
+  it('reads the stamp the post writes into its own output', () => {
+    // No event carries a timestamp; this line is the only record of when a
+    // trace was produced, which is what makes a stale upload detectable.
+    expect(readTracePostedAt(header('AUG-31-2026-9:25:37AM'))).toEqual({
+      raw: 'AUG-31-2026-9:25:37AM',
+      iso: '2026-08-31T09:25:37',
+    });
+  });
+
+  it('handles the forms real posts emit', () => {
+    // Space-padded day, and the two hours where 12-hour time is a trap.
+    expect(readTracePostedAt(header('JUL- 7-2026-6:25:04PM'))?.iso).toBe(
+      '2026-07-07T18:25:04',
+    );
+    expect(readTracePostedAt(header('JUL-12-2026-12:56:27PM'))?.iso).toBe(
+      '2026-07-12T12:56:27',
+    );
+    expect(readTracePostedAt(header('JAN- 1-2026-12:00:00AM'))?.iso).toBe(
+      '2026-01-01T00:00:00',
+    );
+  });
+
+  it('keeps a stamp it cannot parse rather than dropping it', () => {
+    // An operator can still compare an odd format against SolidCAM by eye.
+    const read = readTracePostedAt(header('sometime last Tuesday'));
+
+    expect(read).toEqual({ raw: 'sometime last Tuesday' });
+  });
+
+  it('reports nothing for a trace with no stamp', () => {
+    expect(readTracePostedAt('(1)@start_of_file   ==> x:1')).toBeUndefined();
+  });
+
+  it('does not scan the whole file for it', () => {
+    // The stamp is in the program header. Searching a 60 MB trace for one
+    // that is not there would cost more than the analysis it belongs to.
+    const buried = `${'; filler\n'.repeat(2000)}${header('AUG-31-2026-9:25:37AM')}`;
+
+    expect(readTracePostedAt(buried)).toBeUndefined();
   });
 });

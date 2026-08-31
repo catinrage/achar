@@ -129,10 +129,12 @@ export type {
   ProductProfileDiagnosticCode,
   ProductSetup,
   ProductTool,
+  TracePostedAt,
 } from './lib/product-profile';
 export {
   createProductProfileConsumer,
   extractProductProfile,
+  readTracePostedAt,
 } from './lib/product-profile';
 export { Program } from './lib/program';
 export type {

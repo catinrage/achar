@@ -486,6 +486,7 @@ function describeTrace(trace: TraceRecord) {
     profile: parseJson(trace.profile),
     diagnostics: parseJson(trace.diagnostics) ?? [],
     eventCount: trace.eventCount,
+    postedAt: parseJson(trace.postedAt),
     error: trace.errorMessage,
     purged: trace.purgedAt !== null,
     createdAt: trace.createdAt,

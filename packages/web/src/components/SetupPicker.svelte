@@ -1,9 +1,10 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import Boxes from 'lucide-svelte/icons/boxes';
+  import CalendarClock from 'lucide-svelte/icons/calendar-clock';
   import Info from 'lucide-svelte/icons/info';
   import type { SetupOverview } from '../api';
-  import { faDigits, formatCycleTime } from '../format';
+  import { faDigits, formatCycleTime, formatPostedAt } from '../format';
   import { fill, m } from '../messages/fa';
 
   /**
@@ -24,6 +25,8 @@
     /** Indices currently ticked. */
     selected: number[];
     hasImplicitSetup: boolean;
+    /** The post's own timestamp for this trace, when it carries one. */
+    postedAt?: { raw: string; iso?: string } | null;
     keepAllTools: boolean;
     disabled?: boolean;
     onchange: (selected: number[]) => void;
@@ -34,6 +37,7 @@
     setups,
     selected,
     hasImplicitSetup,
+    postedAt = null,
     keepAllTools,
     disabled = false,
     onchange,
@@ -69,6 +73,13 @@
     <h3><Boxes size={17} /> {m.setupsTitle}</h3>
     <p>{m.setupsIntro}</p>
   </header>
+
+  <p class="posted">
+    <CalendarClock size={14} />
+    {postedAt
+      ? fill(m.setupsPostedAt, { when: formatPostedAt(postedAt) })
+      : m.setupsPostedAtUnknown}
+  </p>
 
   {#if hasImplicitSetup}
     <p class="note"><Info size={15} /> {m.setupsImplicit}</p>
@@ -186,6 +197,23 @@
     margin: 0.3rem 0 0;
     color: var(--muted);
     font-size: 0.85rem;
+  }
+
+  /* Quieter than .note: this is context, not a warning. It earns a place
+     because a trace posted before the CAM project changed reports a setup
+     count that is right for the file and wrong for the part, and nothing
+     else on screen would give that away. */
+  .posted {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .posted :global(svg) {
+    flex-shrink: 0;
   }
 
   .note {

@@ -81,6 +81,8 @@ export interface TraceRecord {
   profile: string | null;
   diagnostics: string | null;
   eventCount: number | null;
+  /** The post's own timestamp, as JSON, or null when the trace carries none. */
+  postedAt: string | null;
   createdAt: number;
   purgedAt: number | null;
 }
@@ -178,6 +180,7 @@ interface TraceRow {
   profile: string | null;
   diagnostics: string | null;
   event_count: number | null;
+  posted_at: string | null;
   created_at: number;
   purged_at: number | null;
 }
@@ -208,6 +211,7 @@ CREATE TABLE IF NOT EXISTS traces (
   profile            TEXT,
   diagnostics        TEXT,
   event_count        INTEGER,
+  posted_at          TEXT,
   created_at         INTEGER NOT NULL,
   purged_at          INTEGER
 );
@@ -287,6 +291,11 @@ export class JobStore {
     // `findCachedJob` refuses to serve those rows rather than assume they
     // match whatever the machine says today.
     this.addColumn('jobs', 'machine_revision', 'INTEGER');
+    // Nullable and not backfilled: the stamp lives in the trace file, and a
+    // row written before this column existed has no analysis to re-read it
+    // from. NULL means "not recorded", which the UI reports as unknown rather
+    // than inventing a date.
+    this.addColumn('traces', 'posted_at', 'TEXT');
   }
 
   private addColumn(table: string, column: string, type: string): void {
@@ -419,6 +428,7 @@ export class JobStore {
       hasImplicitSetup: boolean;
       timing: unknown;
       profile: unknown;
+      postedAt?: unknown;
       diagnostics: unknown;
       eventCount: number;
     },
@@ -429,7 +439,7 @@ export class JobStore {
            error_message = NULL, setups = $setups,
            has_implicit_setup = $implicit, timing = $timing,
            profile = $profile, diagnostics = $diagnostics,
-           event_count = $events
+           event_count = $events, posted_at = $posted
          WHERE sha256 = $sha`,
       )
       .run({
@@ -440,6 +450,8 @@ export class JobStore {
         $profile: JSON.stringify(analysis.profile ?? null),
         $diagnostics: JSON.stringify(analysis.diagnostics ?? []),
         $events: analysis.eventCount,
+        $posted:
+          analysis.postedAt == null ? null : JSON.stringify(analysis.postedAt),
       });
   }
 
@@ -816,6 +828,7 @@ function toTrace(row: TraceRow): TraceRecord {
     profile: row.profile,
     diagnostics: row.diagnostics,
     eventCount: row.event_count,
+    postedAt: row.posted_at,
     createdAt: row.created_at,
     purgedAt: row.purged_at,
   };

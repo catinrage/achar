@@ -321,3 +321,78 @@ function duplicateNames(setups: ProductSetup[]): string[] {
 
   return [...duplicates];
 }
+
+/**
+ * When the trace was posted, as the post itself stamped it.
+ *
+ * SolidCAM puts no timestamp in any event: the only record of when a trace was
+ * produced is the `; Date` comment the GPP writes into its own output near the
+ * top of the file. That makes this a deliberate read of an emitted line — the
+ * same exception the parser already makes for cycle arguments — rather than
+ * event data.
+ *
+ * It answers one question the rest of the analysis cannot: whether an uploaded
+ * trace still reflects the CAM project. A trace posted before an operation was
+ * added describes the project as it was, and reports a setup count that is
+ * correct for the file and wrong for the part.
+ */
+export interface TracePostedAt {
+  /** Exactly as the post wrote it, e.g. `AUG-31-2026-9:25:37AM`. */
+  raw: string;
+  /**
+   * Local-time ISO 8601, when the stamp parsed. The stamp carries no zone —
+   * it is the posting machine's wall clock — so none is implied here either.
+   */
+  iso?: string;
+}
+
+const POST_DATE_LINE = /^\s*>?\s*N?\d*\s*;\s*Date\s*:\s*(\S.*?)\s*$/im;
+const POST_DATE_STAMP =
+  /^([A-Z]{3})-\s*(\d{1,2})-(\d{4})-(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i;
+const MONTHS = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+];
+
+/**
+ * Reads the post timestamp from the head of a trace.
+ *
+ * Only the head: the stamp sits in the program header, within the first few
+ * dozen lines, and scanning a 60 MB trace for it would cost more than the
+ * whole analysis. A trace without one simply has no stamp to report.
+ */
+export function readTracePostedAt(
+  source: string,
+  headBytes = 8192,
+): TracePostedAt | undefined {
+  const match = POST_DATE_LINE.exec(source.slice(0, headBytes));
+  const raw = match?.[1];
+  if (raw === undefined) return undefined;
+
+  const stamp = POST_DATE_STAMP.exec(raw);
+  if (!stamp) return { raw };
+
+  const month = MONTHS.indexOf(stamp[1].toUpperCase()) + 1;
+  if (month === 0) return { raw };
+
+  let hour = Number(stamp[4]) % 12;
+  if (stamp[7].toUpperCase() === 'PM') hour += 12;
+
+  const pad = (value: number | string, width = 2): string =>
+    String(value).padStart(width, '0');
+
+  return {
+    raw,
+    iso: `${stamp[3]}-${pad(month)}-${pad(stamp[2])}T${pad(hour)}:${stamp[5]}:${stamp[6]}`,
+  };
+}

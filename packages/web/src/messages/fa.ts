@@ -53,6 +53,8 @@ export const m = {
   setupsTitle: 'کدام استقرارها ساخته شود؟',
   setupsIntro:
     'اپراتور هر بار یک استقرار را روی ماشین اجرا می‌کند. فقط همان‌هایی را که الان می‌سازید انتخاب کنید.',
+  setupsPostedAt: 'این فایل در {when} از سالیدکم گرفته شده',
+  setupsPostedAtUnknown: 'تاریخ ساخت این فایل مشخص نیست',
   setupsAll: 'همه استقرارها',
   setupsNone: 'هیچ‌کدام',
   setupsSelectedCount: '{n} از {total} استقرار انتخاب شده',

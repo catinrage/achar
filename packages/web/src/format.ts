@@ -64,3 +64,22 @@ export function formatWhen(timestamp: number): string {
 export function formatNumber(value: number, digits = 0): string {
   return faDigits(value.toFixed(digits));
 }
+
+/**
+ * Formats the post's own timestamp, which carries no timezone.
+ *
+ * It is the posting machine's wall clock, so it is read as local time rather
+ * than shifted. A stamp the post wrote in a shape we cannot parse is shown
+ * verbatim: the operator can still compare it against SolidCAM by eye, which
+ * is the whole point of showing it.
+ */
+export function formatPostedAt(postedAt: {
+  raw: string;
+  iso?: string;
+}): string {
+  if (postedAt.iso === undefined) return postedAt.raw;
+  const parsed = new Date(postedAt.iso);
+  return Number.isNaN(parsed.getTime())
+    ? postedAt.raw
+    : dateFormat.format(parsed);
+}
