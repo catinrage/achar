@@ -171,6 +171,30 @@ export {
   extractToolCatalog,
 } from './lib/tool-catalog';
 export type {
+  Check,
+  ExecutedLine,
+  Execution,
+  Finding,
+  GcodeLine,
+  JobIntent,
+  MachineSnapshot,
+  ProgramIntent,
+  ProgramSource,
+  Severity,
+  VerifyOptions,
+  VerifyResult,
+} from './lib/verify';
+export {
+  CHECKS,
+  deriveIntent,
+  execute,
+  loadProgramSource,
+  parseGcodeFile,
+  parseGcodeLine,
+  severityRank,
+  verifyProgram,
+} from './lib/verify';
+export type {
   VmidAxis,
   VmidDefinition,
   VmidParameter,

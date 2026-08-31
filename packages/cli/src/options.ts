@@ -2,6 +2,10 @@ import type { Command } from 'commander';
 
 export interface CliOptions {
   all?: boolean;
+  check?: string;
+  gcode?: string;
+  listChecks?: boolean;
+  minSeverity?: string;
   allReferenceFiles?: boolean;
   dataDir?: string;
   fixture?: boolean;

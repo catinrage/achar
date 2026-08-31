@@ -16,6 +16,7 @@ import { registerSetupsCommand } from './commands/setups';
 import { registerTestCommand } from './commands/test';
 import { registerTimingCommand } from './commands/timing';
 import { registerValidateCommand } from './commands/validate';
+import { registerVerifyCommand } from './commands/verify';
 import { registerVmidCommands } from './commands/vmid';
 
 const cli = new Command();
@@ -41,6 +42,7 @@ registerParityCommand(cli);
 registerTestCommand(cli);
 registerSetupsCommand(cli);
 registerTimingCommand(cli);
+registerVerifyCommand(cli);
 
 cli.helpCommand(true);
 
