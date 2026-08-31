@@ -353,7 +353,7 @@ const parityBaseline: Record<
     missingReference: 0,
   },
   'siemens-828d-b0577-cam-milling': {
-    match: 34,
+    match: 37,
     different: 0,
     missingGenerated: 0,
     missingReference: 0,

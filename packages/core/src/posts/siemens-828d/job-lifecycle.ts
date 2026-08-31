@@ -44,9 +44,27 @@ function resolveJobToolChange(
   params: EventsType['StartOfJob'],
 ): JobToolChange {
   const explicit = state.pendingToolChange;
+  // A patterned job rewrites its subprogram once per instance and only the
+  // last write survives, so a tool change carried by the *first* instance
+  // alone is destroyed before it reaches disk — the pattern then runs on
+  // whatever tool was already in the spindle. Both pattern kinds therefore
+  // restate the change on every instance, which is what puts it in the body
+  // that survives. This mirrors `if bTlchg or used_in_transform_translate or
+  // used_in_transform_4x` in the legacy post's @usr_ct; 4x was missing from
+  // both for the same reason.
+  // A translate pattern re-announces its change at each instance's own
+  // position, so it refreshes the latch; a rotary pattern does not.
+  if (params.used_in_transform_translate) {
+    state.toolChangePosition = {
+      x: params.xnext,
+      y: params.ynext,
+      a: params.anext,
+    };
+  }
+  const repeatsPerInstance =
+    params.used_in_transform_translate || params.used_in_transform_4x;
   const resolved =
-    explicit ??
-    (params.used_in_transform_translate ? state.lastToolChange : null);
+    explicit ?? (repeatsPerInstance ? state.lastToolChange : null);
   return { explicit, resolved };
 }
 
@@ -160,7 +178,10 @@ function preselectNextTool(
   toolChange: JobToolChange,
 ): void {
   if (
-    !toolChange.explicit ||
+    // Not gated on the change being *announced*: legacy decides purely from
+    // whether the next job needs a different tool and whether that tool was
+    // already preselected. A pattern instance emits a tool-change block
+    // without announcing one, and still preselects.
     !toolChange.resolved ||
     toolChange.resolved.last_tool ||
     params.next_job_tool_number === state.previousJobToolNumber ||
@@ -253,16 +274,24 @@ function emitStartPosition(
 ): void {
   if (toolChange === null && settings.startPositionRequiresToolChange) return;
 
+  // A tool change rapids to the latched position, not this job's own: legacy
+  // captures it once, when the change is announced. Without a tool change the
+  // job goes to its own start position, so the latch does not apply.
+  const target =
+    toolChange && runtime.state.toolChangePosition
+      ? runtime.state.toolChangePosition
+      : { x: params.xnext, y: params.ynext, a: params.anext };
+
   builder.Block([
     toolChange ? `G0 G${runtime.state.currentHomeNumber} G90` : undefined,
-    { letter: 'X', value: runtime.formatCoordinate(params.xnext) },
-    { letter: 'Y', value: runtime.formatCoordinate(params.ynext) },
+    { letter: 'X', value: runtime.formatCoordinate(target.x ?? params.xnext) },
+    { letter: 'Y', value: runtime.formatCoordinate(target.y ?? params.ynext) },
     runtime.state.numberOfAxes !== 3 &&
     !params.used_in_transform_4x &&
-    params.anext !== undefined
+    target.a !== undefined
       ? {
           letter: 'A',
-          value: siemens828dPolicy.formatRotary(params.anext),
+          value: siemens828dPolicy.formatRotary(target.a),
         }
       : undefined,
   ]);

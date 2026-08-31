@@ -433,6 +433,56 @@ override hook, not a `MachineProfile` field, because legacy hardcodes it);
 `??` cannot express this — a job that names no park position carries `0`, not
 nothing.
 
+### Rule 14 — A repeated job restates its tool change on every instance
+
+**Statement.** A patterned job re-emits the whole tool-change block for each
+instance, not only for the instance that announced the change. It has to: the
+subprogram is rewritten from empty every time (rule 4), so a block written only
+by the first instance is destroyed before it reaches disk.
+
+The tool-change rapid goes to a **latched** position, not the job's own. Legacy
+captures the upcoming job's start position when the change is announced, and
+every tool-change block emitted afterwards rapids to *that*. Only a translate
+pattern refreshes the latch, because each of its instances re-announces at its
+own position; a rotary pattern's eight instances all use the one latched value.
+
+The next-tool preselect is not gated on the change being announced either — it
+depends only on whether the next job needs a different tool and whether that
+tool was already preselected.
+
+**Evidence.** GPP `@usr_ct` (~line 815 and 839):
+
+```gpp
+if bTlchg or used_in_transform_translate or used_in_transform_4x then
+```
+
+`bTlchg` is a one-shot latch, armed by `@change_tool` and cleared at ~849.
+`used_in_transform_4x` was **missing** from both guards until 2026-08-31, so a
+rotary pattern spent the latch on instance 1 and the surviving write had no
+`M6`. `PROJECT_B0577` ran 16 operations (`D_drill4` ×8, `D_drill5` ×8) with
+`DRILL2.5C` in the spindle where `BN1.5Z2D6L50` was programmed;
+`PROJECT_2541021` lost `END8Z4` and `END4Z4` the same way. Both fixtures were
+re-posted against the corrected GPP.
+
+The latch is `nTcXnext`/`nTcYnext`/`nTcAnext`, set at `@change_tool` (~786),
+refreshed in `@usr_ct` only under `used_in_transform_translate` (~807), and
+consumed unconditionally by `@usr_ct_after` (~1111 and ~1118). Visible in
+`PROJECT_B0577` `F_contour4.SPF`, whose tool-change rapid goes to
+`X-29.94239 Y-1.00001` — a position belonging to a job several operations
+earlier, not to `F_contour4`.
+
+**Why it matters more than a normal parity rule.** The failure is silent and
+mechanical: the file names the right tool in its `MSG` and simply never loads
+it. A detector worth keeping — walk the `EXTCALL` order, track the last `M6`,
+compare each `MSG` tool against the tool actually in the spindle — finds it in
+seconds and finds nothing on a healthy program.
+
+**Implementation.** `job-lifecycle.ts`: `resolveJobToolChange` resolves through
+`state.lastToolChange` for either pattern kind; `state.toolChangePosition` is
+latched in `post.ts`'s ChangeTool handler, refreshed for translate jobs, and
+consumed by `emitStartPosition`; `preselectNextTool` no longer requires an
+explicit change.
+
 ---
 
 ## Comparison normalizations (what parity ignores)

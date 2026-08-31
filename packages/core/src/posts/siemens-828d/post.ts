@@ -131,6 +131,17 @@ export function registerSiemens828dPost(
     state.lastToolChange = params;
     state.pendingToolChange = params;
     const nextJob = metadata.findNearestEvent('StartOfJob')?.data;
+    // Latch where this change will rapid to. Legacy reads the upcoming job's
+    // start position here, and every tool-change block emitted afterwards
+    // uses it — including a rotary pattern's later instances, which announce
+    // no change of their own.
+    if (nextJob) {
+      state.toolChangePosition = {
+        x: nextJob.xnext,
+        y: nextJob.ynext,
+        a: nextJob.anext,
+      };
+    }
     state.pendingWearMode = nextJob?.iWBCM ?? 0;
     state.pendingWearMessage = nextJob?.sWCM_MSG ?? '';
     state.pendingWearTool = params.tool_id_string;

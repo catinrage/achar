@@ -29,6 +29,16 @@ export interface SiemensPostContextState {
   lastPreselectedToolId?: string;
   pendingToolChange: EventsType['ChangeTool'] | null;
   lastPosition: { x?: number; y?: number; z?: number; a?: number };
+  /**
+   * Where a tool change rapids to, latched when the change is announced.
+   *
+   * Legacy captures the upcoming job's start position at `@change_tool` and
+   * every tool-change block rapids to *that*, not to the position of the job
+   * currently being written. Only a translate pattern refreshes it, because
+   * each of its instances re-emits the change at its own position; a rotary
+   * pattern reuses the latched one for all eight.
+   */
+  toolChangePosition: { x?: number; y?: number; a?: number } | null;
   pendingPathMode: boolean;
   emittedCpmForJob: boolean;
   startedJob: boolean;
@@ -83,6 +93,7 @@ export function createSiemensPostContext(
     lastToolChange: null,
     pendingToolChange: null,
     lastPosition: {},
+    toolChangePosition: null,
     pendingPathMode: false,
     emittedCpmForJob: false,
     startedJob: false,
