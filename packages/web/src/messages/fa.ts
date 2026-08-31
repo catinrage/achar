@@ -151,6 +151,20 @@ export const m = {
   historyDeleteConfirm:
     'این مورد از تاریخچه حذف شود؟ فایل‌های تولیدشده آن نیز پاک می‌شوند.',
   historyDeleteBusy: 'این کار هنوز تمام نشده است؛ پس از پایان آن را حذف کنید.',
+  historyGenerations: 'تولید',
+  historyLatest: 'آخرین',
+  historyExpandGroup: 'نمایش تولیدهای این پروژه',
+  historyCollapseGroup: 'بستن تولیدهای این پروژه',
+  historyExpandAll: 'باز کردن همه',
+  historyCollapseAll: 'بستن همه',
+  historySelect: 'انتخاب این تولید',
+  historySelectGroup: 'انتخاب همه‌ی تولیدهای این پروژه',
+  historySelected: 'مورد انتخاب شده',
+  historyClearSelection: 'لغو انتخاب',
+  historyDeleteSelected: 'حذف موارد انتخاب‌شده',
+  historyDeleteSelectedConfirm:
+    'همه‌ی موارد انتخاب‌شده از تاریخچه حذف شوند؟ فایل‌های تولیدشده‌ی آن‌ها نیز پاک می‌شوند.',
+  historyDeleteSomeFailed: 'مورد حذف نشد',
   refresh: 'به‌روزرسانی',
   tracePurged: 'فایل تریس اصلی پاک شده است',
 
