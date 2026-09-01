@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { discoverFixtures } from '../fixture';
 import { Parser } from '../parser';
@@ -8,6 +8,71 @@ import { execute } from './execute';
 import { parseGcodeFile, parseGcodeLine } from './gcode';
 import { deriveIntent, type JobIntent, type ProgramIntent } from './intent';
 import { type ProgramSource, verifyProgram } from './verify';
+
+/**
+ * The verifier must not be able to see the post.
+ *
+ * Its whole value is that intent and execution are derived independently: the
+ * post says how to emit, the checks say what must be true afterwards, and the
+ * two agreeing is evidence. Import the post here — even for one helper, even
+ * for a formatting constant — and the two derivations start sharing the
+ * reasoning that is supposed to be checking itself. The checks would still
+ * pass. They would simply stop meaning anything, silently, and no fixture
+ * would notice.
+ *
+ * That is a property no amount of care survives on its own, so it is asserted
+ * rather than documented. `@achar/core` is refused for the same reason: its
+ * barrel re-exports the posts.
+ */
+describe('independence from the post', () => {
+  const FORBIDDEN = /(^|\/)posts(\/|$)|^@achar\/core$/;
+
+  it('imports nothing from posts/', async () => {
+    const directory = import.meta.dir;
+    const sources = (await readdir(directory)).filter((name) =>
+      name.endsWith('.ts'),
+    );
+
+    const violations: string[] = [];
+    for (const name of sources) {
+      const source = await readFile(path.join(directory, name), 'utf8');
+      // Static `from '...'` and dynamic `import('...')` alike: a lazy import
+      // couples the modules just as thoroughly as an eager one.
+      const specifiers = [
+        ...source.matchAll(/\bfrom\s+'([^']+)'/g),
+        ...source.matchAll(/\bimport\s*\(\s*'([^']+)'\s*\)/g),
+      ].map((match) => match[1]);
+
+      for (const specifier of specifiers) {
+        if (FORBIDDEN.test(specifier))
+          violations.push(`${name} -> ${specifier}`);
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it('would notice if one were added', () => {
+    // Pins the matcher itself. A guard that silently stops matching is worse
+    // than no guard, because the green tick still appears.
+    const FORBIDDEN_SAMPLES = [
+      '../../posts/siemens-828d',
+      '../../posts',
+      './posts/thing',
+      '@achar/core',
+    ];
+    const ALLOWED_SAMPLES = [
+      '../parser',
+      './execute',
+      'node:path',
+      '../post-test',
+      '../machine-profile',
+    ];
+
+    expect(FORBIDDEN_SAMPLES.filter((s) => !FORBIDDEN.test(s))).toEqual([]);
+    expect(ALLOWED_SAMPLES.filter((s) => FORBIDDEN.test(s))).toEqual([]);
+  });
+});
 
 describe('gcode reader', () => {
   it('reads a tool selection and its change on one line', () => {
