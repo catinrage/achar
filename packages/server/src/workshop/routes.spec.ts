@@ -300,6 +300,55 @@ describe('POST /api/jobs', () => {
 });
 
 describe('setup selection', () => {
+  it('separates whole-program calls by setup in the main MPF only', async () => {
+    const { job } = await generate(TWO_SETUP_TRACE, {
+      programName: 'HEADINGS',
+    });
+    const settled = await settle(job.id);
+    expect(settled.status).toBe('done');
+    const main = await (
+      await fetch(`${base}/api/jobs/${job.id}/files/HEADINGS.MPF`)
+    ).text();
+    expect(main).toMatch(
+      /; Setup 1[\s\S]*EXTCALL "iRough.SPF"[\s\S]*; Setup 2[\s\S]*EXTCALL "Drill.SPF"/,
+    );
+    for (const file of settled.files.filter((file: { name: string }) =>
+      file.name.endsWith('.SPF'),
+    )) {
+      const code = await (
+        await fetch(`${base}/api/jobs/${job.id}/files/${file.name}`)
+      ).text();
+      expect(code).not.toMatch(/; Setup \d/);
+    }
+  });
+
+  it('keeps original setup numbers for a nonconsecutive selection', async () => {
+    const back = TWO_SETUP_TRACE.slice(
+      TWO_SETUP_TRACE.indexOf('(9)@setup'),
+      TWO_SETUP_TRACE.indexOf('(15)@end_program'),
+    )
+      .replace("'Back'", "'Side'")
+      .replaceAll("'Drill'", "'SideDrill'");
+    const trace = TWO_SETUP_TRACE.replace(
+      '(15)@end_program',
+      `${back}(15)@end_program`,
+    );
+    const { job } = await generate(trace, {
+      programName: 'GAPPED',
+      setups: '1,3',
+    });
+    const settled = await settle(job.id);
+    expect(settled.status).toBe('done');
+    const main = await (
+      await fetch(`${base}/api/jobs/${job.id}/files/GAPPED.MPF`)
+    ).text();
+    expect(main).toMatch(
+      /; Setup 1[\s\S]*EXTCALL "iRough.SPF"[\s\S]*; Setup 3[\s\S]*EXTCALL "SideDrill.SPF"/,
+    );
+    expect(main).not.toContain('; Setup 2');
+    expect(main).not.toContain('EXTCALL "Drill.SPF"');
+  });
+
   it('posts only the selected setup, with only the tools it loads', async () => {
     const whole = await generate(TWO_SETUP_TRACE, {
       filename: 'whole.MPF',
@@ -325,6 +374,7 @@ describe('setup selection', () => {
     const code = await readAll(settled);
     expect(code).not.toContain('END12Z3AL');
     expect(code).toContain('DRILL6');
+    expect(code).not.toMatch(/; Setup \d/);
     expect(settled.timing.seconds).toBeLessThan(wholeSettled.timing.seconds);
   });
 

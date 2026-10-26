@@ -222,6 +222,8 @@ export type EventsType = {
     submachine_ID: number;
   };
   Setup: {
+    /** Original 1-based index, attached when selecting a subset of setups. */
+    _setupIndex?: number;
     setup_name: string;
     submachine_ID: number;
     submachine_name: string;

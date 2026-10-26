@@ -12,9 +12,9 @@ import type { EventData } from './parser';
  * therefore a slice of the event array, and posting a subset is a pure array
  * operation performed before the events reach a `Program`.
  *
- * Doing it here rather than in a post keeps every post setup-blind — the
- * Siemens post still ignores the `Setup` event entirely — and means a future
- * controller inherits the feature for free. It also has to be done here: the
+ * Doing it here rather than in a post means every controller inherits setup
+ * selection for free. Setup events retain their original indices so posts can
+ * label the selected groups. It also has to be done here: the
  * Builder shares one N-number counter across every generated file, so the main
  * MPF's block numbers advance in step with the subprogram bodies. Cutting lines
  * out of finished G-code would leave gaps; the program must be re-generated
@@ -219,7 +219,16 @@ export function selectSetupEvents(
   const selected = spans.filter((span) => wanted.has(span.index));
   const kept = [
     ...events.slice(0, partition.prologueEnd),
-    ...selected.flatMap((span) => events.slice(span.start, span.end)),
+    ...selected.flatMap((span) => {
+      const kept = events.slice(span.start, span.end);
+      if (selected.length < spans.length) {
+        kept[0] = {
+          ...kept[0],
+          _setupIndex: kept[0]._setupIndex ?? span.index,
+        };
+      }
+      return kept;
+    }),
     ...events.slice(partition.epilogueStart),
   ];
 

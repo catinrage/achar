@@ -8,7 +8,7 @@ import { createSiemensPostContext } from './context';
 import { resolveSiemens828dDialect } from './dialect';
 import { registerDrillingHandlers } from './drilling';
 import { registerJobLifecycleHandlers } from './job-lifecycle';
-import { registerIgnoredLifecycleEvents } from './lifecycle';
+import { registerLifecycleEvents } from './lifecycle';
 import { resolveSiemens828dMachine } from './machine';
 import { siemens828dPolicy } from './policy';
 import { registerRapidMotionHandlers } from './rapid-motion';
@@ -54,7 +54,7 @@ export function registerSiemens828dPost(
     machine,
   );
   const post = definePost(program, postContext);
-  registerIgnoredLifecycleEvents(post);
+  registerLifecycleEvents(post);
   const state = post.context.state;
   const toolDefinitions = post.context.state.tools;
   const callMode = options.callMode ?? 'extcall';

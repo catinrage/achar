@@ -31,7 +31,10 @@ export {
   registerJobLifecycleHandlers,
   type SiemensJobLifecycleSettings,
 } from './job-lifecycle';
-export { registerIgnoredLifecycleEvents } from './lifecycle';
+export {
+  registerLifecycleEvents,
+  registerLifecycleEvents as registerIgnoredLifecycleEvents,
+} from './lifecycle';
 export {
   resolveSiemens828dMachine,
   SIEMENS_828D_MACHINE_DEFAULTS,

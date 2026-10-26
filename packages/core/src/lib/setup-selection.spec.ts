@@ -285,6 +285,8 @@ describe('selectSetupEvents', () => {
       'Setup1',
       'Setup3',
     ]);
+    expect(setups.map((event) => event._setupIndex)).toEqual([1, 3]);
+    expect(events.some((event) => event._setupIndex !== undefined)).toBe(false);
   });
 
   it('prunes tool definitions no selected setup loads', () => {
