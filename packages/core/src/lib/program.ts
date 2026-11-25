@@ -466,6 +466,18 @@ export class Program {
           }
           return null;
         },
+        findFirstNextEvent: <T extends keyof EventsType>(
+          eventNames: readonly T[],
+        ) => {
+          const wanted = new Set<keyof EventsType>(eventNames);
+          for (let i = index + 1; i < this._events.length; i++) {
+            const candidate = this._events[i];
+            if (wanted.has(candidate.name)) {
+              return candidate as Event<T>;
+            }
+          }
+          return null;
+        },
         findNthNextEvent: <T extends keyof EventsType>(
           eventName: T,
           n: number,

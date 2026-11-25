@@ -75,6 +75,11 @@ export interface SiemensPostContextState {
   pendingWearMode: number;
   pendingWearMessage: string;
   pendingWearTool: string;
+  /**
+   * Park position for a health check deferred past a trailing `ChangeRefPoint`
+   * (`TRANS` reset) after the last job of a tool run.
+   */
+  deferredWearCheck: { x?: number; y?: number; z: number } | null;
 }
 
 export function createSiemensPostContext(
@@ -121,5 +126,6 @@ export function createSiemensPostContext(
     pendingWearMode: 0,
     pendingWearMessage: '',
     pendingWearTool: '',
+    deferredWearCheck: null,
   }));
 }

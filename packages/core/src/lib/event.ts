@@ -36,6 +36,12 @@ export interface EventListenerMetadata {
     eventName: T,
   ) => Event<T> | null;
   /**
+   * Find the earliest upcoming event matching any of the given event names
+   */
+  findFirstNextEvent: <T extends keyof EventsType>(
+    eventNames: readonly T[],
+  ) => Event<T> | null;
+  /**
    * Find the nth next event in the program
    */
   findNthNextEvent: <T extends keyof EventsType>(

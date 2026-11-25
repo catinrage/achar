@@ -7,7 +7,7 @@ import type { CommandsType } from '../../types';
 import { createSiemensPostContext } from './context';
 import { resolveSiemens828dDialect } from './dialect';
 import { registerDrillingHandlers } from './drilling';
-import { registerJobLifecycleHandlers } from './job-lifecycle';
+import { flushWearChecks, registerJobLifecycleHandlers } from './job-lifecycle';
 import { registerLifecycleEvents } from './lifecycle';
 import { resolveSiemens828dMachine } from './machine';
 import { siemens828dPolicy } from './policy';
@@ -145,6 +145,7 @@ export function registerSiemens828dPost(
     state.pendingWearMode = nextJob?.iWBCM ?? 0;
     state.pendingWearMessage = nextJob?.sWCM_MSG ?? '';
     state.pendingWearTool = params.tool_id_string;
+    state.deferredWearCheck = null;
     if (state.pendingWearMode > 0) {
       controller($).Label('LTC');
     }
@@ -152,7 +153,7 @@ export function registerSiemens828dPost(
       controller($).RestoreWearReduction();
     }
   });
-  post.on('ChangeRefPoint', ($, params) => {
+  post.on('ChangeRefPoint', ($, params, metadata) => {
     state.coolantActive = false;
     if (
       !params.ref_point_init &&
@@ -165,6 +166,18 @@ export function registerSiemens828dPost(
       });
     } else {
       controller($).Trans();
+    }
+    if (
+      state.deferredWearCheck !== null &&
+      metadata.findFirstNextEvent([
+        'ChangeRefPoint',
+        'StartOfJob',
+        'Setup',
+        'ChangeTool',
+        'EndProgram',
+      ])?.name !== 'ChangeRefPoint'
+    ) {
+      flushWearChecks($, runtime, state.deferredWearCheck);
     }
   });
   post.on('Compensation', (_$, params) => {

@@ -430,18 +430,14 @@ function restoreJobRotaryPosition(
   state.lastPosition.a = startOfJob.anext;
 }
 
-function emitWearChecks(
+export function flushWearChecks(
   builder: Builder,
   runtime: SiemensPostRuntime,
-  settings: SiemensJobLifecycleSettings,
-  startOfJob: EventsType['StartOfJob'],
+  parkHome: { x?: number; y?: number; z: number },
 ): void {
   const { state } = runtime;
-  if (
-    !state.lastToolChange ||
-    state.lastToolChange.tool_number === startOfJob.next_job_tool_number ||
-    state.pendingWearMode <= 0
-  ) {
+  if (state.pendingWearMode <= 0) {
+    state.deferredWearCheck = null;
     return;
   }
   if (state.pendingWearMode === 2 || state.pendingWearMode === 3) {
@@ -452,13 +448,65 @@ function emitWearChecks(
   if (state.pendingWearMode === 1 || state.pendingWearMode === 3) {
     runtime
       .controller(builder)
-      .ToolWearCheck(state.pendingWearTool, state.pendingWearMessage, {
-        x: startOfJob.nTC_XSUPA,
-        y: startOfJob.nTC_YSUPA,
-        z: settings.returnHome.z,
-      });
+      .ToolWearCheck(state.pendingWearTool, state.pendingWearMessage, parkHome);
   }
   state.pendingWearMode = 0;
+  state.deferredWearCheck = null;
+}
+
+function emitWearChecks(
+  builder: Builder,
+  metadata: EventListenerMetadata,
+  runtime: SiemensPostRuntime,
+  settings: SiemensJobLifecycleSettings,
+  startOfJob: EventsType['StartOfJob'],
+): void {
+  const { state } = runtime;
+  if (!state.lastToolChange || state.pendingWearMode <= 0) {
+    return;
+  }
+
+  // Repeated jobs (translate / 4x transforms) and consecutive same-tool
+  // operations share one tool run, while SolidCAM stamps repeated transform
+  // instances with the post-loop next_job_tool_number. Wait until no further
+  // StartOfJob precedes the next Setup, ChangeTool, or EndProgram.
+  const nextBoundary = metadata.findFirstNextEvent([
+    'StartOfJob',
+    'Setup',
+    'ChangeTool',
+    'EndProgram',
+  ]);
+  if (nextBoundary?.name === 'StartOfJob') {
+    return;
+  }
+  if (
+    (nextBoundary?.name === 'Setup' || nextBoundary?.name === 'ChangeTool') &&
+    state.lastToolChange.tool_number === startOfJob.next_job_tool_number
+  ) {
+    return;
+  }
+
+  const parkHome = {
+    x: startOfJob.nTC_XSUPA,
+    y: startOfJob.nTC_YSUPA,
+    z: settings.returnHome.z,
+  };
+
+  // When a translated pattern ends on a shifted frame, SolidCAM emits a
+  // ChangeRefPoint after EndOfJob to reset TRANS. Deferring the check past
+  // that reset keeps GOTOB LTC from jumping back while TRANS is still active.
+  const nextRefOrBoundary = metadata.findFirstNextEvent([
+    'ChangeRefPoint',
+    'Setup',
+    'ChangeTool',
+    'EndProgram',
+  ]);
+  if (nextRefOrBoundary?.name === 'ChangeRefPoint') {
+    state.deferredWearCheck = parkHome;
+    return;
+  }
+
+  flushWearChecks(builder, runtime, parkHome);
 }
 
 function endJob(
@@ -480,7 +528,7 @@ function endJob(
     builder,
     `${siemens828dPolicy.jobFileName(startOfJob)}.SPF`,
   );
-  emitWearChecks(builder, runtime, settings, startOfJob);
+  emitWearChecks(builder, metadata, runtime, settings, startOfJob);
 }
 
 export function registerJobLifecycleHandlers(

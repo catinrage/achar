@@ -79,6 +79,7 @@ describe('Program', () => {
           previous: null,
           findLastEvent: jest.fn(),
           findNearestEvent: jest.fn(),
+          findFirstNextEvent: jest.fn(),
           findNthNextEvent: jest.fn(),
           findNthPreviousEvent: jest.fn(),
           findLastEventOrThrow: jest.fn(),
@@ -111,6 +112,7 @@ describe('Program', () => {
           previous: null,
           findLastEvent: jest.fn(),
           findNearestEvent: jest.fn(),
+          findFirstNextEvent: jest.fn(),
           findNthNextEvent: jest.fn(),
           findNthPreviousEvent: jest.fn(),
           findLastEventOrThrow: jest.fn(),
@@ -142,6 +144,7 @@ describe('Program', () => {
           previous: null,
           findLastEvent: jest.fn(),
           findNearestEvent: jest.fn(),
+          findFirstNextEvent: jest.fn(),
           findNthNextEvent: jest.fn(),
           findNthPreviousEvent: jest.fn(),
           findLastEventOrThrow: jest.fn(),
@@ -171,6 +174,7 @@ describe('Program', () => {
         previous: null,
         findLastEvent: jest.fn(),
         findNearestEvent: jest.fn(),
+        findFirstNextEvent: jest.fn(),
         findNthNextEvent: jest.fn(),
         findNthPreviousEvent: jest.fn(),
         findLastEventOrThrow: jest.fn(),
@@ -208,6 +212,7 @@ describe('Program', () => {
           previous: null,
           findLastEvent: jest.fn(),
           findNearestEvent: jest.fn(),
+          findFirstNextEvent: jest.fn(),
           findNthNextEvent: jest.fn(),
           findNthPreviousEvent: jest.fn(),
           findLastEventOrThrow: jest.fn(),
@@ -291,6 +296,33 @@ describe('Program', () => {
       expect(metadata.previous?.name).toBe('StartOfFile');
       expect(metadata.next).toBeDefined();
       expect(metadata.next?.name).toBe('EndOfFile');
+    });
+
+    it('finds the earliest matching upcoming event via findFirstNextEvent', () => {
+      const seen: Array<string | null> = [];
+      program.on('StartOfFile', (_$, _params, metadata) => {
+        seen.push(
+          metadata.findFirstNextEvent(['EndOfFile', 'ToolChange'])?.name ??
+            null,
+        );
+        seen.push(
+          metadata.findFirstNextEvent(['EndOfJob', 'StartOfJob'])?.name ?? null,
+        );
+      });
+
+      program.loadEvents([
+        { _eventName: 'StartOfFile', _index: 0, program_number: 1000 },
+        {
+          _eventName: 'ToolChange',
+          _index: 1,
+          tool_number: 1,
+          tool_spin: 1000,
+        },
+        { _eventName: 'EndOfFile', _index: 2 },
+      ]);
+      program.process();
+
+      expect(seen).toEqual(['ToolChange', null]);
     });
 
     it('should handle events with no registered listeners', () => {
