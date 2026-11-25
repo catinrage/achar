@@ -58,7 +58,7 @@ function resolveJobToolChange(
     state.toolChangePosition = {
       x: params.xnext,
       y: params.ynext,
-      a: params.anext,
+      a: state.numberOfAxes === 3 ? undefined : params.anext,
     };
   }
   const repeatsPerInstance =
@@ -298,9 +298,10 @@ function emitStartPosition(
   runtime.state.lastPosition = {
     x: params.xnext,
     y: params.ynext,
-    a: params.used_in_transform_4x
-      ? runtime.state.lastPosition.a
-      : params.anext,
+    a:
+      runtime.state.numberOfAxes === 3 || params.used_in_transform_4x
+        ? runtime.state.lastPosition.a
+        : params.anext,
   };
 }
 
@@ -418,7 +419,11 @@ function restoreJobRotaryPosition(
   startOfJob: EventsType['StartOfJob'],
 ): void {
   const { state } = runtime;
-  if (!startOfJob.used_in_transform_4x || startOfJob.anext === undefined) {
+  if (
+    state.numberOfAxes === 3 ||
+    !startOfJob.used_in_transform_4x ||
+    startOfJob.anext === undefined
+  ) {
     return;
   }
   // Unconditional, deliberately: the legacy post writes this word with no

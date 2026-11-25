@@ -47,6 +47,7 @@ export const builtinPosts: BuiltInPost[] = [
     registerPost: (program, context) =>
       registerSiemens828dPost(program, {
         machineProfile: context?.machineProfile,
+        vmid: context?.vmid,
       }),
   },
 ];

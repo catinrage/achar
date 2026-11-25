@@ -5,7 +5,7 @@ import { listBuiltinPosts, resolveBuiltinPost } from '../lib/builtin-posts';
 import { discoverFixtures } from '../lib/fixture';
 import {
   loadMachineProfile,
-  validateMachineProfileCompatibility,
+  validateTraceCompatibility,
 } from '../lib/machine-profile';
 import {
   compareAgainstReference,
@@ -15,7 +15,7 @@ import {
   summarizeCompareResults,
   writeGeneratedFiles,
 } from '../lib/post-test';
-import { parseVmidFile, validateTraceAgainstVmid } from '../lib/vmid';
+import { parseVmidFile } from '../lib/vmid';
 
 const previewLimit = 180_000;
 
@@ -228,13 +228,11 @@ async function loadInput(input: AcharInput, root?: string) {
   const machineProfile = input.machineProfilePath?.trim()
     ? await loadMachineProfile(path.resolve(input.machineProfilePath), { root })
     : undefined;
-  const diagnostics = [
-    ...(vmid ? validateTraceAgainstVmid(events, vmid) : []),
-    ...validateMachineProfileCompatibility(machineProfile, events, {
-      vmid,
-      post: resolveBuiltinPost(input.postId),
-    }),
-  ] satisfies AcharDiagnostic[];
+  const diagnostics = validateTraceCompatibility(events, {
+    vmid,
+    machineProfile,
+    post: resolveBuiltinPost(input.postId),
+  }) satisfies AcharDiagnostic[];
 
   return { events, vmid, machineProfile, diagnostics };
 }
@@ -283,7 +281,10 @@ export async function generateAcharFiles(
   if (!post) throw new Error(`Unknown built-in post: ${input.postId}`);
 
   const files = generatePostFiles(loaded.events, programName, (program) =>
-    post.registerPost(program, { machineProfile: loaded.machineProfile }),
+    post.registerPost(program, {
+      machineProfile: loaded.machineProfile,
+      vmid: loaded.vmid,
+    }),
   );
   const outputPath = path.resolve(
     input.outputPath?.trim() ||

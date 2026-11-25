@@ -61,7 +61,9 @@ export function createSiemensPostRuntime(
     if (params.xpos !== undefined) state.lastPosition.x = params.xpos;
     if (params.ypos !== undefined) state.lastPosition.y = params.ypos;
     if (params.zpos !== undefined) state.lastPosition.z = params.zpos;
-    if (params.apos !== undefined) state.lastPosition.a = params.apos;
+    if (state.numberOfAxes !== 3 && params.apos !== undefined) {
+      state.lastPosition.a = params.apos;
+    }
   };
 
   const emitCoolantOn = (builder: Builder): void => {
@@ -152,6 +154,7 @@ export function lineCoordinates(
     coords.z = runtime.compactCoordinate(params.zpos);
   }
   if (
+    state.numberOfAxes !== 3 &&
     'apos' in params &&
     params.apos !== undefined &&
     runtime.changedOrDifferent(

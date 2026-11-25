@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import type { EventData } from './parser';
-import { parseVmid, validateTraceAgainstVmid } from './vmid';
+import {
+  isThreeAxisVmid,
+  parseVmid,
+  validateTraceAgainstVmid,
+  vmidHasRotaryAxis,
+} from './vmid';
 
 const vmidSource = `
 <Machine Name="Demo_4X">
@@ -57,5 +62,73 @@ describe('VMID parsing and validation', () => {
         }),
       ]),
     );
+  });
+
+  it('distinguishes 3-axis and 4-axis VMIDs and checks rotary fields on 3-axis VMIDs', () => {
+    const fourAxis = parseVmid(vmidSource);
+    const threeAxis = parseVmid(`
+<Machine Name="Mill_3A">
+  <Axis Name="X" Type="0" MinLim="-500" MaxLim="500" HomeRef="0">
+  <Axis Name="Y" Type="0" MinLim="-300" MaxLim="300" HomeRef="0">
+  <Axis Name="Z" Type="0" MinLim="0" MaxLim="500" HomeRef="0">
+  <Param GppName="iNumberOfAixs" Name="Number of Axis">
+</Machine>
+`);
+
+    expect(vmidHasRotaryAxis(fourAxis)).toBe(true);
+    expect(isThreeAxisVmid(fourAxis)).toBe(false);
+    expect(vmidHasRotaryAxis(threeAxis)).toBe(false);
+    expect(isThreeAxisVmid(threeAxis)).toBe(true);
+
+    // Zero rotary placeholders and PlaneData/Tmatrix plane angles are fine.
+    expect(
+      validateTraceAgainstVmid(
+        [
+          {
+            _eventName: 'StartOfFile',
+            _index: 0,
+            VMID_file: 'Mill_4A',
+            iNumberOfAixs: 4,
+          },
+          { _eventName: 'Setup', _index: 1, setup_name: 'Setup1' },
+          {
+            _eventName: 'StartOfJob',
+            _index: 2,
+            job_name: 'Profile1',
+            anext: 0,
+          },
+          { _eventName: 'Drill', _index: 3, cpos: 0 },
+          { _eventName: 'PlaneData', _index: 4, first_axis_angle: 180 },
+          { _eventName: 'Tmatrix', _index: 5, rotate_angle_x: -90 },
+        ],
+        threeAxis,
+        { allowTraceVmidMismatch: true },
+      ),
+    ).toEqual([]);
+
+    // Real rotary commands (apos, non-zero anext, FourthAxis, 4x transform) fail.
+    const rotaryIssues = validateTraceAgainstVmid(
+      [
+        {
+          _eventName: 'StartOfFile',
+          _index: 0,
+          VMID_file: 'Mill_4A',
+          iNumberOfAixs: 4,
+        },
+        { _eventName: 'Setup', _index: 1, setup_name: 'RotarySetup' },
+        { _eventName: 'RotateToPlane', _index: 2, anext: -15 },
+      ],
+      threeAxis,
+      { allowTraceVmidMismatch: true },
+    );
+
+    expect(rotaryIssues).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        event: 'RotateToPlane',
+        key: 'anext',
+      }),
+    ]);
+    expect(rotaryIssues[0]?.message).toContain('Setup 1 (RotarySetup)');
   });
 });

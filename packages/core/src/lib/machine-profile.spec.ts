@@ -9,8 +9,10 @@ import {
   requireMachineProfile,
   resolveMachineProfileChain,
   validateMachineProfileCompatibility,
+  validateTraceCompatibility,
 } from './machine-profile';
 import type { EventData } from './parser';
+import type { VmidDefinition } from './vmid';
 
 describe('machine profiles', () => {
   it('parses machine properties and the named dialect', () => {
@@ -514,5 +516,177 @@ describe('dialect against the VMID a trace declares', () => {
         { post: { id: 'siemens-828d' } },
       ).filter((issue) => issue.key === 'VMID_file'),
     ).toEqual([]);
+  });
+
+  describe('4-axis trace adaptation on 3-axis machines', () => {
+    const threeAxisVmid: VmidDefinition = {
+      machine: { Name: 'PoyaKar_1160L_3A' },
+      axes: [{ name: 'Y' }, { name: 'X' }, { name: 'Z' }],
+      postProcessors: ['PoyaKar_1160L_3A'],
+      parameters: [{ gppName: 'iNumberOfAixs', source: 'Param' }],
+    };
+    const fourAxisVmid: VmidDefinition = {
+      machine: { Name: 'Siemens_828D_Milling_4A' },
+      axes: [{ name: 'Y' }, { name: 'X' }, { name: 'Z' }, { name: 'A' }],
+      postProcessors: ['Siemens_828D_Milling_4A'],
+      parameters: [],
+    };
+    const adaptedProfile = parseMachineProfile({
+      id: 'poyakar-3a',
+      axes: 3,
+      dialect: 'Siemens_828D_Milling_3A',
+      features: { allow4xTraceOn3x: true },
+    });
+
+    it('rejects allow4xTraceOn3x when the machine itself declares 4 axes or has a rotary VMID', () => {
+      const badProfileAxes = validateMachineProfileCompatibility(
+        parseMachineProfile({
+          id: 'bad-4a',
+          axes: 4,
+          features: { allow4xTraceOn3x: true },
+        }),
+        [],
+        { post: POST },
+      );
+      expect(badProfileAxes).toEqual([
+        expect.objectContaining({
+          severity: 'error',
+          key: 'features.allow4xTraceOn3x',
+        }),
+      ]);
+
+      const badVmid = validateMachineProfileCompatibility(
+        parseMachineProfile({
+          id: 'poyakar-bad-vmid',
+          features: { allow4xTraceOn3x: true },
+        }),
+        [],
+        { vmid: fourAxisVmid, post: POST },
+      );
+      expect(badVmid).toEqual([
+        expect.objectContaining({
+          severity: 'error',
+          key: 'features.allow4xTraceOn3x',
+        }),
+      ]);
+    });
+
+    it('accepts a 3-axis setup selection from a 4-axis trace with a non-blocking warning', () => {
+      const issues = validateTraceCompatibility(
+        [
+          {
+            _eventName: 'StartOfFile',
+            _index: 0,
+            VMID_file: 'Siemens_828D_Milling_4A',
+            iNumberOfAixs: 4,
+          },
+          { _eventName: 'Setup', _index: 1, setup_name: 'Setup1' },
+          {
+            _eventName: 'StartOfJob',
+            _index: 2,
+            job_name: 'Contour1',
+            anext: 0,
+            used_in_transform_4x: 0,
+          },
+          { _eventName: 'RapidMove', _index: 3, xpos: 10, ypos: 20, zpos: 5 },
+          { _eventName: 'PlaneData', _index: 4, first_axis_angle: 180 },
+        ],
+        {
+          machineProfile: adaptedProfile,
+          vmid: threeAxisVmid,
+          post: POST,
+        },
+      );
+
+      expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+      expect(issues).toEqual([
+        expect.objectContaining({
+          severity: 'warning',
+          event: 'StartOfFile',
+          key: 'VMID_file',
+        }),
+      ]);
+    });
+
+    it('blocks a 4-axis trace selection that moves or indexes the rotary axis', () => {
+      const issues = validateTraceCompatibility(
+        [
+          {
+            _eventName: 'StartOfFile',
+            _index: 0,
+            VMID_file: 'Siemens_828D_Milling_4A',
+            iNumberOfAixs: 4,
+          },
+          { _eventName: 'Setup', _index: 1, setup_name: 'Setup2' },
+          { _eventName: 'RotateToPlane', _index: 2, anext: -8.837 },
+          {
+            _eventName: 'StartOfJob',
+            _index: 3,
+            job_name: '4X-PC',
+            anext: -8.837,
+            X5_job: 1,
+          },
+          {
+            _eventName: 'Move5x',
+            _index: 4,
+            xpos: 0,
+            ypos: 0,
+            zpos: 5,
+            apos: -8.837,
+          },
+        ],
+        {
+          machineProfile: adaptedProfile,
+          vmid: threeAxisVmid,
+          post: POST,
+        },
+      );
+
+      const errors = issues.filter((issue) => issue.severity === 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.message).toContain('Setup 1 (Setup2)');
+      expect(errors[0]?.message).toContain('anext = -8.837');
+      expect(issues.some((issue) => issue.severity === 'warning')).toBe(false);
+    });
+
+    it('still blocks unrelated 3-axis VMIDs and 5-axis traces', () => {
+      const otherThreeAxisIssues = validateTraceCompatibility(
+        [
+          {
+            _eventName: 'StartOfFile',
+            _index: 0,
+            VMID_file: 'Other_Mill_3A',
+            iNumberOfAixs: 3,
+          },
+        ],
+        {
+          machineProfile: adaptedProfile,
+          vmid: threeAxisVmid,
+          post: POST,
+        },
+      );
+      expect(
+        otherThreeAxisIssues.some((issue) => issue.severity === 'error'),
+      ).toBe(true);
+
+      const fiveAxisIssues = validateTraceCompatibility(
+        [
+          {
+            _eventName: 'StartOfFile',
+            _index: 0,
+            VMID_file: 'Siemens_828D_Milling_4A',
+            iNumberOfAixs: 5,
+          },
+        ],
+        {
+          machineProfile: adaptedProfile,
+          vmid: threeAxisVmid,
+          post: POST,
+        },
+      );
+      expect(fiveAxisIssues.some((issue) => issue.severity === 'error')).toBe(
+        true,
+      );
+    });
   });
 });

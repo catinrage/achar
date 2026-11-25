@@ -12,8 +12,7 @@ import {
   parseMachineProfile,
   parseVmid,
   resolveBuiltinPost,
-  validateMachineProfileCompatibility,
-  validateTraceAgainstVmid,
+  validateTraceCompatibility,
 } from '@achar/core';
 import { badRequest, parseFailed } from './errors';
 
@@ -184,13 +183,11 @@ export function validateTraceInputs(
     events,
     vmid,
     machineProfile,
-    diagnostics: [
-      ...(vmid ? validateTraceAgainstVmid(events, vmid) : []),
-      ...validateMachineProfileCompatibility(machineProfile, events, {
-        vmid,
-        post: postId === undefined ? undefined : resolveBuiltinPost(postId),
-      }),
-    ],
+    diagnostics: validateTraceCompatibility(events, {
+      vmid,
+      machineProfile,
+      post: postId === undefined ? undefined : resolveBuiltinPost(postId),
+    }),
     durationMs: performance.now() - startedAt,
   };
 }
@@ -278,7 +275,10 @@ export function buildProgramFrom(
   const post = resolvePost(options.postId);
   const programName = resolveProgramName(options.programName, inputs.events);
   const program = generatePostProgram(inputs.events, programName, (target) =>
-    post.registerPost(target, { machineProfile: inputs.machineProfile }),
+    post.registerPost(target, {
+      machineProfile: inputs.machineProfile,
+      vmid: inputs.vmid,
+    }),
   );
 
   return { program, programName };

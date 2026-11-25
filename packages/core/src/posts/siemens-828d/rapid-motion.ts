@@ -299,6 +299,7 @@ function initialRotaryApproachWord(
 ): GCodeWord | undefined {
   const { state } = runtime;
   if (
+    state.numberOfAxes === 3 ||
     params.apos === undefined ||
     state.currentJob?.used_in_transform_4x ||
     !approachCoordinateChanged(
@@ -440,14 +441,17 @@ function fiveAxisCoordinates(
       siemens828dPolicy.sameNumber,
       runtime,
     ),
-    a: changedCoordinate(
-      params,
-      'apos',
-      params.apos,
-      state.lastPosition.a,
-      siemens828dPolicy.sameNumber,
-      runtime,
-    ),
+    a:
+      state.numberOfAxes === 3
+        ? undefined
+        : changedCoordinate(
+            params,
+            'apos',
+            params.apos,
+            state.lastPosition.a,
+            siemens828dPolicy.sameNumber,
+            runtime,
+          ),
   };
 }
 

@@ -498,6 +498,173 @@ describe('the content-hash cache', () => {
   });
 });
 
+describe('4-axis to 3-axis setup adaptation', () => {
+  const MIXED_FOUR_AXIS_TRACE = `
+(0)@start_of_file
+part_name : 'MIXED_PART'
+user_account : 'ACHAR'
+home_number : 54
+VMID_file : 'Siemens_828D_Milling_4A'
+iNumberOfAixs : 4
+program_number : 1000
+inch_system : 0
+(1)@def_tool
+tool_id_string : 'END10'
+tool_number : 1
+tool_work_time : '  0:01:00'
+(2)@setup
+setup_name : 'Setup1'
+part_home_number : 1
+(3)@rotate_to_plane
+first_axis_angle : 0.000
+second_axis_angle : 0.000
+(4)@change_tool
+tool_id_string : 'END10'
+tool_number : 1
+next_tool_id_string : 'END10'
+last_tool : 0
+(5)@start_of_job
+job_name : 'Face3X'
+original_job_name : 'Face3X'
+job_type : 'profile'
+job_time : '  0:01:00'
+job_cutting_time : '  0:00:45'
+job_linking_time : '  0:00:10'
+xnext : 10.000
+ynext : 20.000
+znext : 50.000
+anext : 0.000
+spin_rate : 3000.000
+spin_direction : cw
+feed_rate : 500.000
+used_in_transform_4x : 0
+rot_axis_type : 'axis4_none'
+(6)@rapid_move
+xpos : 10.000
+ypos : 20.000
+zpos : 50.000
+(7)@line
+xpos : 40.000
+ypos : 20.000
+zpos : -2.000
+feed : 500
+(8)@end_of_job
+(9)@setup
+setup_name : 'Setup2'
+part_home_number : 1
+(10)@rotate_to_plane
+anext : -45.000
+first_axis_angle : -45.000
+(11)@change_tool
+tool_id_string : 'END10'
+tool_number : 1
+last_tool : 1
+(12)@start_of_job
+job_name : 'Index4X'
+original_job_name : 'Index4X'
+job_type : '4x_parallel_cuts'
+job_time : '  0:02:00'
+xnext : 10.000
+ynext : 20.000
+znext : 50.000
+anext : -45.000
+X5_job : 1
+spin_rate : 3000.000
+spin_direction : cw
+feed_rate : 500.000
+used_in_transform_4x : 0
+(13)@move_5x
+xpos : 10.000
+ypos : 20.000
+zpos : 50.000
+apos : -45.000
+(14)@end_of_job
+(15)@end_program
+(16)@end_of_file
+`;
+
+  const THREE_AXIS_VMID = `
+<Machine Name="PoyaKar_1160L_3A">
+  <Axis Name="Y" Type="0" MinLim="-300" MaxLim="300" HomeRef="-300">
+  <Axis Name="X" Type="0" MinLim="-550" MaxLim="550" HomeRef="-550">
+  <Axis Name="Z" Type="0" MinLim="0" MaxLim="600" HomeRef="600">
+  <Param GppName="bToolPreselect" Name="Tool preselect">
+</Machine>
+`;
+
+  it('posts a 3-axis setup from a 4-axis trace onto an opted-in 3-axis machine without A words, while blocking rotary setups', async () => {
+    const form = new FormData();
+    form.set('name', 'PoyaKar 3A Adapted');
+    form.set('postId', 'siemens-828d');
+    form.set('vmid', THREE_AXIS_VMID);
+    form.set(
+      'machineProfile',
+      JSON.stringify({
+        dialect: 'Siemens_828D_Milling_3A',
+        features: { allow4xTraceOn3x: true },
+      }),
+    );
+    const created = await fetch(`${base}/api/machines`, {
+      method: 'POST',
+      body: form,
+    });
+    expect(created.status).toBe(201);
+    const threeAxisMachineId = (await created.json()).machine.id;
+
+    const analysis = await analyze(MIXED_FOUR_AXIS_TRACE, 'mixed-4a.MPF');
+
+    // Selecting only Setup 1 succeeds in 3-axis dialect with zero A words.
+    const setupOneResponse = await submit(analysis.sha256, {
+      machineId: threeAxisMachineId,
+      programName: 'MIXED_S1',
+      setups: '1',
+    });
+    const setupOneJob = (await setupOneResponse.json()).job;
+    const setupOneSettled = await settle(setupOneJob.id);
+
+    expect(setupOneSettled.status).toBe('done');
+    expect(
+      setupOneSettled.diagnostics.filter(
+        (d: { severity: string }) => d.severity === 'error',
+      ),
+    ).toEqual([]);
+    expect(setupOneSettled.blocked).toBe(false);
+    expect(setupOneSettled.files.length).toBeGreaterThan(0);
+    expect(setupOneSettled.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        key: 'VMID_file',
+        message: expect.stringContaining(
+          'Adapted trace VMID Siemens_828D_Milling_4A',
+        ),
+      }),
+    );
+
+    const code = await readAll(setupOneSettled);
+    expect(code).toContain('; Tools Used In This Program :');
+    expect(code).toContain('G0 G54 G90 X10 Y20');
+    expect(code).not.toMatch(/\bA-?\d/);
+
+    // Selecting Setup 2 (which indexes A-45) is blocked cleanly.
+    const setupTwoResponse = await submit(analysis.sha256, {
+      machineId: threeAxisMachineId,
+      programName: 'MIXED_S2',
+      setups: '2',
+    });
+    const setupTwoJob = (await setupTwoResponse.json()).job;
+    const setupTwoSettled = await settle(setupTwoJob.id);
+
+    expect(setupTwoSettled.status).toBe('done');
+    expect(setupTwoSettled.blocked).toBe(true);
+    expect(setupTwoSettled.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        message: expect.stringContaining('Setup 2 (Setup2)'),
+      }),
+    );
+  });
+});
+
 /** Every generated file of a finished job, concatenated. */
 async function readAll(job: {
   id: string;

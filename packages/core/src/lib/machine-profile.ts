@@ -5,6 +5,11 @@ import type { MachineProfileFeatures } from './machine-features';
 import { parseMachineFeatures } from './machine-features';
 import type { EventData } from './parser';
 import type { VmidDefinition, VmidValidationIssue } from './vmid';
+import {
+  findTraceRotaryIssues,
+  isThreeAxisVmid,
+  validateTraceAgainstVmid,
+} from './vmid';
 
 export interface MachineProfileHome {
   x?: number;
@@ -172,6 +177,52 @@ export interface MachineProfileValidationOptions {
 }
 
 /**
+ * True when the machine configuration represents a 3-axis linear mill.
+ */
+export function isThreeAxisMachineConfig(
+  profile: MachineProfile | undefined,
+  vmid: VmidDefinition | undefined,
+): boolean {
+  return (
+    profile?.axes === 3 ||
+    profile?.features?.allow4xTraceOn3x === true ||
+    isThreeAxisVmid(vmid)
+  );
+}
+
+/**
+ * True when a 3-axis machine explicitly opted into running 3-axis setups
+ * from a 4-axis trace and the trace headers match that downgrade path.
+ */
+export function allowsFourAxisTraceAdaptation(
+  profile: MachineProfile | undefined,
+  events: EventData[],
+  options: MachineProfileValidationOptions = {},
+): boolean {
+  if (!profile?.features?.allow4xTraceOn3x || events.length === 0) {
+    return false;
+  }
+  if (profile.axes !== undefined && profile.axes !== 3) return false;
+
+  const { vmid, post } = options;
+  if (vmid && vmid.axes.length > 0 && !isThreeAxisVmid(vmid)) return false;
+
+  const traceAxes = traceAxisCount(events);
+  if (traceAxes !== undefined && traceAxes !== 3 && traceAxes !== 4) {
+    return false;
+  }
+
+  const declared = declaredTraceVmid(events);
+  const owner = declared ? dialectVmidOwner(declared, post) : undefined;
+  const crossDialectMatch =
+    owner !== undefined &&
+    profile.dialect !== undefined &&
+    owner !== profile.dialect;
+
+  return traceAxes === 4 || crossDialectMatch;
+}
+
+/**
  * Checks a profile against everything that can independently confirm it.
  *
  * A profile is a set of claims about a machine. The trace, the VMID and the
@@ -188,8 +239,12 @@ export function validateMachineProfileCompatibility(
 
   const { vmid, post } = options;
   const issues: VmidValidationIssue[] = [];
+  issues.push(...fourAxisAdaptationConfigIssues(profile, vmid));
+
+  const adapted4xTo3x = allowsFourAxisTraceAdaptation(profile, events, options);
   const traceAxes = traceAxisCount(events);
   if (
+    !adapted4xTo3x &&
     profile.axes !== undefined &&
     traceAxes !== undefined &&
     profile.axes !== traceAxes
@@ -216,10 +271,66 @@ export function validateMachineProfileCompatibility(
 
   issues.push(...spindleSpeedIssues(profile, events));
   issues.push(...postBindingIssues(profile, post));
-  issues.push(...dialectVmidIssues(profile, events, post));
+  if (!adapted4xTo3x) {
+    issues.push(...dialectVmidIssues(profile, events, post));
+  }
   issues.push(...homeReachIssues(profile, vmid));
 
+  const machineIsThreeAxis = isThreeAxisMachineConfig(profile, vmid);
+  const rotaryIssues =
+    machineIsThreeAxis && events.length > 0
+      ? findTraceRotaryIssues(events, `machine profile ${profile.id}`, {
+          includeSingleLetterAxes: vmid === undefined,
+        })
+      : [];
+  issues.push(...rotaryIssues);
+
+  if (adapted4xTo3x && rotaryIssues.length === 0) {
+    const declared = declaredTraceVmid(events);
+    issues.push({
+      severity: 'warning',
+      event: 'StartOfFile',
+      key: 'VMID_file',
+      message: `Adapted trace VMID ${declared ?? '4-axis'} for 3-axis machine ${profile.id}; selected events use no rotary axis and 4th-axis output is disabled.`,
+    });
+  }
+
   return issues;
+}
+
+/**
+ * Runs both VMID validation and machine-profile compatibility together so the
+ * 4-axis-to-3-axis adaptation and rotary safety checks stay consistent across
+ * every caller without duplicate diagnostics.
+ */
+export function validateTraceCompatibility(
+  events: EventData[],
+  options: MachineProfileValidationOptions & {
+    machineProfile?: MachineProfile;
+  } = {},
+): VmidValidationIssue[] {
+  const { machineProfile, vmid, post } = options;
+  const allowTraceVmidMismatch = allowsFourAxisTraceAdaptation(
+    machineProfile,
+    events,
+    { vmid, post },
+  );
+  const skipRotaryUsageCheck =
+    machineProfile !== undefined &&
+    isThreeAxisMachineConfig(machineProfile, vmid);
+
+  return [
+    ...(vmid
+      ? validateTraceAgainstVmid(events, vmid, {
+          allowTraceVmidMismatch,
+          skipRotaryUsageCheck,
+        })
+      : []),
+    ...validateMachineProfileCompatibility(machineProfile, events, {
+      vmid,
+      post,
+    }),
+  ];
 }
 
 /**
@@ -497,25 +608,42 @@ function mergeSection<T extends object>(
  * another dialect. An unrecognised VMID is a machine nobody has recorded yet,
  * not a mismatch.
  */
+function fourAxisAdaptationConfigIssues(
+  profile: MachineProfile,
+  vmid: VmidDefinition | undefined,
+): VmidValidationIssue[] {
+  if (!profile.features?.allow4xTraceOn3x) return [];
+
+  const issues: VmidValidationIssue[] = [];
+  if (profile.axes !== undefined && profile.axes !== 3) {
+    issues.push({
+      severity: 'error',
+      key: 'features.allow4xTraceOn3x',
+      message: `Machine profile ${profile.id} enables allow4xTraceOn3x, which requires 3 axes (profile declares ${profile.axes}).`,
+    });
+  }
+  if (vmid && vmid.axes.length > 0 && !isThreeAxisVmid(vmid)) {
+    issues.push({
+      severity: 'error',
+      key: 'features.allow4xTraceOn3x',
+      message: `Machine profile ${profile.id} enables allow4xTraceOn3x, which requires a 3-axis VMID without rotary axes.`,
+    });
+  }
+  return issues;
+}
+
 function dialectVmidIssues(
   profile: MachineProfile,
   events: EventData[],
   post: MachineProfilePostBinding | undefined,
 ): VmidValidationIssue[] {
-  const table = post?.dialectVmids;
   const dialect = profile.dialect;
-  if (!table || dialect === undefined) return [];
+  if (dialect === undefined) return [];
 
-  const declared = events.find(
-    (event) => event._eventName === 'StartOfFile',
-  )?.VMID_file;
-  if (typeof declared !== 'string' || declared.length === 0) return [];
+  const declared = declaredTraceVmid(events);
+  if (declared === undefined) return [];
 
-  const normalized = normalizeVmidName(declared);
-  const owner = Object.entries(table).find(([, vmids]) =>
-    vmids.some((name) => normalizeVmidName(name) === normalized),
-  )?.[0];
-
+  const owner = dialectVmidOwner(declared, post);
   if (owner === undefined || owner === dialect) return [];
 
   return [
@@ -526,6 +654,28 @@ function dialectVmidIssues(
       message: `Machine profile ${profile.id} names dialect '${dialect}', but the trace was posted for VMID ${declared}, which belongs to dialect '${owner}'.`,
     },
   ];
+}
+
+function declaredTraceVmid(events: EventData[]): string | undefined {
+  const declared = events.find(
+    (event) => event._eventName === 'StartOfFile',
+  )?.VMID_file;
+  return typeof declared === 'string' && declared.length > 0
+    ? declared
+    : undefined;
+}
+
+function dialectVmidOwner(
+  declared: string,
+  post: MachineProfilePostBinding | undefined,
+): string | undefined {
+  const table = post?.dialectVmids;
+  if (!table) return undefined;
+
+  const normalized = normalizeVmidName(declared);
+  return Object.entries(table).find(([, vmids]) =>
+    vmids.some((name) => normalizeVmidName(name) === normalized),
+  )?.[0];
 }
 
 /** Drops a file extension and case, matching how `vmid.ts` compares names. */

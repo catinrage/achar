@@ -195,6 +195,22 @@ describe('createMachine', () => {
     expect(machine.hasProfile).toBe(true);
   });
 
+  it('rejects allow4xTraceOn3x when the machine profile declares 4 axes', async () => {
+    const error = await expectRejection(
+      createMachine(store, paths, {
+        name: 'Four Axis Bad OptIn',
+        postId: 'siemens-828d',
+        machineProfile: JSON.stringify({
+          id: 'four-axis-bad-optin',
+          axes: 4,
+          features: { allow4xTraceOn3x: true },
+        }),
+      }),
+    );
+    expect(error.status).toBe(400);
+    expect(error.message).toContain('allow4xTraceOn3x');
+  });
+
   it('rejects a blank name', async () => {
     const error = await expectRejection(
       createMachine(store, paths, { name: '   ', postId: 'siemens-828d' }),

@@ -1,8 +1,12 @@
 import { FeedRateModeEnum, PlaneEnum } from '../../common/enums';
 import type { Builder } from '../../lib/builder';
-import type { MachineProfile } from '../../lib/machine-profile';
+import {
+  isThreeAxisMachineConfig,
+  type MachineProfile,
+} from '../../lib/machine-profile';
 import { definePost } from '../../lib/post-definition';
 import type { Program } from '../../lib/program';
+import type { VmidDefinition } from '../../lib/vmid';
 import type { CommandsType } from '../../types';
 import { createSiemensPostContext } from './context';
 import { resolveSiemens828dDialect } from './dialect';
@@ -28,6 +32,7 @@ export interface Siemens828dPostOptions {
   };
   measureTools?: boolean;
   machineProfile?: MachineProfile;
+  vmid?: VmidDefinition;
   /**
    * Overrides the dialect the machine profile names. Mainly for parity runs
    * that need to post one trace both ways; production callers name the
@@ -48,6 +53,10 @@ export function registerSiemens828dPost(
     returnHome: options.returnHome,
     measureTools: options.measureTools,
   });
+  const machineIsThreeAxis = isThreeAxisMachineConfig(
+    options.machineProfile,
+    options.vmid,
+  );
   const postContext = createSiemensPostContext(
     options.machineProfile,
     dialect,
@@ -110,7 +119,7 @@ export function registerSiemens828dPost(
   });
 
   post.on('StartOfFile', ($, params) => {
-    state.numberOfAxes = params.iNumberOfAixs ?? 4;
+    state.numberOfAxes = machineIsThreeAxis ? 3 : (params.iNumberOfAixs ?? 4);
     $.BlankLine();
     $.Comment('COMPENSATION-WEAR');
     $.Comment(`Author \t\t: ${params.user_account}`);
@@ -139,7 +148,7 @@ export function registerSiemens828dPost(
       state.toolChangePosition = {
         x: nextJob.xnext,
         y: nextJob.ynext,
-        a: nextJob.anext,
+        a: state.numberOfAxes === 3 ? undefined : nextJob.anext,
       };
     }
     state.pendingWearMode = nextJob?.iWBCM ?? 0;
@@ -190,7 +199,9 @@ export function registerSiemens828dPost(
     }
   });
   post.on('FourthAxis', ($, params) => {
-    if (state.currentJob?.used_in_transform_4x) return;
+    if (state.numberOfAxes === 3 || state.currentJob?.used_in_transform_4x) {
+      return;
+    }
     const planeAngle =
       (-Math.atan2(params.normal_to_plane_y, params.normal_to_plane_z) * 180) /
       Math.PI;

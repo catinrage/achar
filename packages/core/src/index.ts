@@ -69,12 +69,15 @@ export type {
   MachineProfileValidationOptions,
 } from './lib/machine-profile';
 export {
+  allowsFourAxisTraceAdaptation,
+  isThreeAxisMachineConfig,
   loadMachineProfile,
   mergeMachineProfiles,
   parseMachineProfile,
   requireMachineProfile,
   resolveMachineProfileChain,
   validateMachineProfileCompatibility,
+  validateTraceCompatibility,
 } from './lib/machine-profile';
 export type { EventData } from './lib/parser';
 export { Parser } from './lib/parser';
@@ -88,7 +91,11 @@ export {
   lintPostSource,
   lintUnhandledEvents,
 } from './lib/post-lint';
-export type { PostModule, RegisterPost } from './lib/post-loader';
+export type {
+  PostModule,
+  PostRuntimeContext,
+  RegisterPost,
+} from './lib/post-loader';
 export { loadPost } from './lib/post-loader';
 export type { PostPolicy } from './lib/post-policy';
 export { definePostPolicy, extendPostPolicy } from './lib/post-policy';
@@ -195,18 +202,23 @@ export {
   verifyProgram,
 } from './lib/verify';
 export type {
+  FindTraceRotaryOptions,
   VmidAxis,
   VmidDefinition,
   VmidParameter,
   VmidValidationIssue,
+  VmidValidationOptions,
 } from './lib/vmid';
 export {
+  findTraceRotaryIssues,
   formatVmidSummary,
   formatVmidValidation,
   generateVmidTraceTypes,
+  isThreeAxisVmid,
   parseVmid,
   parseVmidFile,
   validateTraceAgainstVmid,
+  vmidHasRotaryAxis,
 } from './lib/vmid';
 export { RENAMED_SIEMENS_828D_DIALECT_IDS } from './posts/siemens-828d/dialect';
 export type {

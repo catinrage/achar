@@ -4,12 +4,12 @@ import type {
   MachineProfile,
   MachineProfilePostBinding,
 } from './machine-profile';
-import { validateMachineProfileCompatibility } from './machine-profile';
+import { validateTraceCompatibility } from './machine-profile';
 import type { EventData } from './parser';
 import { Parser } from './parser';
 import { Program } from './program';
 import type { VmidDefinition, VmidValidationIssue } from './vmid';
-import { formatVmidValidation, validateTraceAgainstVmid } from './vmid';
+import { formatVmidValidation } from './vmid';
 
 export interface GeneratedFile {
   file: string;
@@ -188,15 +188,11 @@ export async function testPost(
     readTraceFileLifecycle(traceSource),
     program.fileOperations,
   );
-  const vmidIssues = config.vmid
-    ? validateTraceAgainstVmid(events, config.vmid)
-    : [];
-  vmidIssues.push(
-    ...validateMachineProfileCompatibility(config.machineProfile, events, {
-      vmid: config.vmid,
-      post: config.post,
-    }),
-  );
+  const vmidIssues = validateTraceCompatibility(events, {
+    vmid: config.vmid,
+    machineProfile: config.machineProfile,
+    post: config.post,
+  });
 
   if (config.out) {
     await writeGeneratedFiles(files, config.out);

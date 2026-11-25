@@ -32,6 +32,22 @@ export interface VmidValidationIssue {
   key?: string;
 }
 
+export interface VmidValidationOptions {
+  /**
+   * Skip the strict `StartOfFile.VMID_file` vs `<Machine Name>` check when
+   * machine compatibility explicitly permits adapting a 4-axis trace onto a
+   * 3-axis machine.
+   */
+  allowTraceVmidMismatch?: boolean;
+  /** Label used in rotary rejection messages. */
+  rotaryTargetLabel?: string;
+  /**
+   * Skip running `findTraceRotaryIssues` here when the caller is running it
+   * via `validateMachineProfileCompatibility` so each finding is emitted once.
+   */
+  skipRotaryUsageCheck?: boolean;
+}
+
 export async function parseVmidFile(vmidPath: string): Promise<VmidDefinition> {
   return {
     ...parseVmid(await readFile(vmidPath, 'utf-8')),
@@ -76,9 +92,28 @@ export function parseVmid(source: string): VmidDefinition {
   };
 }
 
+/**
+ * True when the VMID declares any rotary axis (`A`/`B`/`C` or `Type="1"`).
+ */
+export function vmidHasRotaryAxis(vmid: VmidDefinition): boolean {
+  return vmid.axes.some(
+    (axis) => /^[abc]$/i.test(axis.name) || axis.type === '1',
+  );
+}
+
+/**
+ * True when the VMID models a standard 3-axis linear machine with no rotary axis.
+ */
+export function isThreeAxisVmid(vmid: VmidDefinition | undefined): boolean {
+  return (
+    vmid !== undefined && vmid.axes.length === 3 && !vmidHasRotaryAxis(vmid)
+  );
+}
+
 export function validateTraceAgainstVmid(
   events: EventData[],
   vmid: VmidDefinition,
+  options: VmidValidationOptions = {},
 ): VmidValidationIssue[] {
   const issues: VmidValidationIssue[] = [];
   const parameterNames = new Set(vmid.parameters.map((param) => param.gppName));
@@ -90,6 +125,7 @@ export function validateTraceAgainstVmid(
   const machineName = vmid.machine.Name;
 
   if (
+    !options.allowTraceVmidMismatch &&
     traceVmidName &&
     machineName &&
     normalizeName(traceVmidName) !== normalizeName(machineName)
@@ -126,6 +162,17 @@ export function validateTraceAgainstVmid(
         });
       }
     }
+  }
+
+  if (isThreeAxisVmid(vmid) && !options.skipRotaryUsageCheck) {
+    const targetLabel =
+      options.rotaryTargetLabel ??
+      (machineName ? `VMID ${machineName}` : 'this 3-axis VMID');
+    issues.push(
+      ...findTraceRotaryIssues(events, targetLabel, {
+        includeSingleLetterAxes: false,
+      }),
+    );
   }
 
   return uniqueIssues(issues);
@@ -260,6 +307,162 @@ function vmidParameterType(parameter: VmidParameter): string {
   }
   if (type?.includes('bool')) return 'boolean';
   return 'number';
+}
+
+const ROTARY_SKIP_EVENTS = new Set([
+  'StartOfFile',
+  'PlaneData',
+  'HomeData',
+  'Tmatrix',
+]);
+
+const ROTARY_ONLY_EVENTS = new Set([
+  'FourthAxis',
+  'Move4x',
+  'Line4xCartesian',
+  'Line4xPolar',
+  'Move5x',
+  'Line5x',
+]);
+
+const TRACE_ROTARY_KEYS = [
+  'apos',
+  'bpos',
+  'cpos',
+  'anext',
+  'bnext',
+  'cnext',
+  'first_axis_angle',
+  'second_axis_angle',
+] as const;
+
+const SINGLE_LETTER_ROTARY_KEYS = ['a', 'b', 'c'] as const;
+
+const ROTARY_ANGLE_EPSILON = 1e-6;
+
+export interface FindTraceRotaryOptions {
+  /** Include single-letter `a`/`b`/`c` keys (handled separately by VMID axis checks). */
+  includeSingleLetterAxes?: boolean;
+}
+
+/**
+ * Finds rotary (4th/5th axis) usage in a trace or selected-setup event stream.
+ *
+ * Ignores static plane definitions (`PlaneData`, `HomeData`, `Tmatrix`) and
+ * dummy zero rotary fields emitted on pure 3-axis jobs in a 4-axis trace
+ * (`anext: 0`, `cpos: 0`), reporting at most one error per setup scope so the
+ * operator sees which setups cannot run on a 3-axis machine.
+ */
+export function findTraceRotaryIssues(
+  events: EventData[],
+  targetLabel = 'this 3-axis machine',
+  options: FindTraceRotaryOptions = {},
+): VmidValidationIssue[] {
+  const includeSingleLetterAxes = options.includeSingleLetterAxes ?? true;
+  const keysToCheck = includeSingleLetterAxes
+    ? [...TRACE_ROTARY_KEYS, ...SINGLE_LETTER_ROTARY_KEYS]
+    : TRACE_ROTARY_KEYS;
+
+  const issues: VmidValidationIssue[] = [];
+  const reportedScopes = new Set<string>();
+  let sequentialSetupIndex = 0;
+  let setupIndex = 0;
+  let setupName: string | undefined;
+  let jobName: string | undefined;
+
+  for (const event of events) {
+    const eventName = String(event._eventName);
+    if (eventName === 'Setup') {
+      sequentialSetupIndex += 1;
+      setupIndex =
+        typeof event._setupIndex === 'number'
+          ? event._setupIndex
+          : sequentialSetupIndex;
+      setupName = stringValue(event.setup_name);
+      jobName = undefined;
+      continue;
+    }
+    if (eventName === 'StartOfJob') {
+      jobName = stringValue(event.job_name);
+    }
+
+    const hit = detectRotaryEventReason(event, eventName, keysToCheck);
+    if (hit) {
+      const scope = setupIndex > 0 ? `setup:${setupIndex}` : 'program';
+      if (!reportedScopes.has(scope)) {
+        reportedScopes.add(scope);
+        const location = formatRotaryLocation(setupIndex, setupName, jobName);
+        issues.push({
+          severity: 'error',
+          event: eventName,
+          key: hit.key,
+          message: `${location}uses a rotary axis (${hit.description}), which ${targetLabel} does not allow.`,
+        });
+      }
+    }
+
+    if (eventName === 'EndOfJob') {
+      jobName = undefined;
+    }
+  }
+
+  return issues;
+}
+
+function detectRotaryEventReason(
+  event: EventData,
+  eventName: string,
+  keysToCheck: readonly string[],
+): { key: string; description: string } | undefined {
+  if (ROTARY_SKIP_EVENTS.has(eventName)) return undefined;
+
+  if (ROTARY_ONLY_EVENTS.has(eventName)) {
+    return { key: eventName, description: `event ${eventName}` };
+  }
+
+  if (eventName === 'StartOfJob') {
+    if (event.used_in_transform_4x === 1) {
+      return {
+        key: 'used_in_transform_4x',
+        description: 'used_in_transform_4x = 1',
+      };
+    }
+    if (event.X5_job === 1) {
+      return { key: 'X5_job', description: 'X5_job = 1' };
+    }
+  }
+
+  const rotAxisType = stringValue(event.rot_axis_type);
+  if (rotAxisType && rotAxisType !== 'axis4_none') {
+    return {
+      key: 'rot_axis_type',
+      description: `rot_axis_type = ${rotAxisType}`,
+    };
+  }
+
+  for (const key of keysToCheck) {
+    const value = event[key];
+    if (typeof value === 'number' && Math.abs(value) > ROTARY_ANGLE_EPSILON) {
+      return { key, description: `${key} = ${value}` };
+    }
+  }
+
+  return undefined;
+}
+
+function formatRotaryLocation(
+  setupIndex: number,
+  setupName: string | undefined,
+  jobName: string | undefined,
+): string {
+  const parts: string[] = [];
+  if (setupIndex > 0) {
+    parts.push(
+      setupName ? `Setup ${setupIndex} (${setupName})` : `Setup ${setupIndex}`,
+    );
+  }
+  if (jobName) parts.push(`job ${jobName}`);
+  return parts.length > 0 ? `${parts.join(', ')}: ` : '';
 }
 
 function typescriptProperty(name: string): string {

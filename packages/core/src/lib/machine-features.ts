@@ -82,6 +82,13 @@ export const MACHINE_FEATURE_SPECS = [
       'Every tapping cycle is preceded by an optional stop so the operator can check.',
   },
   {
+    key: 'allow4xTraceOn3x',
+    kind: 'boolean',
+    label: 'Accept 3-axis jobs from 4-axis traces',
+    description:
+      'Allows traces posted with a 4-axis VMID on this 3-axis machine when selected setups make no rotary (A/B/C) moves, omitting 4th-axis words.',
+  },
+  {
     key: 'maxSpindleSpeed',
     kind: 'number',
     label: 'Maximum spindle speed',

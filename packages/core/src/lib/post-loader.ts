@@ -3,9 +3,11 @@ import { pathToFileURL } from 'node:url';
 import { resolveBuiltinPost } from './builtin-posts';
 import type { MachineProfile } from './machine-profile';
 import type { Program } from './program';
+import type { VmidDefinition } from './vmid';
 
 export interface PostRuntimeContext {
   machineProfile?: MachineProfile;
+  vmid?: VmidDefinition;
 }
 
 export type RegisterPost = (

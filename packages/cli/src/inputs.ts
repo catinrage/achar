@@ -22,8 +22,7 @@ import {
   partitionSetups,
   resolveBuiltinPost,
   selectSetupEvents,
-  validateMachineProfileCompatibility,
-  validateTraceAgainstVmid,
+  validateTraceCompatibility,
   writeHtmlReport,
 } from '@achar/core';
 import chalk from 'chalk';
@@ -102,18 +101,17 @@ export async function resolveInput(
     loadedPost(program, {
       ...context,
       machineProfile: context.machineProfile ?? machineProfile,
+      vmid: context.vmid ?? vmid,
     });
-  const vmidIssues = vmid ? validateTraceAgainstVmid(traceEvents, vmid) : [];
-  vmidIssues.push(
-    ...validateMachineProfileCompatibility(machineProfile, traceEvents, {
-      vmid,
-      // Only built-in posts declare a controller and a dialect list. A custom
-      // post module is left unchecked: it can target whatever it likes.
-      post: resolveBuiltinPost(
-        typeof options.post === 'string' ? options.post : (fixture?.post ?? ''),
-      ),
-    }),
-  );
+  const vmidIssues = validateTraceCompatibility(traceEvents, {
+    vmid,
+    machineProfile,
+    // Only built-in posts declare a controller and a dialect list. A custom
+    // post module is left unchecked: it can target whatever it likes.
+    post: resolveBuiltinPost(
+      typeof options.post === 'string' ? options.post : (fixture?.post ?? ''),
+    ),
+  });
 
   if (requirements.requireReference && !referenceDir) {
     throw new Error('Missing required option: --reference');
